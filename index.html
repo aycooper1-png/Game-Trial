@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#04050b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Game Trial · Map Factory remake</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%232f7de1%22/%3E%3Crect y=%228%22 width=%2216%22 height=%228%22 rx=%223%22 fill=%22%23f2c14e%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- top bar: the empire's stock (every domain added up), food, research, power, territory, time -->
+  <div id="topbar">
+    <div class="res country" title="The domain you're viewing. Tap to fly to it."><span class="flag"></span>
+      <div><div class="lbl">DOMAIN <span class="rate zero" id="country-count"></span></div><div class="val small" id="val-country">-</div></div></div>
+    <div class="res" data-r="wood"><span class="ic" data-icon="tree"></span>
+      <div><div class="lbl">WOOD <span class="rate" id="rate-wood"></span></div><div class="val" id="val-wood">0</div></div></div>
+    <div class="res" data-r="stone"><span class="ic" data-icon="rock"></span>
+      <div><div class="lbl">STONE <span class="rate" id="rate-stone"></span></div><div class="val" id="val-stone">0</div></div></div>
+    <div class="res" data-r="iron"><span class="ic" data-icon="ore"></span>
+      <div><div class="lbl">IRON <span class="rate" id="rate-iron"></span></div><div class="val" id="val-iron">0</div></div></div>
+    <div class="res" data-r="oil" id="res-oil" hidden><span class="ic" data-icon="oilI"></span>
+      <div><div class="lbl">OIL <span class="rate" id="rate-oil"></span></div><div class="val" id="val-oil">0</div></div></div>
+    <div class="res" data-r="wheat" title="Wheat: your people eat it. The number beside it is what you gain or lose each second."><span class="ic" data-icon="wheat"></span>
+      <div><div class="lbl">WHEAT <span class="rate" id="rate-wheat"></span></div><div class="val" id="val-wheat">0</div></div></div>
+    <div class="res" title="Gold you mine goes straight into research"><span class="ic" data-icon="goldI"></span>
+      <div><div class="lbl">GOLD</div><div class="val small" id="val-gold">-</div></div></div>
+    <div class="res"><span class="ic" data-icon="bolt"></span>
+      <div><div class="lbl">POWER <span class="rate zero" id="rate-power"></span></div><div class="val small" id="val-power">-</div></div></div>
+    <div class="res hide-phone"><span class="terr-swatch"></span>
+      <div><div class="lbl">TERRITORY</div><div class="val" id="val-terr">0%</div></div></div>
+    <div class="spacer"></div>
+    <div class="res hide-phone"><div><div class="lbl">VIEW</div><div class="val small" id="val-view">Detail</div></div></div>
+    <div class="res hide-phone"><div><div class="lbl">TIME <span class="rate" id="save-note"></span></div><div class="val" id="val-time">00:00</div></div></div>
+  </div>
+
+  <!-- notifications (new technology) -->
+  <div id="notes"></div>
+
+  <!-- touch screens: steering while you drive an expedition -->
+  <div id="dpad">
+    <div class="dp-side"><button data-key="arrowleft" aria-label="Steer left">◀</button><button data-key="arrowright" aria-label="Steer right">▶</button></div>
+    <div class="dp-mid"><button id="dp-settle">Settle</button><button id="dp-park">Park</button></div>
+    <div class="dp-side dp-col"><button data-key="arrowup" aria-label="Forward">▲</button><button data-key="arrowdown" aria-label="Reverse">▼</button></div>
+  </div>
+
+  <!-- placing a building: move it, then confirm -->
+  <div id="confirmbar" class="panel">
+    <div id="cf-info"></div>
+    <div class="cf-btns"><button id="cf-ok">Confirm</button><button id="cf-cancel">Done</button></div>
+  </div>
+
+  <!-- bottom row -->
+  <div id="bottom">
+    <div id="modebar">
+      <button id="btn-build" class="mode">
+        <span class="mi" data-icon="settle2"></span><span class="ml">Build</span>
+        <span class="rsmall"><span class="rbar"><span id="rb-fill"></span></span><span id="rb-label">Research</span></span>
+      </button>
+      <button id="btn-cmd" class="mode on">
+        <span class="mi" data-icon="soldier"></span><span class="ml">Command</span>
+        <span class="rsmall" id="cmd-label">Expand</span>
+      </button>
+    </div>
+
+    <div id="people" class="panel">
+      <div class="people-top">
+        <span class="ic big" data-icon="person"></span>
+        <div>
+          <div class="lbl" id="people-lbl">PEOPLE</div>
+          <div class="val big" id="val-people">0 / 0</div>
+          <div class="units" id="val-units"></div>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar"><div class="fill" id="people-fill"></div><div class="mid"></div></div>
+          <div class="bar-note" id="bar-note">regrows fastest at half full</div>
+        </div>
+        <div class="rate" id="people-rate"></div>
+      </div>
+    </div>
+
+    <div id="help" class="panel">
+      <div class="lbl">CONTROLS</div>
+      <div class="help-row"><b>Command</b> (Q): <b>click</b> past your border to expand · click a neighbour to attack it · <b>right-click</b> to send an expedition</div>
+      <div class="help-row"><b>Build</b> (B): pick a building, <b>click</b> or drag to place it, <b>Enter</b> or <b>Confirm</b> to build · <b>Esc</b> cancel</div>
+      <div class="help-row"><b>Drag</b> pan · <b>Scroll</b> zoom · <b>F</b> fire missiles · <b>X</b> drive · <b>Tab</b> next domain · <b>M</b> map · <b>H</b> home</div>
+      <div class="hover" id="hover-info">&nbsp;</div>
+    </div>
+  </div>
+
+  <!-- the build menu: research in progress, and everything you can build -->
+  <div id="buildmenu" class="panel sheet">
+    <div class="bm-head">
+      <div><div class="bm-title">Build</div><div class="bm-sub" id="bm-sub"></div></div>
+      <button class="x" id="bm-close" aria-label="Close">✕</button>
+    </div>
+    <div id="research-box"></div>
+    <div id="bm-grid"></div>
+  </div>
+
+  <!-- the command menu -->
+  <div id="cmdmenu" class="panel sheet">
+    <div class="bm-head">
+      <div><div class="bm-title">Command</div><div class="bm-sub" id="cm-sub"></div></div>
+      <button class="x" id="cm-close" aria-label="Close">✕</button>
+    </div>
+    <div class="cm-row cm-acts">
+      <button data-cmd="expand"><b>Expand</b><span>spend people on free land</span></button>
+      <button data-cmd="attack"><b>Attack</b><span>send troops at a nation</span></button>
+      <button data-cmd="expedition"><b>Expedition</b><span>found a new domain</span></button>
+      <button data-act="fire"><b>Fire</b><span>aim your missile silos</span></button>
+    </div>
+    <div class="cm-row"><span class="lbl">PEOPLE PER CLICK</span><div class="pcts" id="pct-buttons"></div><span class="send-n" id="send-n"></span></div>
+    <div class="cm-row"><span class="lbl">TROOPS PER ATTACK</span><div class="pcts" id="troop-buttons"></div><span class="send-n g" id="troop-n"></span></div>
+    <div class="cm-row"><button class="tog" id="recruit"></button><span class="cm-army" id="army-info"></span></div>
+    <div class="cm-row cm-misc">
+      <button data-act="drive" hidden>Drive</button><button data-act="next">Next domain</button><button data-act="map">Map</button>
+      <button data-act="home">Home</button><button data-act="new">New map</button>
+    </div>
+  </div>
+
+  <!-- a question (attack?) -->
+  <div id="modal"><div class="panel md-box"><div id="md-text"></div><div id="md-btns"></div></div></div>
+
+  <div id="loading"><div class="spin"></div>Generating world…</div>
+  <div id="tooltip"></div>
+  <div id="toast"></div>
+
+  <script src="game.js?v=1"></script>
+</body>
+</html>
