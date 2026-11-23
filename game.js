@@ -21,14 +21,18 @@ const CFG = {
   mapW: 1000, mapH: 1000,
   continentScale: 115,         // bigger = bigger continents (noise feature size, in tiles)
   climateScale: 150,           // bigger = larger desert regions
-  iceWall: { min: 2.5, extra: 4 },  // wall thickness in tiles: min + up to extra (wobbles around the rim)
+  iceWall: { min: 2.5, extra: 4 },
+  // Polar ice: an ice continent at the north and south poles (the top and bottom of the disk). Land further than
+  // `start` x the radius from the middle (north or south) is ice; its edge wanders by `wobble`, and a strait about
+  // `strait` x the radius wide is sunk in front of each cap so the ice reads as its own continent.
+  poles: { start: 0.83, wobble: 0.05, strait: 0.04 },  // wall thickness in tiles: min + up to extra (wobbles around the rim)
   waterFraction: 0.5,          // share of the disk (inside the wall) that is ocean
   mountainShare: 0.13,         // top X% of land by height becomes mountains
   desertShare: 0.24,           // driest X% of land becomes desert
 
   startPeople: 100, startRadius: 8,
   // Land holds the capacity: every owned land tile can support this many people...
-  landCap: { grass: 0.5, desert: 0.2, mountain: 0.1 },
+  landCap: { grass: 0.5, desert: 0.2, mountain: 0.1, polar: 0.06 },
   // ...but only if a settlement is within `reach` tiles of it. Each tile counts for its nearest settlement,
   // so settlements packed together share the same land. A settlement's level is read off the capacity it serves.
   // Capacity above `powerAbove` only counts with power (`cityUse` MW per settlement that big).
@@ -47,7 +51,7 @@ const CFG = {
   growthRate: 0.06, growthBase: 0.3,
 
   // people spent per tile claimed, by biome
-  tileCost: { grass: 0.5, desert: 1.5, mountain: 2.5 },
+  tileCost: { grass: 0.5, desert: 1.5, mountain: 2.5, polar: 3 },
   // how fast a push claims land: "work" per second; a tile takes (cost / grass cost) work
   pushWorkPerSec: budget => 4 + 3 * Math.sqrt(budget),
 
@@ -88,6 +92,9 @@ const CFG = {
                from: ['cabin', 'camp', 'derrick'],
                desc: 'Tap a cabin, camp or derrick to upgrade it: 3x the output and frees its workers, but runs on 4 MW. No power, no output.' },
     // transport: links between your domains. Goods, people and troops ride them.
+    // not a building on one tile: a span over the water, built by picking your coast and then the land across
+    bridge:  { cat: 'Transport', name: 'Bridge', span: true, tech: 'masonry', cost: { stone: 8 },
+               desc: 'Pick your own coast, then the land across the water. Stone for every tile of water, and each tile costs more than the last. Joins the land on both ends into one domain: roads, cars, troops and rail cross it. A bridge to free land claims where it lands.' },
     port:    { cat: 'Transport', name: 'Port', tech: 'sailing', cost: { wood: 25, stone: 10 }, link: 'sea',
                desc: 'On the coast. Opens a sea route to your nearest port. Ships carry goods, people and troops.' },
     station: { cat: 'Transport', name: 'Rail station', tech: 'steam', cost: { wood: 15, stone: 10, iron: 10 }, link: 'rail',
@@ -103,6 +110,15 @@ const CFG = {
                desc: '45 MW from a trickle of uranium (up to 0.03/s). No uranium, no power.' },
     solar:   { cat: 'Energy', name: 'Solar panel', tech: 'electricity', cost: { stone: 10, iron: 5 }, gen: 1.5,
                desc: '1.5 MW, free, forever. Each panel takes a tile you can\'t use for anything else.' },
+    // space: rockets fly from launch pads; ice drills on the polar caps make their fuel (oil does too, slower and dearer)
+    pad:     { cat: 'Space', name: 'Launch pad', tech: 'spaceflight', cost: { stone: 80, iron: 60 },
+               desc: 'Builds a rocket for 100 iron whenever it has none, then fuels it: from your ice drills, or failing that by burning oil. Tap a pad with a ready rocket to fly it.' },
+    drill:   { cat: 'Space', name: 'Ice drill', tech: 'spaceflight', cost: { stone: 20, iron: 25 }, use: 6,
+               desc: 'Only on polar ice. Splits ice into rocket fuel, 0.5 a second on full power, straight into the rockets on your launch pads. Uses 6 MW.' },
+    terraformer: { cat: 'Space', name: 'Terraformer', tech: 'terraform', cost: { stone: 80, iron: 120, uranium: 10 }, use: 20, reach: 16, rate: 3,
+               desc: 'Turns the dust within 16 tiles green, a few tiles a second on full power (20 MW): green land holds as many people as at home. Works on deserts anywhere.' },
+    lpad:    { cat: 'Space', name: 'Landing pad', tech: 'reusable', cost: { stone: 50, iron: 30 },
+               desc: 'Reusable rockets come down here after a run to orbit, unload, take on cargo for home and hop back to their launch pad.' },
     // military
     base:    { cat: 'Military', name: 'Military base', tech: 'warrior', cost: { wood: 30, stone: 20 }, base: true,
                desc: 'Trains people into military units. Units wait here until you build a fortress, then march to it. Stops when everything is full.' },
@@ -121,6 +137,19 @@ const CFG = {
   // Every player researches one tech at a time. Speed = perPerson x population (gold adds goldPts per unit mined).
   // A tech costs base x growth^(techs already known). `uses` are the resources it leans on: the next tech is
   // picked among the earliest ones you can research, preferring the ones that use what you produce most.
+  // Rockets: a launch pad builds one for `iron` when it has none, then fills its `tank`: from the domain's ice drills
+  // (drillFuel a second each, on full power) or, with no drills, by burning oil (oilFuel fuel for each oil, padOil oil a second).
+  // Flight, in tiles and seconds: gravity pulls toward the middle of the world (mu / r^2 past the rim), air thins out over
+  // `atm` tiles past the rim. A full tank is worth ve x ln(4) = 125 tiles/s, enough for orbit with a good gravity turn.
+  rocket: { iron: 100, ironReserve: 20, tank: 400, drillFuel: 0.5, oilFuel: 3, padOil: 1, oilKeep: 30,
+    flight: { mu: 1.08e6, atm: 120, scaleH: 35, drag: 0.008, dry: 1, wet: 3, ve: 90, thrust: 24, turn: 1.8, throttleRate: 0.8, lost: 40 } },
+  // Space stations: a rocket in orbit becomes one. It houses `cap` people a level (they count toward your research) and
+  // keeps a stock; supply rockets (or reusable rockets) bring `people` and `each` of wood, stone and iron per trip.
+  station: { cap: 20, people: 10, each: 25, keep: 50, trip: 15, expand: { stone: 60, iron: 60 }, research: 2 },
+  // Reusable rockets: bought at a launch pad. Each run: up to a station that needs supplies, down to a landing pad
+  // (or straight back), then a hop home. Each leg burns fuel; they refuel on their launch pad.
+  shuttle: { cost: { iron: 150, stone: 30, oil: 30 }, tank: 300, cargo: 60, people: 12, legs: { up: 110, down: 40, hop: 90, orbit: 20, trip: 140 },
+    time: { up: 12, down: 9, hop: 10, orbit: 6, trip: 0.6 }, turn: 3 },   // trip: to another world's landing pad (time: x that world's distance)
   research: { perPerson: 0.006, base: 60, growth: 1.2, goldPts: 4, aiMult: 0.5 },
   techs: [
     { id: 'warrior',     name: 'Warrior Code',      era: 0, uses: ['wood'],          tags: ['mil'],   req: [] },
@@ -144,27 +173,35 @@ const CFG = {
     { id: 'rocketry',    name: 'Rocketry',          era: 5, uses: ['oil', 'iron'],   tags: ['mil'],   req: ['flight'] },
     { id: 'fission',     name: 'Nuclear Fission',   era: 5, uses: ['iron', 'stone'], tags: ['econ'],  req: ['electricity'] },
     { id: 'nukes',       name: 'Nuclear Weapons',   era: 6, uses: ['uranium', 'oil'], tags: ['mil'],  req: ['fission', 'rocketry'] },
+    { id: 'spaceflight', name: 'Spaceflight',       era: 6, uses: ['iron', 'oil'],   tags: ['trans'], req: ['rocketry', 'electricity'] },
+    { id: 'reusable',    name: 'Reusable Rockets',  era: 7, uses: ['iron', 'oil'],   tags: ['trans'], req: ['spaceflight'] },
+    { id: 'domes',       name: 'Bubble Habitats',   era: 7, uses: ['stone', 'iron'], tags: ['econ'],  req: ['spaceflight'] },
+    { id: 'terraform',   name: 'Terraforming',      era: 8, uses: ['uranium', 'iron'], tags: ['econ'], req: ['domes', 'fission', 'reusable'] },
   ],
   // what each tech does besides unlocking buildings (multipliers stack). Shown in the unlock notification.
   techFx: {
-    wheel:        { road: { cargo: 2, speed: 1.25 }, note: 'Handcarts: your haulers carry twice as much' },
-    masonry:      { road: { cargo: 1.5, speed: 1.2 }, capMult: 0.25, note: 'Stone roads: carts are faster and carry more · walls between fortresses' },
-    sailing:      { note: 'Ships between your domains' },
+    wheel:        { note: 'Handcarts: upgrade your cars at any settlement' },
+    masonry:      { capMult: 0.25, note: 'Stone roads · walls between fortresses' },
+    sailing:      { note: 'Ports, and boats to buy for them' },
     metallurgy:   { unit: { hp: 1.8 }, note: 'Iron armour: units are 80% tougher' },
-    horses:       { unit: { speed: 1.6 }, road: { speed: 1.5 }, note: 'Cavalry and horse carts: troops and carts move faster' },
-    carriages:    { road: { cargo: 2 }, note: 'Carriages: carts carry twice as much again' },
-    shipbuilding: { sea: { cargo: 2 }, note: 'Bigger hulls: ships carry twice as much' },
+    horses:       { unit: { speed: 1.6 }, note: 'Cavalry: troops move faster · pack horses for your cars' },
+    carriages:    { note: 'Carriages for your cars' },
+    shipbuilding: { note: 'Galleons for your fleet' },
     gunpowder:    { unit: { atk: 1.5 }, note: 'Muskets: units hit 50% harder' },
     firearms:     { unit: { atk: 1.6 }, note: 'Rifles: units hit 60% harder' },
-    steam:        { sea: { speed: 1.7, cargo: 1.5 }, note: 'Steamships: ships are faster and carry more' },
+    steam:        { note: 'Steamships for your fleet · trains on your rail' },
     petroleum:    { note: 'Oil deposits appear on the map' },
     electricity:  { capMult: 0.25, note: 'Bases and fortresses hold more' },
-    automobile:   { unit: { speed: 1.8 }, road: { speed: 2, cargo: 1.5 }, fuel: true, note: 'Trucks and motorized infantry: much faster, but they burn oil' },
-    flight:       { note: 'Planes fly between any of your domains with an airport' },
+    automobile:   { unit: { speed: 1.8 }, fuel: true, note: 'Trucks for your cars, motorized infantry: much faster, but they burn oil' },
+    flight:       { note: 'Planes to buy: they fly between your airports' },
     armor:        { unit: { hp: 2, atk: 1.5 }, capMult: 0.25, fuel: true, note: 'Tanks: far tougher and stronger, but they burn oil' },
-    rocketry:     {},
+    rocketry:     { note: 'Jets for your planes' },
     fission:      { note: 'Uranium deposits appear on the map' },
     nukes:        { note: 'Your missile silos can carry a nuclear warhead (Command → Fire)' },
+    spaceflight:  { note: 'Launch pads and ice drills: fly rockets by hand into orbit and turn them into space stations' },
+    reusable:     { note: 'Landing pads, and reusable rockets that fly themselves between your pads and stations' },
+    domes:        { note: 'Colony ships: a launch pad can send settlers to the Moon or Aries, to live under domes' },
+    terraform:    { note: 'Terraformers slowly turn another world\'s land green and breathable' },
   },
   // military units: the newest kind you know is what your bases train (and your older units are re-equipped).
   units: [
@@ -186,6 +223,26 @@ const CFG = {
     kill: 0.08,                        // units one engaged unit kills per second, at equal strength
   },
   // links: what one vehicle carries per trip and how fast it goes (tiles/s), before tech
+  // Your fleet: every car, boat and plane is bought, and the more you have the more goods move. A kind's tiers open with
+  // tech; your fleet is upgraded only when you choose to (at a settlement, port or airport), one vehicle at a time
+  // as each one calls in at one, paying each one's `cost`. `fuel`: oil a second while it's moving (steamships burn wood
+  // before Petroleum). Out of fuel, a vehicle drops to the tier below until it calls in somewhere that has fuel again.
+  fleet: {
+    car: { name: 'cars', hub: 'settlement', offRoad: 0.5, start: 3, store: 80, tiers: [
+      { id: 'porter',   name: 'Porters',     tech: null,         cargo: 10, speed: 4,  cost: { wood: 8 } },
+      { id: 'handcart', name: 'Handcarts',   tech: 'wheel',      cargo: 16, speed: 5,  cost: { wood: 12 } },
+      { id: 'horse',    name: 'Pack horses', tech: 'horses',     cargo: 22, speed: 7,  cost: { wood: 10, wheat: 20 } },
+      { id: 'carriage', name: 'Carriages',   tech: 'carriages',  cargo: 36, speed: 8,  cost: { wood: 25, iron: 5 } },
+      { id: 'truck',    name: 'Trucks',      tech: 'automobile', cargo: 60, speed: 15, cost: { iron: 25, oil: 5 }, fuel: 0.03 } ] },
+    boat: { name: 'boats', hub: 'port', tiers: [
+      { id: 'sailboat',  name: 'Sailboats',  tech: 'sailing',      cargo: 30, speed: 6,  cost: { wood: 30 } },
+      { id: 'galleon',   name: 'Galleons',   tech: 'shipbuilding', cargo: 60, speed: 7.5, cost: { wood: 40, iron: 10 } },
+      { id: 'steamship', name: 'Steamships', tech: 'steam',        cargo: 90, speed: 12, cost: { iron: 35 }, fuel: 0.1, woodFuel: 0.12 } ] },
+    plane: { name: 'planes', hub: 'airport', tiers: [
+      { id: 'plane', name: 'Propeller planes', tech: 'flight',   cargo: 40, speed: 30, cost: { iron: 30, oil: 10 }, fuel: 0.3 },
+      { id: 'jet',   name: 'Jets',             tech: 'rocketry', cargo: 70, speed: 55, cost: { iron: 50, oil: 20 }, fuel: 0.5 } ] },
+    rail: { name: 'trains', tiers: [{ id: 'train', name: 'Trains', tech: 'steam', cargo: 60, speed: 14, cost: {} }] },
+  },
   transport: { road: { cargo: 8, people: 6, speed: 5 }, sea: { cargo: 25, people: 10, speed: 6 },
                rail: { cargo: 60, people: 20, speed: 14 }, air: { cargo: 30, people: 15, speed: 30 } },
   // food: every person eats `perPerson` wheat a second. A farm's field tile grows `perTile` a second (x farm level).
@@ -247,8 +304,11 @@ const CFG = {
 
   // rail: a new station links itself to the nearest station by the cheapest land route
   trackCostPerTile: { wood: 0.15, stone: 0.15 },
-  trackWeight: { grass: 1, desert: 1.5, mountain: 3 },   // track through mountains costs 3x
-  railMaxLength: 120,          // max weighted track length for one link
+  trackWeight: { grass: 1, desert: 1.5, mountain: 3, polar: 3 },   // track through mountains costs 3x
+  railMaxLength: 120,
+  // Bridges: tile k of water a bridge crosses costs `stone` + `grow` x (k - 1) stone, so a bridge of L tiles costs
+  // stone x L + grow x L(L-1)/2: 10 tiles = 125, 20 = 350, 30 = 675, 50 = 1625. At most `maxLen` tiles of water.
+  bridge: { stone: 8, grow: 1, maxLen: 50 },          // max weighted track length for one link
   seaMaxLength: 500,           // max sea route length (tiles)
   trainSpeed: 12, shipSpeed: 9,
 
@@ -669,6 +729,52 @@ Object.assign(SHAPES, {
   nuke: `<circle r="12" fill="#f2c14e" stroke="#141018" stroke-width="1.4"/><circle r="2.6" fill="#141018"/>` +
     [0, 120, 240].map(a => `<path d="M0 0 L-5 -9 A10.4 10.4 0 0 1 5 -9 Z" transform="rotate(${a}) translate(0 -1.5)" fill="#141018"/>`).join(''),
 });
+Object.assign(SHAPES, {
+  drill: `<rect x="-9" y="-8" width="22" height="22" fill="#000" opacity="0.2"/>
+    <rect x="-11" y="2" width="22" height="10" rx="2" fill="#dfe8ef" stroke="#3d4a56" stroke-width="1"/>
+    <circle cx="-5.5" cy="7" r="3" fill="#5fc4f0" stroke="#1d5a7a" stroke-width="0.8"/>
+    <rect x="3" y="4.5" width="6" height="5" rx="1" fill="#f2c14e" stroke="#5a4310" stroke-width="0.7"/>
+    <path d="M-6 2 L0 -12 L6 2" fill="none" stroke="#7a8794" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M-3.5 -4 H3.5" stroke="#7a8794" stroke-width="1.4"/>
+    <path d="M0 -12 V11" stroke="#2b3038" stroke-width="1.8"/><circle cx="0" cy="-12" r="1.8" fill="#5fc4f0" stroke="#1d5a7a" stroke-width="0.7"/>`,
+  pad: `<rect x="-11" y="-10" width="26" height="25" fill="#000" opacity="0.22"/>
+    <rect x="-13" y="-13" width="26" height="26" rx="2" fill="#b3b9be" stroke="#2b3038" stroke-width="1"/>
+    <path d="M-13 -3 H-8 M-13 3 H-8" stroke="#6b737b" stroke-width="1.2"/>
+    <circle cx="-1" r="8.5" fill="#8a9198" stroke="#f2c14e" stroke-width="2" stroke-dasharray="3 2"/>
+    <circle cx="-1" r="5" fill="#2f353b" stroke="#14171b" stroke-width="0.8"/><circle cx="-1" r="2" fill="#5fc4f0"/>
+    <rect x="8" y="-12" width="4" height="15" fill="#c94b3c" stroke="#5a1f18" stroke-width="0.8"/>
+    <path d="M8 -8 H12 M8 -4 H12 M8 0 H12" stroke="#5a1f18" stroke-width="0.7"/>
+    <rect x="6" y="7" width="6" height="5" rx="1" fill="#dfe8ef" stroke="#3d4a56" stroke-width="0.7"/>`,
+  rocket: `<ellipse cx="1.5" cy="12.5" rx="6.5" ry="2" fill="#000" opacity="0.25"/>
+    <path d="M-5 3 L-9.5 11 L-5 9.5 Z M5 3 L9.5 11 L5 9.5 Z" fill="#d64045" stroke="#5a1f18" stroke-width="0.8" stroke-linejoin="round"/>
+    <path d="M0 -14 C4 -10 5 -4 5 4 L5 10 L-5 10 L-5 4 C-5 -4 -4 -10 0 -14 Z" fill="#eef2f5" stroke="#2b3038" stroke-width="1"/>
+    <path d="M0 -14 C2.6 -11.5 3.6 -9 4.2 -7 L-4.2 -7 C-3.6 -9 -2.6 -11.5 0 -14 Z" fill="#d64045"/>
+    <path d="M2.6 -6 V9" stroke="#c4ccd3" stroke-width="1.4"/>
+    <circle cx="0" cy="-2" r="2" fill="#5fc4f0" stroke="#1d5a7a" stroke-width="0.8"/>
+    <path d="M-3 10 L-2.2 13 L2.2 13 L3 10 Z" fill="#59616b" stroke="#2b3038" stroke-width="0.6"/>`,
+  terraformer: `<rect x="-10" y="-8" width="24" height="22" fill="#000" opacity="0.22"/>
+    <rect x="-12" y="4" width="24" height="8" rx="2" fill="#c9ced6" stroke="#2b3038" stroke-width="1"/>
+    <path d="M-7 4 V-6 Q0 -14 7 -6 V4 Z" fill="#7ed37a" stroke="#2b5a2b" stroke-width="1"/>
+    <path d="M-3 -6 Q0 -10 3 -6" stroke="#d8ffd0" stroke-width="1.4" fill="none"/>
+    <path d="M-4 0 H4 M0 -4 V3" stroke="#2b5a2b" stroke-width="1"/>
+    <circle cx="-8.5" cy="8" r="1.4" fill="#5fc4f0"/><circle cx="8.5" cy="8" r="1.4" fill="#f2c14e"/>`,
+  lpad: `<rect x="-11" y="-10" width="26" height="25" fill="#000" opacity="0.22"/>
+    <rect x="-13" y="-13" width="26" height="26" rx="13" fill="#7d858c" stroke="#2b3038" stroke-width="1"/>
+    <circle r="10" fill="none" stroke="#f2c14e" stroke-width="1.6" stroke-dasharray="3 2.2"/>
+    <path d="M-5 -6 V6 M5 -6 V6 M-5 0 H5" stroke="#f4f6f8" stroke-width="2.4" stroke-linecap="round"/>
+    <circle cx="-9.5" cy="-9.5" r="1.3" fill="#ff5a4a"/><circle cx="9.5" cy="9.5" r="1.3" fill="#7be08a"/>`,
+  shuttle: `<path d="M-5 4 L-10 12 L-5 10.5 Z M5 4 L10 12 L5 10.5 Z" fill="#59616b" stroke="#2b3038" stroke-width="0.8" stroke-linejoin="round"/>
+    <path d="M0 -14 C4 -10 5 -4 5 4 L5 11 L-5 11 L-5 4 C-5 -4 -4 -10 0 -14 Z" fill="#f4f6f8" stroke="#2b3038" stroke-width="1"/>
+    <path d="M-5 -1 H5 M-5 5 H5" stroke="#2b3038" stroke-width="0.9"/>
+    <path d="M0 -14 C2.6 -11.5 3.6 -9 4.2 -7 L-4.2 -7 C-3.6 -9 -2.6 -11.5 0 -14 Z" fill="#2b3038"/>
+    <circle cx="0" cy="-3" r="1.7" fill="#5fc4f0" stroke="#1d5a7a" stroke-width="0.7"/>
+    <path d="M-3 11 L-2.2 14 L2.2 14 L3 11 Z" fill="#59616b" stroke="#2b3038" stroke-width="0.6"/>`,
+  // little people at work: a builder (hard hat, hammer), a lumberjack (axe), a miner (pick), a farmer (scythe)
+  builder: pix(['..YY..', '.YYYY.', '..SS..', '.OOOO.H', 'OOOOOOH', '.OOOO.H', '.B..B..', '.B..B..'], { Y: '#f2c14e', S: '#e0b48c', O: '#e07a2e', B: '#2b3038', H: '#8d969e' }),
+  lumberjack: pix(['..RR..', '.RRRR.', '..SS..', '.RKRK.A', 'RKRKRKA', '.RKRK.A', '.B..B..', '.B..B..'], { R: '#b8432f', K: '#2b3038', S: '#e0b48c', B: '#3d2a1c', A: '#8d969e' }),
+  miner: pix(['..GG..', '.GLLG.', '..SS..', '.BBBB.P', 'BBBBBBP', '.BBBB.P', '.K..K..', '.K..K..'], { G: '#59616b', L: '#ffe066', S: '#e0b48c', B: '#5b8fbf', K: '#2b3038', P: '#a0683e' }),
+  farmer: pix(['.TTTT.', 'TTTTTT', '..SS..', '.GGGG.C', 'GGGGGGC', '.GGGG.C', '.B..B..', '.B..B..'], { T: '#e8c652', S: '#e0b48c', G: '#4f8f3f', B: '#6b4222', C: '#c9ced6' }),
+});
 const SVG = {}, SPR = {}, RAS = {};
 for (const [name, inner] of Object.entries(SHAPES)) {
   SVG[name] = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 -15 30 30" width="64" height="64">${inner}</svg>`;
@@ -689,10 +795,10 @@ const DEP_RES = { forest: 'wood', stone: 'stone', iron: 'iron', gold: 'gold', oi
 const DEP_KINDS = ['forest', 'stone', 'iron', 'gold', 'oil', 'wheat', 'uranium'];
 const DEP_COLOR = { forest: '#3f7a35', stone: '#a7adb3', iron: '#a8654a', gold: '#e8c040', oil: '#23262b', wheat: '#e0bc4e', uranium: '#7ee05a' };
 const BLD_CODE = { settlement: 1, station: 3, port: 4, burner: 6, rig: 7, solar: 8, cabin: 9, camp: 10, silo: 11, mortar: 12, airdef: 13, turret: 14,
-  farm: 15, farm2: 16, farm3: 17, derrick: 18, oilplant: 19, airport: 20, base: 21, fort: 22, reactor: 23 };
+  farm: 15, farm2: 16, farm3: 17, derrick: 18, oilplant: 19, airport: 20, base: 21, fort: 22, reactor: 23, pad: 24, drill: 25, lpad: 26, terraformer: 27 };
 const BLD_COLOR = { settlement: '#de6d4c', station: '#8f979f', port: '#a67c52',
   burner: '#8a5a44', rig: '#e0a93a', solar: '#1d3e78', cabin: '#a0683e', camp: '#c9a66b', silo: '#6c7480', mortar: '#8f7a52', airdef: '#4f7f8c', turret: '#6f7a4a',
-  farm: '#d9b24a', farm2: '#e0bc4e', farm3: '#e8c652', derrick: '#2b2f36', oilplant: '#4a4f57', airport: '#59616b', base: '#6f7a4a', fort: '#9aa1a8', reactor: '#cfd6dc' };
+  farm: '#d9b24a', farm2: '#e0bc4e', farm3: '#e8c652', derrick: '#2b2f36', oilplant: '#4a4f57', airport: '#59616b', base: '#6f7a4a', fort: '#9aa1a8', reactor: '#cfd6dc', pad: '#b3b9be', drill: '#dfe8ef', lpad: '#8f979f', terraformer: '#5aa05a' };
 // which building stands on tile i (an index kept beside the list; rebuilt when anything is removed)
 let bldVer = 0, bldMapVer = -1;
 const bldMap = new Map();
@@ -721,9 +827,9 @@ const RESOURCES = ['wood', 'stone', 'iron', 'oil', 'wheat', 'uranium'];   // wha
 // ======================================================================
 // world state
 // ======================================================================
-const OCEAN = 0, GRASS = 1, DESERT = 2, MOUNTAIN = 3, ICE = 4, VOID = 5;
-const BIOME_NAME = ['Ocean', 'Grassland', 'Desert', 'Mountains', 'Ice wall', 'Space'];
-const BIOME_KEY = [null, 'grass', 'desert', 'mountain', null, null];
+const OCEAN = 0, GRASS = 1, DESERT = 2, MOUNTAIN = 3, ICE = 4, VOID = 5, POLAR = 6;   // ICE: the rim wall; POLAR: the polar ice caps (land)
+const BIOME_NAME = ['Ocean', 'Grassland', 'Desert', 'Mountains', 'Ice wall', 'Space', 'Polar ice'];
+const BIOME_KEY = [null, 'grass', 'desert', 'mountain', null, null, 'polar'];
 
 const params = new URLSearchParams(location.search);
 // autosave lives in this browser (localStorage). Opening the game without ?seed= resumes it.
@@ -733,24 +839,24 @@ const SAVED = (() => { try { const v = JSON.parse(localStorage.getItem(SAVE_KEY)
 const SEED = params.has('seed') ? (parseInt(params.get('seed'), 10) || 1) : SAVED ? SAVED.seed : ((Math.random() * 1e6) | 0);
 const RESUME = SAVED && SAVED.seed === SEED ? SAVED : null;
 const W = CFG.mapW, H = CFG.mapH, N = W * H;
-const rng = mulberry32(SEED);
+let rng = mulberry32(SEED);
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 const DIRS8 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [1, 1, 1], [1, -1, 1], [-1, 1, 1], [-1, -1, 1]];
 const idx = (x, y) => y * W + x;
 const inb = (x, y) => x >= 0 && y >= 0 && x < W && y < H;
 
-const elev = new Float32Array(N), moist = new Float32Array(N), detail = new Float32Array(N);
-const oceanDist = new Uint8Array(N);
-const iceT = new Float32Array(N);          // 0 = inner face of the ice wall, 1 = outer edge
-const biome = new Uint8Array(N);
-const isLand = i => biome[i] >= GRASS && biome[i] <= MOUNTAIN;
+let elev = new Float32Array(N), moist = new Float32Array(N), detail = new Float32Array(N);
+let oceanDist = new Uint8Array(N);
+let iceT = new Float32Array(N);          // 0 = inner face of the ice wall, 1 = outer edge
+let biome = new Uint8Array(N);
+const isLand = i => (biome[i] >= GRASS && biome[i] <= MOUNTAIN) || biome[i] === POLAR;
 const DISK = { cx: W / 2, cy: H / 2, R: Math.min(W, H) / 2 - 2 };   // outer edge of the ice wall
-const landmass = new Int32Array(N).fill(-1);
-const owner = new Uint8Array(N);
-const depositOf = new Int16Array(N).fill(-1);
-const building = new Uint8Array(N);
-const aiOf = new Uint8Array(N);              // which AI nation owns each tile (0 = none; else nation id + 1)
-const deposits = [];
+let landmass = new Int32Array(N).fill(-1);
+let owner = new Uint8Array(N);
+let depositOf = new Int16Array(N).fill(-1);
+let building = new Uint8Array(N);
+let aiOf = new Uint8Array(N);              // which AI nation owns each tile (0 = none; else nation id + 1)
+let deposits = [];
 let seaLevel = 0, mtnLevel = 0, maxElev = 1;
 let spawn = { x: 0, y: 0 };
 let capitalTile = 0;
@@ -763,9 +869,14 @@ const game = {
   buildings: [], links: [],
   hubs: { road: [], sea: [], rail: [], air: [] },   // ports, stations, airports (tiles)
   pushes: [], expeditions: [], floats: [],
-  convoys: [],                     // haulers and deliveries on the move
+  cars: [],                        // your cars (porters, carts, horses, carriages, trucks), each with its job
+  fleetTarget: { car: 0, boat: 0, plane: 0 },   // the tier you've ordered each kind of vehicle upgraded to
   connects: [],                    // roads you built out to your buildings
   walls: [],                       // walls you built between forts
+  puffs: [],                       // dust clouds where a building has just gone up
+  flights: [], orbitals: [], supplyRuns: [], shuttles: [], flying: null,
+  colonyShips: [], colonyPick: false, colonyFrom: null,   // colony ships on their way to another world; picking where one lands   // rockets in flight, space stations, supply rockets, reusable rockets
+  bridges: [],                     // { s, b, tiles, len }: from your land tile s over the water to land tile b
   warhead: 'conventional',         // what your next missile carries
   wallFrom: -1,                    // the fort you're building a wall from (waiting for you to pick the other)
   sendPct: 25, troopPct: 50, tool: null, netDirty: true,
@@ -781,8 +892,12 @@ const game = {
   raids: [],                       // waves of a nation's troops pushing into your land
   driving: null,                   // the expedition you're steering right now
   notes: [],                       // notifications (tech discoveries)
+  dip: { op: {}, wars: new Set() },// opinions between every pair of players, and wars between nations
+  alliances: [],                   // { id, name, leader, members: ['P' or nation ids] }
+  autoDefend: true,                // your forts send troops to meet invaders by themselves
+  lost: new Map(),                 // tiles invaders took from you (and when): your defenders take them back
 };
-const frontier = new Set();   // unowned land tiles touching our territory
+let frontier = new Set();   // unowned land tiles touching our territory
 
 // ======================================================================
 // map generation
@@ -790,6 +905,8 @@ const frontier = new Set();   // unowned land tiles touching our territory
 function generateTerrain() {
   const s = SEED, { cx, cy, R } = DISK;
   const inside = new Uint8Array(N);   // 1 = inside the ice wall (land or ocean)
+  const polar = new Uint8Array(N);    // 1 = inside a polar ice cap
+  const P = CFG.poles, strait = R * P.strait;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const i = idx(x, y);
     detail[i] = fbm(x / 5, y / 5, s + 33, 3);
@@ -808,27 +925,33 @@ function generateTerrain() {
     // land thins out toward the wall, so the rim is mostly a ring of sea (with some coasts reaching the ice)
     const edge = clamp((R - wall - r) / (R * 0.07), 0, 1);
     e = e * (0.7 + 0.3 * edge) - (1 - edge) * 0.09;
+    // polar caps: how far this tile lies inside its cap (the cap line wanders along x)
+    const line = R * (P.start + (fbm(x / 90, dy < 0 ? 3.5 : 9.5, s + 91, 3) - 0.5) * 2 * P.wobble);
+    const pd = Math.abs(dy) - line + (fbm(x / 18, y / 18, s + 93, 3) - 0.5) * R * 0.05;
+    if (pd > 0) polar[i] = 1;
+    else if (pd > -strait) e -= 0.22 * (1 + pd / strait);   // sink the land in front of a cap into a strait
     elev[i] = e;
     moist[i] = fbm(x / CFG.climateScale, y / CFG.climateScale, s + 77, 4);
   }
   const sample = [];
   for (let guard = 0; sample.length < 30000 && guard < 400000; guard++) {
     const i = (rng() * N) | 0;
-    if (inside[i]) sample.push(elev[i]);
+    if (inside[i] && !polar[i]) sample.push(elev[i]);
   }
   sample.sort((a, b) => a - b);
   seaLevel = sample[Math.floor(sample.length * CFG.waterFraction)];
 
   const landE = [], landM = [];
-  for (let i = 0; i < N; i++) if (inside[i] && elev[i] > seaLevel) { landE.push(elev[i]); landM.push(moist[i]); }
+  for (let i = 0; i < N; i++) if (inside[i] && !polar[i] && elev[i] > seaLevel) { landE.push(elev[i]); landM.push(moist[i]); }
   landE.sort((a, b) => a - b); landM.sort((a, b) => a - b);
   mtnLevel = landE[Math.floor(landE.length * (1 - CFG.mountainShare))];
   maxElev = landE[landE.length - 1];
-  const dryLevel = landM[Math.floor(landM.length * CFG.desertShare)];
+  const dryLevel = landM[Math.min(landM.length - 1, Math.floor(landM.length * CFG.desertShare))];
 
   for (let i = 0; i < N; i++) {
     if (!inside[i]) continue;
-    if (elev[i] <= seaLevel) biome[i] = OCEAN;
+    if (polar[i]) biome[i] = POLAR;
+    else if (elev[i] <= seaLevel) biome[i] = OCEAN;
     else if (elev[i] >= mtnLevel) biome[i] = MOUNTAIN;
     else if (moist[i] <= dryLevel) biome[i] = DESERT;
     else biome[i] = GRASS;
@@ -933,7 +1056,7 @@ function sowFields(i) {
   const b = buildingAt(i), side = sideOf(i), tiles = [];
   if (!b || b.field != null) return;
   eachInReach(i, t => {
-    if (t === i || depositOf[t] >= 0 || building[t] || !isLand(t) || biome[t] === MOUNTAIN || sideOf(t) !== side) return;
+    if (t === i || depositOf[t] >= 0 || building[t] || !isLand(t) || biome[t] === MOUNTAIN || biome[t] === POLAR || sideOf(t) !== side) return;
     tiles.push(t);
   }, CFG.wheat.radius);
   b.field = deposits.length;
@@ -1045,7 +1168,7 @@ function flushLayer(L) {
   L.g.putImageData(L.img, 0, 0, L.x0, L.y0, L.x1 - L.x0 + 1, L.y1 - L.y0 + 1);
   L.dirty = false;
 }
-const fillLayer = makeLayer(), borderLayer = makeLayer();
+let fillLayer = makeLayer(), borderLayer = makeLayer();
 const PIXEL_BORDER_BELOW = 6;   // zoom where the border switches from pixels to lines
 const COL = {
   fill: [47, 125, 225, 72], border: [28, 98, 214, 230],
@@ -1129,8 +1252,8 @@ function addTileStats(c, i) {
 // name, people and resources. Links move people and cargo between them; when two
 // of your countries' borders touch, they merge into one.
 // ======================================================================
-const comp = new Int32Array(N).fill(-1);        // territory piece id per owned tile
-const countryOf = new Int16Array(N).fill(-1);   // which of your countries owns each tile
+let comp = new Int32Array(N).fill(-1);        // territory piece id per owned tile
+let countryOf = new Int16Array(N).fill(-1);   // which of your countries owns each tile
 function countryName(id) {
   const r = mulberry32(Math.floor(hash2(SEED, id + 1, 4242) * 4294967296));
   const short = makeName(r);
@@ -1184,7 +1307,7 @@ function newMind(k, r) {
   }
   const base = P[persDeck.pop()], pers = { ...base };
   for (const key of ['aggression', 'military', 'raidEvery', 'raidShare', 'expand', 'research', 'defense']) pers[key] = base[key] * (0.8 + r() * 0.4);
-  return { pers, R: new Set(['warrior']), rpts: r() * 30, rcur: null, units: 10 + Math.round(r() * 10) };
+  return { pers, R: new Set(['warrior']), rpts: r() * 30, rcur: null, units: 10 + Math.round(r() * 10), stock: { wood: 80, stone: 80, oil: 0, wheat: 100, uranium: 0 } };
 }
 function spawnNations() {
   const r = mulberry32(Math.floor(hash2(SEED, 77, 31) * 4294967296));
@@ -1240,6 +1363,7 @@ function scanNationTiles() {
   }
 }
 function recomputeNations() {
+  if (WORLD) return;                               // the nations live at home
   for (const n of game.nations) n.cap = 0;
   for (const b of game.buildings) if (b.type === 'settlement' && aiOf[b.i]) game.nations[aiOf[b.i] - 1].cap += b.base || 0;
   for (const n of game.nations) n.ironCap = CFG.storage.iron.base + CFG.storage.iron.perCap * n.cap;
@@ -1282,6 +1406,7 @@ function aiClaim(n, i) {
 // a nation takes one of your tiles: the land, and anything built on it, is now theirs
 function aiTake(n, i) {
   const x = i % W, y = (i / W) | 0, c = countryAt(i);
+  if (c) game.lost.set(i, game.time);              // yours until a moment ago: your troops may take it back
   loseSettlement(i);                               // a captured settlement's people are theirs now
   const lost = buildingAt(i);
   if (lost && underway(lost)) removeBuilding(i);   // a half-built site is simply lost
@@ -1329,8 +1454,156 @@ function aiSpot(n, px, py, rad, rnd = Math.random) {
 function provoke(n) {
   if (!n || n.hostile || !n.alive) return;
   n.hostile = true;
+  addOp('P', n.id, -35);
   if (game.started) toast(`${n.full} is now at war with you: its missile silos will fire on your buildings.`);
+  callAllies(n.id, 'P');                           // its allies may come to its aid
 }
+// ======================================================================
+// diplomacy: every pair of players (you are 'P', nations by id) has an opinion of each other (-100..100),
+// may be at war, and may share an alliance. Nations trade, ally, make peace and turn on each other by personality.
+// ======================================================================
+const opKey = (a, b) => (String(a) < String(b) ? `${a}|${b}` : `${b}|${a}`);
+const getOp = (a, b) => game.dip.op[opKey(a, b)] ?? 0;
+function addOp(a, b, d) { const k = opKey(a, b); game.dip.op[k] = clamp((game.dip.op[k] ?? 0) + d, -100, 100); }
+const nameOf = id => (id === 'P' ? 'you' : game.nations[id].full);
+const shortOf = id => (id === 'P' ? 'you' : game.nations[id].short);
+// at war: you and a nation (its hostile flag), or two nations
+function atWar(a, b) {
+  if (a === 'P') return !!game.nations[b].hostile;
+  if (b === 'P') return !!game.nations[a].hostile;
+  return game.dip.wars.has(opKey(a, b));
+}
+function setWar(a, b, on) {
+  if (a === 'P' || b === 'P') { const n = game.nations[a === 'P' ? b : a]; n.hostile = on; if (!on) game.raids = game.raids.filter(r => r.n !== n.id); return; }
+  if (on) game.dip.wars.add(opKey(a, b)); else game.dip.wars.delete(opKey(a, b));
+}
+const allianceOf = id => game.alliances.find(al => al.members.includes(id)) || null;
+const allied = (a, b) => { const al = allianceOf(a); return !!al && al.members.includes(b); };
+const ALLIANCE_NAMES = ['Northern Pact', 'River Accord', 'Iron League', 'Sun Concord', 'Free Compact', 'Harbor Union', 'Mountain Covenant', 'Grand Entente'];
+function makeAlliance(leader, other) {
+  const al = { id: game.alliances.length ? Math.max(...game.alliances.map(a => a.id)) + 1 : 0, leader, members: [leader, other] };
+  al.name = `the ${ALLIANCE_NAMES[al.id % ALLIANCE_NAMES.length]}`;
+  game.alliances.push(al);
+  for (const m of al.members) for (const o of al.members) if (m !== o && atWar(m, o)) setWar(m, o, false);
+  return al;
+}
+function joinAlliance(al, id) {
+  if (al.members.includes(id)) return;
+  for (const m of al.members) { if (atWar(m, id)) setWar(m, id, false); addOp(m, id, 15); }
+  al.members.push(id);
+}
+// leave (or, for its founder, disband) an alliance; members think less of whoever walks out
+function leaveAlliance(id, betray = false) {
+  const al = allianceOf(id);
+  if (!al) return;
+  for (const m of al.members) if (m !== id) addOp(m, id, betray ? -60 : -20);
+  if (betray) for (const n of game.nations) if (!al.members.includes(n.id)) addOp(n.id, id, -15);   // word gets around
+  if (al.leader === id || al.members.length <= 2) game.alliances = game.alliances.filter(a => a !== al);
+  else al.members = al.members.filter(m => m !== id);
+}
+// someone attacked `victim`: its allies may declare war on the attacker
+function callAllies(victim, attacker) {
+  const al = allianceOf(victim);
+  if (!al) return;
+  for (const m of al.members) {
+    if (m === victim || m === attacker || atWar(m, attacker) || allied(m, attacker)) continue;
+    if (m === 'P') { notify(`🛡 ${nameOf(victim)} is under attack`, `${nameOf(attacker)[0].toUpperCase() + nameOf(attacker).slice(1)} attacked your ally. Declare war on them from the diplomacy menu if you want to help.`); continue; }
+    const n = game.nations[m];
+    if (Math.random() < 0.4 + getOp(m, victim) / 200 + (n.pers.aggression > 0.06 ? 0.2 : 0)) {
+      setWar(m, attacker, true); addOp(m, attacker, -30);
+      if (attacker === 'P') toast(`${n.full} joins its ally ${shortOf(victim)} and declares war on you!`);
+      else if (victim === 'P') toast(`Your ally ${n.full} comes to your aid and declares war on ${shortOf(attacker)}.`);
+    }
+  }
+}
+// ---------- trade: what things are worth to a nation ----------
+const PRICE = { wood: 1, stone: 1, iron: 2.5, oil: 4, wheat: 0.6, uranium: 12 };
+// the land a settlement serves: tiles of its owner within its reach, nearer to it than to any other settlement of theirs
+function settlementLand(b) {
+  const side = sideOf(b.i), R = CFG.settlement.reach, bx = b.i % W, by = (b.i / W) | 0, others = game.buildings.filter(q => q !== b && q.type === 'settlement' && sideOf(q.i) === side);
+  const out = [];
+  for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+    const x = bx + dx, y = by + dy;
+    if (!inb(x, y) || dx * dx + dy * dy > R * R) continue;
+    const t = idx(x, y);
+    if (sideOf(t) !== side) continue;
+    const d = dx * dx + dy * dy;
+    if (others.some(q => (q.i % W - x) ** 2 + (((q.i / W) | 0) - y) ** 2 < d)) continue;
+    out.push(t);
+  }
+  return out;
+}
+function settlementValue(b) { const land = settlementLand(b).length; return 60 + land * 2.5 + (owner[b.i] ? (countryAt(b.i) || {}).people || 0 : 0) * 0.1; }
+function offerValue(side) {
+  let v = 0;
+  for (const r in side.res || {}) v += (side.res[r] || 0) * (PRICE[r] || 1);
+  for (const t of side.towns || []) { const b = buildingAt(t); if (b) v += settlementValue(b); }
+  return v;
+}
+// a nation's answer to your offer: { accept, why }. It weighs what it gets against what it gives, more generously
+// the more it likes you; it never gives what it doesn't have, and parts with land only reluctantly.
+function aiConsider(n, offer) {
+  const op = getOp('P', n.id), get = offerValue(offer.give), give = offerValue(offer.ask);
+  for (const r in offer.ask.res || {}) if ((offer.ask.res[r] || 0) > (r === 'iron' ? n.iron || 0 : (n.stock || {})[r] || 0)) return { accept: false, why: `It doesn't have ${offer.ask.res[r]} ${r} to give.` };
+  if (n.hostile) return { accept: false, why: "It won't trade with you while you're at war. Ask for peace first." };
+  const landPenalty = (offer.ask.towns || []).length ? 1.6 - op / 250 : 1;
+  const greed = (n.pers.id === 'opportunist' ? 1.25 : n.pers.id === 'scholar' ? 0.95 : 1.1) * landPenalty;
+  const ok = get * (1 + op / 200) >= give * greed - 5;
+  if (ok) return { accept: true, why: op > 30 ? 'A pleasure doing business with a friend.' : 'Agreed.' };
+  const short = Math.ceil((give * greed - 5) / (1 + op / 200) - get);
+  return { accept: false, why: `Not enough in it for them (worth about ${Math.max(1, short)} more to them${(offer.ask.towns || []).length ? '; land is dear' : ''}).` };
+}
+// carry out a trade between you (the domain nearest them) and a nation
+function doTrade(n, offer) {
+  const C = nearestDomain(n.lx, n.ly);
+  for (const r in offer.give.res || {}) { const k = Math.min(offer.give.res[r] || 0, Math.max(0, C.res[r])); C.res[r] -= k; if (r === 'iron') n.iron = (n.iron || 0) + k; else n.stock[r] = (n.stock[r] || 0) + k; }
+  for (const r in offer.ask.res || {}) { const k = offer.ask.res[r] || 0; if (r === 'iron') n.iron -= k; else n.stock[r] -= k; C.res[r] += k; }
+  for (const t of offer.give.towns || []) handOver(t, n);
+  for (const t of offer.ask.towns || []) handOver(t, 'P', C);
+  addOp('P', n.id, 6 + Math.min(20, (offerValue(offer.give) - offerValue(offer.ask) * 0.8) / 20));
+  (n.trades || (n.trades = {})).P = Math.min(25, ((n.trades || {}).P || 0) + 3);   // a trading partner earns lasting trust
+  game.bldDirty = true; game.landDirty = true;
+}
+// a settlement (and the land it serves) changes hands
+function handOver(t, to, C = null) {
+  const b = buildingAt(t);
+  if (!b) return;
+  const land = settlementLand(b);
+  if (to === 'P') { const dom = C || nearestDomain(t % W, (t / W) | 0); for (const i of land) claim(i, dom.id, true); }
+  else for (const i of land) if (owner[i]) aiTake(to, i);
+}
+function nearestDomain(x, y) {
+  let best = null, bd = Infinity;
+  for (const c of game.countries) if (c.alive && c.tiles) { const d = Math.hypot(c.lx - x, c.ly - y); if (d < bd) { bd = d; best = c; } }
+  return best || activeCountry();
+}
+// a nation asked for peace: it agrees if the war has cost it, it likes you well enough, or it's simply not a warlord
+function aiPeace(n) {
+  if (!n.hostile) return { accept: true, why: "You're not at war." };
+  const op = getOp('P', n.id), weary = (n.lost || 0) / Math.max(10, n.units + (n.lost || 0)), stronger = n.units * unitStats(n.R).power > yourStrength() * 1.5;
+  let score = op / 100 + weary * 1.5 - (stronger ? 0.4 : 0) - (n.pers.id === 'warlord' ? 0.5 : 0) + (game.time - (n.warSince || 0) > 240 ? 0.3 : 0);
+  if (score > 0.15) { setWar('P', n.id, false); addOp('P', n.id, 10); n.lost = 0; return { accept: true, why: 'Peace it is.' }; }
+  return { accept: false, why: stronger ? 'They think they are winning.' : 'They are not ready to forgive you yet.' };
+}
+// you asked a nation for an alliance (a new one led by you, or into yours, or into theirs)
+function aiAlly(n, mode) {
+  const op = getOp('P', n.id);
+  if (n.hostile) return { accept: false, why: 'Make peace first.' };
+  const mine = allianceOf('P'), theirs = allianceOf(n.id);
+  const need = n.pers.id === 'warlord' ? 55 : n.pers.id === 'turtle' ? 25 : 35;
+  const enemiesInCommon = game.nations.some(m => m !== n && m.hostile && atWar(n.id, m.id)) ? 20 : 0;
+  if (op + enemiesInCommon < need) return { accept: false, why: `They don't trust you enough yet (opinion ${Math.round(op)}, they want ${need}). Trades and gifts help.` };
+  if (mode === 'join') {
+    if (!theirs) return { accept: false, why: 'They are not in an alliance.' };
+    if (mine) return { accept: false, why: `Leave ${mine.name} first.` };
+    joinAlliance(theirs, 'P'); return { accept: true, why: `You joined ${theirs.name}.` };
+  }
+  if (theirs && theirs !== mine) return { accept: false, why: `They are already in ${theirs.name}. Ask to join it instead.` };
+  if (mine) { joinAlliance(mine, n.id); return { accept: true, why: `${n.short} joined ${mine.name}.` }; }
+  const al = makeAlliance('P', n.id);
+  return { accept: true, why: `You founded ${al.name} together.` };
+}
+
 // a nation's own research: it leans toward the kind of tech its personality likes
 function aiResearch(n, dt) {
   if (!n.rcur) n.rcur = pickTech(n.R, t => (t.tags.includes(n.pers.prefer) ? 0.6 : 0.2) + Math.random() * 0.15);
@@ -1410,10 +1683,10 @@ function aiThink(n) {
   if (!n.hostile && touching) {
     let why = null;
     if ((n.stuck || 0) >= A.boxedThinks) why = 'has run out of room and declared war on you!';
-    else if (Math.random() < P.aggression * 0.5) why = P.id === 'raider' ? 'is raiding your border!' : 'has turned on you: its troops are massing at your border.';
+    else if (Math.random() < P.aggression * 0.5 * (getOp('P', n.id) > 40 ? 0.1 : getOp('P', n.id) > 10 ? 0.4 : getOp('P', n.id) < -40 ? 1.6 : 1)) why = P.id === 'raider' ? 'is raiding your border!' : 'has turned on you: its troops are massing at your border.';
     else if (P.strikesWeak && n.units * unitStats(n.R).power > yourStrength() * 1.6 + 10 && Math.random() < 0.15) why = 'smells weakness and has declared war on you!';
     else if (P.id === 'scholar' && n.R.size >= game.research.done.size + 3 && Math.random() < 0.1) why = 'is sure its science gives it the edge, and has declared war!';
-    if (why) { n.hostile = true; toast(`${n.full} (${P.name}) ${why}`); }
+    if (why) { n.hostile = true; n.warSince = game.time; addOp('P', n.id, -25); toast(`${n.full} (${P.name}) ${why}`); callAllies('P', n.id); }
   }
   // at war: send a wave of troops into your land, aimed at your nearest settlement
   const ready = n.units >= Math.max(8, aiUnitCap(n) * 0.35);
@@ -1470,7 +1743,11 @@ function stepRaid(r, dt) {
   if (!cands.length) { r.done = true; n.units += r.budget; return; }
   if (r.lx == null) { r.lx = cands[0].f % W + 0.5; r.ly = ((cands[0].f / W) | 0) + 0.5; }
   const C = cands[0].C, us = unitStats(), them = nationStats(n);
-  const def = C ? defenders(C) : [], have = def.reduce((a, b) => a + b.units, 0);
+  if (C) r.dom = C.id;
+  // a fort right by the fighting shoots from its walls (the rest of your troops march out: see autoDefend)
+  const def = garrisons().filter(b => (b.units || 0) > 0 && tileDist(b.i, r.lx, r.ly) <= CFG.walls.fortReach + 3), have = def.reduce((a, b) => a + b.units, 0);
+  // troops that marched out to meet this wave hold up its advance while they fight it
+  const field = game.attacks.filter(q => q.defend && q.nation === n.id && q.units >= 0.5 && Math.hypot(q.lx - r.lx, q.ly - r.ly) < 30).reduce((t, q) => t + q.units, 0);
   const eng = Math.min(r.budget, have, 25 + r.budget * 0.5);
   if (have >= 0.5) {                               // your garrison comes out to meet them
     const k = M.kill * dt * eng;
@@ -1479,7 +1756,7 @@ function stepRaid(r, dt) {
     r.budget -= ourKill; takeDefenders(def, theirKill);
     r.killed = (r.killed || 0) + ourKill; r.lost = (r.lost || 0) + theirKill;
   }
-  const odds = r.budget / (r.budget + (have >= 0.5 ? eng * 1.15 : 0) + 1e-6);
+  const odds = r.budget / (r.budget + (have >= 0.5 ? eng * 1.15 : 0) + field * 1.5 + 1e-6);
   r.work += (1.5 + 1.2 * Math.sqrt(Math.max(0, r.budget))) * odds * A.raidSpeed * 2 * dt;
   for (const c of cands) {
     if (r.work < 1 || r.budget < 0.5) break;
@@ -1535,7 +1812,7 @@ const newPower = () => ({ burners: 0, solar: 0, oilplants: 0, reactors: 0, need:
 const freePeople = c => Math.max(0, c.people - c.pw.workers);
 function newCountry({ people = 0, res = {} } = {}) {
   const id = game.countries.length;
-  const c = { id, ...countryName(id), people, cap: 0, growth: 0, tier: 0, geo: { coast: 0, mtn: 0, desert: 0, port: 0 }, sx: 0, sy: 0,
+  const c = { id, ...countryName(id + WORLD * 41), people, cap: 0, growth: 0, tier: 0, geo: { coast: 0, mtn: 0, desert: 0, port: 0 }, sx: 0, sy: 0,
     box: [Infinity, Infinity, -Infinity, -Infinity],
     res: { ...resBox(), ...res }, rates: resBox(), prod: resBox(),
     ownedDep: depBox(), tiles: 0, lx: 0, ly: 0, alive: true, mergedInto: -1,
@@ -1576,6 +1853,7 @@ function recomputeNetwork() {
         const n = idx(nx, ny);
         if (owner[n] && comp[n] < 0) { comp[n] = nc; stack.push(n); }
       }
+      if (bridgeEnd[i]) for (const n of bridgeEndsOf(i)) if (owner[n] && comp[n] < 0) { comp[n] = nc; stack.push(n); }   // over a bridge
     }
     nc++;
   }
@@ -1608,7 +1886,7 @@ function recomputeNetwork() {
     c.alive = false; c.people = 0;
     toast(`${c.full} has fallen!`);
   }
-  if (game.started && !game.over && !game.countries.some(c => c.alive)) {
+  if (game.started && !game.over && WORLD === 0 && !game.countries.some(c => c.alive) && !worldsWithYou().length) {
     game.over = true; game.driving = null; game.aiming = false;
     $('toast').classList.add('show'); clearTimeout(toastTimer);
     $('toast').textContent = `Your last country has fallen. ${say('Press N', 'Tap New map in the Build menu')} to start a new map.`;
@@ -1626,8 +1904,8 @@ function recomputeNetwork() {
 // a real one does. Your other buildings join the network when you connect them; walls join two forts.
 // Everything that travels (haulers, troops) picks the quickest mix of road and open country.
 // ======================================================================
-const NET = new Uint8Array(N);                     // bit 1: a road of yours on this tile, bit 2: one of your walls
-const DEFM = new Uint8Array(N);                    // your walls and forts: how much harder this tile is to take (x10)
+let NET = new Uint8Array(N);                     // bit 1: a road of yours on this tile, bit 2: one of your walls
+let DEFM = new Uint8Array(N);                    // your walls and forts: how much harder this tile is to take (x10)
 let roads = [], roadsDirty = true, roadsAt = -9, graphNet = null;
 // ---------- A* over tiles (8 directions), with a cost for stepping onto each tile ----------
 const AS_G = new Float32Array(N), AS_STAMP = new Int32Array(N), AS_FROM = new Int32Array(N);
@@ -1683,9 +1961,10 @@ function tilePath(a, b, cost, maxExp = 30000) {
 }
 // the cost of a road (or wall) crossing a tile of `side`'s land
 const netCost = (side, follow) => i => {
+  if (bridgeAt[i] && biome[i] === OCEAN) return 1.2;   // roads run over your bridges
   if (!isLand(i) || sideOf(i) !== side) return Infinity;
   let c = biome[i] === MOUNTAIN ? 6 : biome[i] === DESERT ? 1.3 : 1;
-  if (follow && (NET[i] & 1)) c *= 0.45;           // join the roads already there rather than run beside them
+  if (follow && (NET[i] & 1)) c *= 0.3;            // join the roads already there (to towns or to your mines) rather than run beside them
   else if (building[i]) c *= 4;
   return c;
 };
@@ -1765,7 +2044,21 @@ function buildRoads() {
   if (budget > 0) roadsDirty = false;
   roadsAt = game.time;
   markNet();
+  // a new settlement may sit closer to a building than the road it was joined to: re-route that connection (free)
+  const nS = S.filter(b => sideOf(b.i) > 0).length;
+  if (nS !== lastSettlements) {
+    lastSettlements = nS;
+    let changed = false;
+    for (const c of game.connects) {
+      const b = buildingAt(c.a);
+      if (!b) continue;
+      const P = connectPlan(b, c);
+      if (!P.why && P.line.len < c.len * 0.75 - 1) { Object.assign(c, { b: P.to, ...P.line }); changed = true; }
+    }
+    if (changed) markNet();
+  }
 }
+let lastSettlements = -1;
 // your road and wall tiles, how hard your tiles are to take, and the network graph troops and haulers route over
 function markNet() {
   NET.fill(0);
@@ -1858,7 +2151,7 @@ const roadTier = R => R.has('automobile') ? 'truck' : R.has('carriages') ? 'carr
 const boatTier = R => R.has('steam') ? 'steamship' : R.has('shipbuilding') ? 'galleon' : R.has('sailing') ? 'sailboat' : 'rowboat';
 // a hauler in domain C: how fast it goes on and off the road, and what it carries
 function haulProf(C) {
-  const st = linkStats('road', techIn(C));
+  const t = FLEET.car.tiers[Math.max(0, fleetTarget('car'))], st = { speed: t.speed, cargo: t.cargo };
   return { off: st.speed * CFG.roads.offRoad, road: st.speed, wall: 0, cargo: st.cargo };
 }
 // troops: on foot (or horse, or truck) off-road; faster on roads, and along walls
@@ -1926,7 +2219,7 @@ function drawRoads(z) {
 const servStamp = new Int32Array(N), servD = new Uint16Array(N), servBy = new Int32Array(N);
 let servN = 0;
 const sideOf = i => (owner[i] ? countryOf[i] + 1 : -aiOf[i]);        // whose land a tile is: +country, -nation, 0 nobody
-const landCapAt = i => CFG.landCap[BIOME_KEY[biome[i]]] || 0;
+const landCapAt = i => (CFG.landCap[BIOME_KEY[biome[i]]] || 0) * (biome[i] === GRASS ? 1 : worldCap());   // off home: only domes and green land hold many
 const isServed = i => servStamp[i] === servN;
 function eachInReach(i, fn, R = CFG.settlement.reach) {             // every tile within R (a settlement's reach, by default) of tile i
   const cx = i % W, cy = (i / W) | 0;
@@ -1950,6 +2243,7 @@ function recomputeLand() {
   });
   S.forEach((b, k) => {
     if (sideOf(b.i)) eachInReach(b.i, t => { if (servStamp[t] === servN && servBy[t] === k) { b.base += landCapAt(t); b.tiles++; } });
+    if (WORLD && owner[b.i]) b.base += WORLDS[WORLD].dome;   // off home, every settlement is a dome: room inside it
     b.full = b.base;                                 // what it would hold undamaged
     if (b.dmg) b.base *= Math.max(0, 1 - b.dmg / hpOf(b));
   });
@@ -2002,7 +2296,7 @@ function recomputeHarvest() {
   for (const n of game.nations) n.ironTiles = 0;
   list.forEach((b, k) => {
     const side = sideOf(b.i), kinds = HARVESTS[b.type];
-    b.work = depBox();
+    b.work = depBox(); b.sample = [];             // a few of the tiles it works, for its workers to walk out to
     eachInReach(b.i, (t, d2) => {
       if (!harvestable(t, side, kinds)) return;
       if (harvStamp[t] !== harvN || d2 < harvD[t]) { harvStamp[t] = harvN; harvD[t] = d2; harvBy[t] = k; }
@@ -2014,6 +2308,7 @@ function recomputeHarvest() {
       if (harvStamp[t] !== harvN || harvBy[t] !== k || depositOf[t] < 0) return;
       const kind = deposits[depositOf[t]].type;
       b.work[kind]++;
+      if (b.sample.length < 6 && (b.work[kind] * 7) % 5 < 2) b.sample.push(t);
       if (mine) { into[kind]++; if (kind === 'wheat') pw.fields += CFG.buildings[b.type].farm || 1; }
       else if (kind === 'iron') game.nations[aiOf[b.i] - 1].ironTiles++;
     }, R);
@@ -2075,6 +2370,8 @@ const emptyBox = resBox;
 const boxSum = o => { let t = 0; for (const k in o) t += o[k] || 0; return t; };
 const underway = b => !!(b.site && b.site.type === b.type);       // still being built (an upgrade keeps working meanwhile)
 // what one vehicle on a link of this kind carries, and how fast, with your techs
+const LINK_FLEET = { sea: 'boat', air: 'plane', rail: 'rail', road: 'car' };
+function rideSpeed(kind) { const f = LINK_FLEET[kind], t = Math.max(0, tierOpen(f)); return FLEET[f].tiers[t].speed; }
 function linkStats(kind, R = game.research.done) {
   const T = CFG.transport[kind], st = { cargo: T.cargo, people: T.people, speed: T.speed };
   for (const id of R) {
@@ -2083,14 +2380,14 @@ function linkStats(kind, R = game.research.done) {
   }
   return st;
 }
-function unloadAt(L, C) {
-  const cg = L.cargo;
+function unloadAt(V, C) {
+  const cg = V.cargo;
   if (cg && C) {
     for (const r of CARGO_RES) C.res[r] += cg[r] || 0;
     C.people += cg.people || 0;
     for (const q of cg.req || []) deliver(q, C);
   }
-  L.cargo = null; L.to = -1;
+  V.cargo = null; V.to = -1;
 }
 // a consignment has reached domain C: hand it to its site, or send it on toward its domain
 function deliver(q, C) {
@@ -2115,12 +2412,12 @@ function outputShare(from, to) {
   const m = CFG.minShare, pop = from.people + to.people;
   return clamp(pop > 0 ? to.people / pop : 0.5, m, 1 - m) / Math.max(1, from.nLinks);
 }
-function loadAt(L, src, dst, end) {
-  L.cargo = null; L.to = -1;
+function loadAt(L, V, src, dst, end) {
+  V.cargo = null; V.to = -1;
   if (!src || !dst || src === dst) return;
   if (!L.req) L.req = { a: [], b: [] };
-  const V = linkStats(L.kind, techIn(src)), cargo = { ...resBox(), people: 0, req: [] };
-  let room = V.cargo;
+  const T = tierOf(V), cargo = { ...resBox(), people: 0, req: [] };
+  let room = T.cargo;
   const waiting = L.req[end];                      // consignments first: they're what a site is waiting for
   while (waiting.length && room >= 1) {
     const q = waiting[0], tot = boxSum(q.res);
@@ -2136,18 +2433,18 @@ function loadAt(L, src, dst, end) {
   for (const r of CARGO_RES) { cargo[r] = Math.floor(Math.floor(box[r] || 0) * k); box[r] -= cargo[r]; }
   const full = c => (c.cap > 0 ? c.people / c.cap : 0);   // people in a domain with no settlement stay put
   if (full(src) > full(dst) + 0.05) {
-    cargo.people = Math.floor(Math.min(V.people, Math.max(0, dst.cap - dst.people), freePeople(src) * 0.5));
+    cargo.people = Math.floor(Math.min(T.cargo * 0.5, Math.max(0, dst.cap - dst.people), freePeople(src) * 0.5));
     src.people -= cargo.people;
   }
-  if (cargo.people + cargo.req.length + CARGO_RES.reduce((t, r) => t + cargo[r], 0) > 0) { L.cargo = cargo; L.to = dst.id; }
+  if (cargo.people + cargo.req.length + CARGO_RES.reduce((t, r) => t + cargo[r], 0) > 0) { V.cargo = cargo; V.to = dst.id; }
 }
 // goods (and people) on their way to a domain right now
 function incomingTo(C) {
   const inc = { ...resBox(), people: 0 };
   for (const L of game.links) {
-    if (L.cargo && liveCountry(L.to) === C) {
-      for (const r in inc) inc[r] += L.cargo[r] || 0;
-      for (const q of L.cargo.req || []) if (liveCountry(q.dest) === C) for (const r in q.res) inc[r] += q.res[r];
+    for (const V of L.ships) if (V.cargo && liveCountry(V.to) === C) {
+      for (const r in inc) inc[r] += V.cargo[r] || 0;
+      for (const q of V.cargo.req || []) if (liveCountry(q.dest) === C) for (const r in q.res) inc[r] += q.res[r];
     }
     if (!L.out) continue;                          // plus what's waiting at the other end's stop for it
     const A = countryAt(L.a), B = countryAt(L.b);
@@ -2193,7 +2490,7 @@ function dispatchSupplies() {
   const count = q => { if (!moving.has(q.site)) moving.set(q.site, resBox()); const m = moving.get(q.site); for (const r in q.res) m[r] += q.res[r]; };
   for (const L of game.links) {
     if (L.req) for (const e of ['a', 'b']) for (const q of L.req[e]) count(q);
-    if (L.cargo && L.cargo.req) for (const q of L.cargo.req) count(q);
+    for (const V of L.ships) if (V.cargo && V.cargo.req) for (const q of V.cargo.req) count(q);
   }
   for (const b of sites) {
     const C = liveCountry(b.site.country);
@@ -2227,6 +2524,7 @@ function dispatchSupplies() {
 }
 function finishSite(b) {
   const S = b.site;
+  game.puffs.push({ x: b.i % W + 0.5, y: ((b.i / W) | 0) + 0.5, t: 0, seed: Math.random() * 6 });
   b.site = null;
   placeBuilding(b.i, S.type);
   planCache.key = null;
@@ -2353,7 +2651,7 @@ const garrisonCap = b => Math.round((b.type === 'fort' ? CFG.military.fortCap : 
 function researchTick(dt, gold) {
   const RS = game.research;
   if (!RS.cur) { RS.cur = pickTech(RS.done, playerTechScore()); if (!RS.cur) { RS.rate = 0; return; } }
-  RS.rate = game.population * CFG.research.perPerson;
+  RS.rate = (totalPop() + stationPeople() * CFG.station.research) * CFG.research.perPerson;   // people in space are all scientists
   RS.gold = goldBoost(gold).research;
   RS.pts += (RS.rate + RS.gold) * dt;
   const cost = techCost(RS.done);
@@ -2411,9 +2709,9 @@ function railPath(start, targets, maxLen = CFG.railMaxLength) {
       const nx = x + dx, ny = y + dy;
       if (!inb(nx, ny)) continue;
       const n = idx(nx, ny);
-      if (!isLand(n) || closed[n] === st) continue;
-      if (diag && (!isLand(idx(x + dx, y)) || !isLand(idx(x, y + dy)))) continue;
-      const ng = g + CFG.trackWeight[BIOME_KEY[biome[n]]] * (diag ? 1.414 : 1);
+      if (!railable(n) || closed[n] === st) continue;
+      if (diag && (!railable(idx(x + dx, y)) || !railable(idx(x, y + dy))) && !(bridgeAt[n] && bridgeAt[cur])) continue;
+      const ng = g + (CFG.trackWeight[BIOME_KEY[biome[n]]] || 1.5) * (diag ? 1.414 : 1);   // rail follows bridges over the water
       if (ng > maxLen) continue;
       if (seen[n] !== st || ng < gScore[n]) { seen[n] = st; gScore[n] = ng; cameFrom[n] = cur; heap.push(n, ng + h(n)); }
     }
@@ -2474,7 +2772,7 @@ function linkPlan(i, type) {
   const key = `${type}:${i}:${hubs.length}`;
   if (planCache.key === key) return planCache.val;
   let val;
-  const others = hubs.filter(t => t !== i && owner[t] && (kind === 'sea' || kind === 'air' || landmass[t] === landmass[i]));
+  const others = hubs.filter(t => t !== i && owner[t] && (kind === 'sea' || kind === 'air' || landGroup(t) === landGroup(i)));
   if (!hubs.length) val = { note: `Your first ${HUB_NAME[kind]}: it links up when you build a second one in another domain` };
   else if (!others.length) val = { note: kind === 'road' || kind === 'rail' ? `No other ${HUB_NAME[kind]} on this landmass. Use ports to cross water.` : `No other ${HUB_NAME[kind]} to link to yet` };
   else if (kind === 'air') {
@@ -2509,6 +2807,71 @@ function isCoastal(i) {
   }
   return false;
 }
+// ---------- bridges: a stone span over the water ----------
+let bridgeAt = new Uint8Array(N);                // bridges over each water tile
+let bridgeEnd = new Uint8Array(N);               // land tiles a bridge lands on
+const bridgeCost = len => ({ stone: Math.round(CFG.bridge.stone * len + CFG.bridge.grow * len * (len - 1) / 2) });
+// the bridge from your tile a aimed at tile c: along the line from a through c, over the first water to the land beyond.
+// { s, b, tiles, len, cost, why }: s the last land before the water, b the land it reaches.
+function bridgePlan(a, c) {
+  const B = CFG.bridge, ax = a % W, ay = (a / W) | 0, dx = c % W - ax, dy = ((c / W) | 0) - ay;
+  if (!dx && !dy) return { why: 'Now pick the land across the water' };
+  const sx = Math.sign(dx), sy = Math.sign(dy), nx = Math.abs(dx), ny = Math.abs(dy);
+  let x = ax, y = ay, ix = 0, iy = 0, s0 = a, b = -1;
+  const tiles = [];
+  for (let step = 0; step < 2 * W; step++) {
+    if ((0.5 + ix) / nx < (0.5 + iy) / ny) { x += sx; ix++; } else { y += sy; iy++; }
+    if (!inb(x, y)) break;
+    const i = idx(x, y), bi = biome[i];
+    if (bi === ICE || bi === VOID) return { s: s0, tiles, why: 'That runs into the ice wall' };
+    if (bi === OCEAN) { tiles.push(i); if (tiles.length > 2 * B.maxLen + 2) break; continue; }
+    if (!tiles.length) { s0 = i; continue; }       // still crossing land toward the coast
+    b = i; break;
+  }
+  if (!tiles.length) return { s: s0, tiles, why: 'Aim across the water' };
+  if (!owner[s0]) return { s: s0, tiles, why: 'Start the bridge on your own land' };
+  if (b < 0) return { s: s0, tiles, why: `More than ${B.maxLen} tiles of water that way` };
+  const len = Math.max(1, Math.round(Math.hypot(b % W - s0 % W, ((b / W) | 0) - ((s0 / W) | 0))) - 1);
+  const plan = { s: s0, b, tiles, len, cost: bridgeCost(len) };
+  if (len > B.maxLen) plan.why = `Too long: ${len} tiles of water (at most ${B.maxLen})`;
+  else if (aiOf[b]) plan.why = `That shore belongs to ${nationAt(b).full}`;
+  else if (tiles.every(t => bridgeAt[t])) plan.why = 'There is already a bridge here';
+  return plan;
+}
+const railable = i => isLand(i) || bridgeAt[i] > 0;
+// landmasses joined by bridges count as one, so a station finds the stations across a bridge
+function landGroup(i) {
+  let k = landmass[i];
+  const seenK = new Set();
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const br of game.bridges) {
+      const a = landmass[br.s], b = landmass[br.b];
+      if ((a === k || seenK.has(a)) && !seenK.has(b) && b !== k) { seenK.add(b); changed = true; }
+      if ((b === k || seenK.has(b)) && !seenK.has(a) && a !== k) { seenK.add(a); changed = true; }
+    }
+  }
+  return Math.min(k, ...seenK);
+}
+const bridgeEndsOf = i => game.bridges.flatMap(br => (br.s === i ? [br.b] : br.b === i ? [br.s] : []));
+function addBridge(br) {
+  game.bridges.push(br);
+  bridgeEnd[br.s]++; bridgeEnd[br.b]++;
+  for (const t of br.tiles) bridgeAt[t]++;
+}
+function buildBridge(a, c) {
+  const p = bridgePlan(a, c);
+  if (p.why) { toast(p.why); return false; }
+  const C = countryAt(p.s), miss = missingFor(p.cost, C);
+  if (miss) { toast(`${C.short} doesn't have enough ${miss}: this bridge costs ${fmtNum(p.cost.stone)} stone`); return false; }
+  for (const [r, n] of Object.entries(p.cost)) C.res[r] -= n;
+  addBridge({ s: p.s, b: p.b, tiles: p.tiles, len: p.len, t0: game.time });
+  const free = !owner[p.b], other = countryAt(p.b);
+  if (free) claim(p.b, C.id);                      // a bridge to free land claims the tile it lands on
+  game.netDirty = true; roadsDirty = true; planCache.key = null;
+  floatText(...tileCenter(p.b), `Bridge: ${p.len} tiles${free ? ` · new land for ${C.short}` : other && other !== C ? ` · joins ${other.short}` : ''}`, '#7bd389');
+  return true;
+}
 function canBuild(i, type) {
   if (!isLand(i)) return biome[i] === OCEAN ? "Can't build on water" : biome[i] === ICE ? "Can't build on the ice wall" : "That's outer space";
   if (!owner[i]) return 'Must be inside your territory';
@@ -2521,6 +2884,7 @@ function canBuild(i, type) {
     if (!ladderSteps(type, have.type)) return 'Something is already built here';
   } else if (hasDep(i) && !isField(i) && (!def.on || def.farm)) return "Can't build on a resource deposit (collectors can go beside it)";
   if (type === 'port' && !isCoastal(i)) return 'Ports must be on the coast';
+  if (type === 'drill' && biome[i] !== POLAR) return 'Ice drills go on the polar ice caps';
   return null;
 }
 function planFor(i, type) {
@@ -2572,7 +2936,9 @@ function afterBuilt(i, type, plan) {
     const p = plan || linkPlan(i, type);
     for (const r of (p && p.routes) || []) {
       if (!owner[r.to] || !buildingAt(r.to)) continue;
-      game.links.push({ kind, a: i, b: r.to, path: r.path, t: 0, dir: 1, req: { a: [], b: [] } });
+      game.links.push({ kind, a: i, b: r.to, path: r.path, req: { a: [], b: [] },
+        ships: kind === 'rail' ? [{ kind: 'rail', tier: 0, t: 0, dir: 1, cargo: undefined, to: -1 }] : [] });   // a rail line comes with its train
+      if (kind !== 'rail') toast(`${LINK_NAME[kind][0].toUpperCase() + LINK_NAME[kind].slice(1)} open. Buy ${kind === 'sea' ? 'boats' : 'planes'} for it: tap any ${kind === 'sea' ? 'port' : 'airport'}.`);
     }
     if (p && p.routes && p.routes.length) floatText(i % W + 0.5, (i / W) | 0, `${LINK_NAME[kind][0].toUpperCase() + LINK_NAME[kind].slice(1)}: ${p.tiles} tiles`, '#7bd389');
     planCache.key = null;
@@ -2762,6 +3128,8 @@ function takeWheel(e) {
 }
 // X: hop into the next expedition that's waiting for a driver
 function nextVehicle() {
+  const fl = game.flights.filter(f => !f.done);
+  if (fl.length && !game.driving) { takeRocket(fl[(fl.indexOf(game.flying) + 1) % fl.length]); return; }
   const list = game.expeditions.filter(e => !e.auto && !e.done);
   if (!list.length) return toast(`No expedition is out. ${say('Right-click', 'Long-press')} outside your border to send one.`);
   takeWheel(list[(list.indexOf(game.driving) + 1) % list.length]);
@@ -2844,7 +3212,7 @@ function settleExpedition(e) {
 }
 
 // an expedition that lands on free land founds a new country (a colony) with its own people and stockpile
-function arrive(e) {
+function arrive(e, quiet = false) {
   const cx = Math.floor(e.tx), cy = Math.floor(e.ty);
   const there = countryAt(idx(cx, cy));
   if (there) {                                     // your territory got there first: they just join that country
@@ -2872,8 +3240,9 @@ function arrive(e) {
   recomputeNetwork();
   const live = liveCountry(col.id);
   if (live !== col) { toast(`The settlers joined ${live.full}`); return; }
+  if (site >= 0) addCar(col, buildingAt(site), 0);   // the expedition's own wagon becomes the colony's first car
   const kitTxt = Object.entries(e.kit).filter(([, v]) => v > 0).map(([k, v]) => `${v} ${k}`).join(', ') || 'nothing';
-  toast(`Founded ${col.full}! Its settlement grows as you claim the land around it. It has its own stockpile (${kitTxt}); link it home to share people and cargo.`);
+  if (!quiet) toast(`Founded ${col.full}! Its settlement grows as you claim the land around it. It has its own stockpile (${kitTxt}); link it home to share people and cargo.`);
 }
 
 
@@ -2905,7 +3274,7 @@ function armyRoute(g, tx, ty, T) {
     if (!routes.get(A.id)) return null;
     while (C !== T && guard++ < 40) {
       const hop = routes.get(C.id), L = hop.L, path = hop.end === 'a' ? L.path : [...L.path].reverse();
-      const vs = Math.max(linkStats(L.kind, techIn(C)).speed, prof.off);
+      const vs = Math.max(rideSpeed(L.kind), prof.off);   // troops bring their own boats and planes: the best your techs allow
       add(findRoute(cx, cy, ...tileCenter(path[0]), prof));          // to the stop, by road where it helps
       const ride = { pts: [tileCenter(path[0])], spd: [] };
       for (let k = 1; k < path.length; k += 2) { ride.pts.push(tileCenter(path[k])); ride.spd.push(vs); }
@@ -2920,8 +3289,25 @@ function armyRoute(g, tx, ty, T) {
   for (let k = 1; k < pts.length; k++) len += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]) / spd[k - 1];
   return { pts, spd, len };
 }
-// ---------- convoys: haulers taking a harvest to a settlement, deliveries to building sites and bases ----------
-// a domain's settlement nearest a spot (by travel time for a hauler), or null if it has none
+// ======================================================================
+// the fleet: cars on the roads of each domain, boats on sea routes, planes between airports. You buy every one.
+// Cars do the work inside a domain: construction deliveries first, then picking up the harvests waiting at your
+// collectors (the biggest loads nearby first), always back to the nearest settlement, where goods join the stock.
+// Off a road they crawl: a car leaves the road where it's nearest a building, and gets back on the same way.
+// ======================================================================
+const FLEET = CFG.fleet;
+let carId = 0;
+// the best tier of a kind your techs allow, and the tier you've chosen to upgrade your fleet to
+const tierOpen = kind => { let t = -1; FLEET[kind].tiers.forEach((x, k) => { if (!x.tech || game.research.done.has(x.tech)) t = k; }); return t; };
+const fleetTarget = kind => Math.min(game.fleetTarget[kind] ?? 0, tierOpen(kind));
+// a vehicle's working tier: out of fuel it drops one below (it re-upgrades by itself where there's fuel again)
+const workTier = v => (v.down ? Math.max(0, v.tier - 1) : v.tier);
+const tierOf = v => FLEET[v.kind].tiers[workTier(v)];
+function carProf(v) {
+  const T = tierOf(v);
+  return { off: T.speed * FLEET.car.offRoad, road: T.speed, wall: 0, cargo: T.cargo };
+}
+// a domain's settlement nearest a spot, or null if it has none
 function nearestSettlement(C, x, y) {
   let best = null, bd = Infinity;
   for (const b of game.buildings) {
@@ -2931,20 +3317,6 @@ function nearestSettlement(C, x, y) {
   }
   return best;
 }
-function sendConvoy(C, from, to, cargo, purpose, extra = {}) {
-  const prof = haulProf(C), r = findRoute(...from, ...to, prof);
-  const cv = { country: C.id, cargo, purpose, pts: r.pts, spd: r.spd, k: 0, f: 0, x: from[0], y: from[1], tier: roadTier(techIn(C)), ...extra };
-  game.convoys.push(cv);
-  return cv;
-}
-// a collector's harvest goes to the nearest settlement; once there it's in the domain's stock
-function sendHaul(b, C) {
-  const cargo = b.buf;
-  b.buf = {}; b.haulT = 0;
-  const S = nearestSettlement(C, ...tileCenter(b.i));
-  if (!S) { storeIn(C, cargo); return; }           // no settlement in this domain: it goes straight into stock
-  sendConvoy(C, tileCenter(b.i), tileCenter(S.i), cargo, 'haul', { from: b.i, to: S.i });
-}
 function storeIn(C, cargo) {
   for (const r in cargo) {
     if (!cargo[r]) continue;
@@ -2952,21 +3324,207 @@ function storeIn(C, cargo) {
     C.res[r] += Math.max(0, Math.min(cargo[r], cap - C.res[r]));
   }
 }
-// goods leave the settlement nearest where they're needed, and arrive with the convoy
+// a new car rolls out of a settlement
+function addCar(C, S, tier = fleetTarget('car')) {
+  const [x, y] = tileCenter(S.i);
+  const v = { id: carId++, kind: 'car', country: C.id, tier: Math.max(0, tier), x, y, cargo: {}, plan: [], pts: null, idle: 0, home: S.i };
+  game.cars.push(v);
+  return v;
+}
+// set a car on its way to (x, y); on arrival it does `act`
+function carGo(v, x, y, act) {
+  const r = findRoute(v.x, v.y, x, y, carProf(v));
+  Object.assign(v, { pts: r.pts, spd: r.spd, k: 0, f: 0, done: false, act });
+}
+const carLoad = v => boxSum(v.cargo);
+// the next job for an idle car: a construction site whose goods are ready, an oil run to a base, the best pickup
+function carNextJob(v, C) {
+  // 1) construction: its materials are taken from the domain's stock at the settlement nearest the site
+  for (const b of game.buildings) {
+    if (!b.site || b.site.car != null || !b.site.ready || countryAt(b.i) !== C || boxSum(b.site.need) >= 0.01) continue;
+    const S = nearestSettlement(C, ...tileCenter(b.i));
+    if (!S) { finishSite(b); continue; }
+    b.site.car = v.id;
+    v.job = { type: 'site', site: b.i, from: S.i };
+    return carGo(v, ...tileCenter(S.i), 'loadSite');
+  }
+  // 2) oil for a base training motorized troops
+  for (const b of garrisons()) {
+    if (!b.wantOil || b.supplying || countryAt(b.i) !== C || C.res.oil < 1) continue;
+    const S = nearestSettlement(C, ...tileCenter(b.i));
+    if (!S) continue;
+    b.supplying = true;
+    v.job = { type: 'supply', to: b.i, from: S.i };
+    return carGo(v, ...tileCenter(S.i), 'loadSupply');
+  }
+  // 3) a pickup: the collector with the most waiting (not already promised to another car), nearest first
+  const cap = carProf(v).cargo;
+  let best = null, bs = 0;
+  for (const b of game.buildings) {
+    if (!b.buf || countryAt(b.i) !== C) continue;
+    const left = boxSum(b.buf) - (b.claim || 0);
+    if (left < Math.min(4, cap * 0.25)) continue;
+    const d = Math.hypot(b.i % W + 0.5 - v.x, ((b.i / W) | 0) + 0.5 - v.y);
+    const sc = Math.min(left, cap) / (d + 12) * (b.full ? 2 : 1);
+    if (sc > bs) { bs = sc; best = b; }
+  }
+  if (best) {
+    const take = Math.min(cap, boxSum(best.buf) - (best.claim || 0));
+    best.claim = (best.claim || 0) + take;
+    v.job = { type: 'pickup', at: best.i, claim: take };
+    return carGo(v, ...tileCenter(best.i), 'pickup');
+  }
+  // 4) nothing to do: wait at the nearest settlement (that's where upgrades and refuelling happen)
+  const S = nearestSettlement(C, v.x, v.y);
+  if (S && Math.hypot(S.i % W + 0.5 - v.x, ((S.i / W) | 0) + 0.5 - v.y) > 1.5) { v.job = { type: 'park' }; return carGo(v, ...tileCenter(S.i), 'park'); }
+  v.job = null;
+}
+// a car has reached the end of its route: do what it came for, then pick its next leg
+function carArrive(v, C) {
+  const act = v.act;
+  v.act = null; v.pts = null;
+  const J = v.job || {};
+  if (act === 'loadSite') {
+    const b = buildingAt(J.site);
+    if (!b || !b.site) { v.job = null; return; }
+    v.cargo = { ...(b.site.cost || {}) };
+    return carGo(v, ...tileCenter(b.i), 'deliver');
+  }
+  if (act === 'deliver') {                        // the materials are here: the crew gets to work
+    const b = buildingAt(J.site);
+    v.cargo = {}; v.job = null;
+    if (b && b.site) { const dur = 2 + Math.min(6, boxSum(b.site.cost || {}) / 40); b.site.crew = game.time + dur; b.site.crewDur = dur; }
+    return;
+  }
+  if (act === 'loadSupply') {
+    const b = buildingAt(J.to), amt = Math.min(20, C.res.oil, carProf(v).cargo);
+    if (!b) { v.job = null; return; }
+    C.res.oil -= amt; v.cargo = { oil: amt };
+    return carGo(v, ...tileCenter(b.i), 'supply');
+  }
+  if (act === 'supply') {
+    const b = buildingAt(J.to);
+    if (b) { b.oil = (b.oil || 0) + (v.cargo.oil || 0); b.supplying = false; b.wantOil = false; } else storeIn(C, v.cargo);
+    v.cargo = {}; v.job = null;
+    return;
+  }
+  if (act === 'pickup') {
+    const b = buildingAt(J.at);
+    if (b) {
+      b.claim = Math.max(0, (b.claim || 0) - J.claim);
+      let room = carProf(v).cargo - carLoad(v);
+      for (const r of Object.keys(b.buf || {}).sort((p, q) => b.buf[q] - b.buf[p])) {   // the biggest pile first
+        const t = Math.min(room, b.buf[r]);
+        if (t <= 0) continue;
+        v.cargo[r] = (v.cargo[r] || 0) + t; b.buf[r] -= t; room -= t;
+      }
+      b.full = false;
+    }
+    const S = nearestSettlement(C, v.x, v.y);
+    if (!S) { storeIn(C, v.cargo); v.cargo = {}; v.job = null; return; }
+    v.job = { type: 'haul' };
+    return carGo(v, ...tileCenter(S.i), 'unload');
+  }
+  if (act === 'unload' || act === 'park') {
+    storeIn(C, v.cargo); v.cargo = {}; v.job = null;
+    atHub(v, C);
+  }
+}
+// a vehicle calling in at a settlement, port or airport: refuel, and take the upgrade you've ordered if it's paid for
+function atHub(v, C) {
+  const T = FLEET[v.kind].tiers[v.tier];
+  if (v.down && T.fuel && C.res.oil >= 2) v.down = false;
+  const tgt = fleetTarget(v.kind);
+  if (v.tier < tgt && !v.down) {
+    const cost = FLEET[v.kind].tiers[tgt].cost;
+    if (!missingFor(cost, C)) {
+      for (const [r, n] of Object.entries(cost)) C.res[r] -= n;
+      v.tier = tgt; v.wait = 2;                    // a couple of seconds in the workshop
+      floatText(v.x, v.y - 1, `${FLEET[v.kind].tiers[tgt].name.replace(/s$/, '')}`, '#9fd0ff');
+    }
+  }
+}
+function stepCars(dt) {
+  for (const v of game.cars) {
+    const C = liveCountry(v.country);
+    if (!C) { v.gone = true; continue; }
+    if (v.wait > 0) { v.wait -= dt; continue; }
+    // fuel: a truck in a domain with no oil works as a carriage until it calls in where there's oil
+    const T = FLEET.car.tiers[v.tier];
+    if (T.fuel && C.noOil) v.down = true;
+    if (v.pts) {
+      moveAlong(v, dt);
+      v.moving = true;
+      if (v.done) carArrive(v, C);
+      continue;
+    }
+    v.moving = false;
+    v.idle += dt;
+    if (v.idle > 0.4) { v.idle = 0; carNextJob(v, C); }
+  }
+  game.cars = game.cars.filter(v => !v.gone);
+}
+// what a job leaves behind if its car is lost (its land taken)
+function dropCarJob(v) {
+  const J = v.job;
+  if (!J) return;
+  if (J.type === 'site') { const b = buildingAt(J.site); if (b && b.site) b.site.car = null; }
+  if (J.type === 'pickup') { const b = buildingAt(J.at); if (b) b.claim = Math.max(0, (b.claim || 0) - J.claim); }
+  if (J.type === 'supply') { const b = buildingAt(J.to); if (b) b.supplying = false; }
+}
+// a site's goods are all in its domain: a car will fetch them (with no cars, it waits; with no settlement, it's done)
 function startDelivery(b) {
   const C = countryAt(b.i), S = C && nearestSettlement(C, ...tileCenter(b.i));
   if (!C || !S || S.i === b.i) { finishSite(b); return; }
-  b.site.convoy = true;
-  sendConvoy(C, tileCenter(S.i), tileCenter(b.i), { ...b.site.cost }, 'site', { to: b.i });
+  b.site.ready = true;
 }
-function stepConvoy(cv, dt) {
-  moveAlong(cv, dt);
-  if (!cv.done) return;
-  const C = liveCountry(cv.country);
-  if (cv.purpose === 'haul') { if (C) storeIn(C, cv.cargo); return; }
-  const b = buildingAt(cv.to);
-  if (cv.purpose === 'site') { if (b && b.site) finishSite(b); else if (C) storeIn(C, cv.cargo); return; }
-  if (cv.purpose === 'supply') { if (b) { b.oil = (b.oil || 0) + (cv.cargo.oil || 0); b.supplying = false; } else if (C) storeIn(C, cv.cargo); }
+// buy a car: it rolls out where the need is greatest (the domain with the most waiting per car), paid by that domain
+function carNeed(C) {
+  let n = 0;
+  for (const b of game.buildings) if (countryAt(b.i) === C) { n += boxSum(b.buf || {}); if (b.site) n += 40; }
+  return n / (game.cars.filter(v => v.country === C.id).length + 1);
+}
+function buyVehicle(kind, from) {
+  const tgt = Math.max(0, fleetTarget(kind)), cost = FLEET[kind].tiers[tgt].cost;
+  if (kind === 'car') {
+    const opts = game.countries.filter(c => c.alive && nearestSettlement(c, c.lx, c.ly) && !missingFor(cost, c)).sort((p, q) => carNeed(q) - carNeed(p));
+    const C = opts[0];
+    if (!C) return toast(`Not enough ${missingFor(cost, countryAt(from)) || 'resources'} for a car (${costText(cost)})`);
+    // the settlement nearest the biggest waiting pile
+    let pile = null, pb = 0;
+    for (const b of game.buildings) if (countryAt(b.i) === C && boxSum(b.buf || {}) > pb) { pb = boxSum(b.buf); pile = b; }
+    const S = pile ? nearestSettlement(C, ...tileCenter(pile.i)) : nearestSettlement(C, C.lx, C.ly);
+    for (const [r, n] of Object.entries(cost)) C.res[r] -= n;
+    addCar(C, S, tgt);
+    toast(`New ${FLEET.car.tiers[tgt].name.toLowerCase().replace(/s$/, '')} in ${C.short}, where the most goods were waiting (${costText(cost)})`);
+    return;
+  }
+  // boats and planes join the route (of that kind) with the most goods waiting per vehicle
+  const routes = game.links.filter(L => L.kind === (kind === 'boat' ? 'sea' : 'air') && countryAt(L.a) && countryAt(L.b) && countryAt(L.a) !== countryAt(L.b));
+  if (!routes.length) return toast(`No ${kind === 'boat' ? 'sea route' : 'air route'} yet: you need two ${kind === 'boat' ? 'ports' : 'airports'} in different domains`);
+  const waiting = L => (boxSum(L.out.a) + boxSum(L.out.b) + [...L.req.a, ...L.req.b].reduce((t, q) => t + boxSum(q.res), 0) + 5) / (L.ships.length + 1);
+  routes.sort((p, q) => waiting(q) - waiting(p));
+  const L = routes[0], C = countryAt(missingFor(cost, countryAt(L.a)) ? L.b : L.a);
+  if (missingFor(cost, C)) return toast(`Not enough ${missingFor(cost, C)} for a ${FLEET[kind].tiers[tgt].name.toLowerCase().replace(/s$/, '')} (${costText(cost)})`);
+  for (const [r, n] of Object.entries(cost)) C.res[r] -= n;
+  const end = C === countryAt(L.a) ? 'a' : 'b';
+  L.ships.push({ kind, tier: tgt, t: end === 'a' ? 0 : L.path.length - 1, dir: end === 'a' ? 1 : -1, cargo: undefined, to: -1 });
+  toast(`New ${FLEET[kind].tiers[tgt].name.toLowerCase().replace(/s$/, '')} on the route from ${countryAt(L.a).short} to ${countryAt(L.b).short} (${costText(cost)})`);
+}
+// your whole fleet of a kind: how many, at what tier, and the cost of upgrading them all
+function fleetSummary(kind) {
+  const list = kind === 'car' ? game.cars : game.links.flatMap(L => L.ships.filter(v => v.kind === kind));
+  const open = tierOpen(kind), tgt = fleetTarget(kind);
+  const behind = open >= 0 ? list.filter(v => v.tier < open).length : 0;
+  const up = open > tgt || behind ? FLEET[kind].tiers[open] : null;
+  return { list, count: list.length, open, tgt, up, upCost: up ? multCost(up.cost, list.filter(v => v.tier < open).length) : null };
+}
+const costText = cost => Object.entries(cost).map(([r, n]) => `${Math.ceil(n)} ${r}`).join(', ') || 'free';
+const multCost = (cost, k) => Object.fromEntries(Object.entries(cost).map(([r, n]) => [r, n * k]));
+function orderUpgrade(kind) {
+  const open = tierOpen(kind);
+  game.fleetTarget[kind] = open;
+  toast(`Upgrading your ${FLEET[kind].name} to ${FLEET[kind].tiers[open].name.toLowerCase()}: each one is refitted when it next calls in at a ${FLEET[kind].hub}, paid as it goes`);
 }
 // anything that follows a route (troops, convoys): move along its legs at each leg's speed
 function moveAlong(a, dt) {
@@ -3013,12 +3571,7 @@ function militaryTick(dt) {
     b.training = false;
     if (!C || b.units >= cap || C.people < C.cap * M.keep + us.type.people) continue;
     // late units need oil: it's carted out to the base from the nearest settlement
-    if (us.type.oil && (b.oil || 0) < 4 && !b.supplying && C.res.oil >= 1) {
-      const S = nearestSettlement(C, ...tileCenter(b.i)), amt = Math.min(20, C.res.oil);
-      C.res.oil -= amt;
-      if (S) { b.supplying = true; sendConvoy(C, tileCenter(S.i), tileCenter(b.i), { oil: amt }, 'supply', { to: b.i }); }
-      else b.oil = (b.oil || 0) + amt;
-    }
+    b.wantOil = !!us.type.oil && (b.oil || 0) < 4;     // a car brings oil out from the nearest settlement
     let n = Math.min(M.train * tf * (1 + goldBoost().train) * dt, cap - b.units);
     if (us.type.oil) n = Math.min(n, Math.max(0, b.oil || 0) / us.type.oil);
     if (n <= 0) continue;
@@ -3095,14 +3648,50 @@ function strikePlan(n, tx, ty) {
   if (theirs < 0) return null;
   return { ours, theirs, gap: Math.sqrt(td) };
 }
+// is there open water between two tiles? (troops cross water by boat, from a port)
+function waterBetween(a, b) {
+  const ax = a % W + 0.5, ay = ((a / W) | 0) + 0.5, bx = b % W + 0.5, by = ((b / W) | 0) + 0.5, n = Math.ceil(Math.hypot(bx - ax, by - ay));
+  let w = 0;
+  for (let k = 1; k < n; k++) if (biome[idx(Math.floor(ax + (bx - ax) * k / n), Math.floor(ay + (by - ay) * k / n))] === OCEAN) w++;
+  return w >= 2;
+}
+// the sea crossing for an attack: from your port nearest the target to the shore by their land.
+// { port, pts, spd } or null (no port, or no way by sea)
+function seaCrossing(beach) {
+  if (!game.research.done.has('sailing')) return null;
+  const bx = beach % W, by = (beach / W) | 0;
+  let land = -1, ld = Infinity;                     // a coast tile of theirs (or free) near the target to land on
+  for (let dy = -12; dy <= 12; dy++) for (let dx = -12; dx <= 12; dx++) {
+    const x = bx + dx, y = by + dy, d = dx * dx + dy * dy;
+    if (d < ld && inb(x, y) && !owner[idx(x, y)] && isLand(idx(x, y)) && isCoastal(idx(x, y))) { ld = d; land = idx(x, y); }
+  }
+  if (land < 0) return null;
+  const ports = game.hubs.sea.filter(t => owner[t]).sort((p, q) => tileDist(p, bx, by) - tileDist(q, bx, by));
+  for (const P of ports.slice(0, 3)) {
+    const r = seaPath(P, [land]);
+    if (!r) continue;
+    const sp = rideSpeed('sea'), pts = [], spd = [];
+    for (let k = 0; k < r.path.length; k += 2) { pts.push(tileCenter(r.path[k])); spd.push(sp); }
+    pts.push(tileCenter(land)); spd.push(unitStats().speed);
+    return { port: P, pts, spd, land };
+  }
+  return null;
+}
 // Send troops at a nation: troopPct of all your garrisoned units, from the fortresses nearest the front
 // (a base only goes first when it's nearer than any fortress with troops, or the fortresses run dry).
 // If your land doesn't touch theirs, the troops march across the gap (if it's within reach) and take a foothold.
 function launchAttack(n, tx, ty) {
   const plan = strikePlan(n, tx, ty);
   if (!plan) { toast(`${n.full} is out of reach there: your troops can strike up to ${strikeReach()} tiles past your border (more with Equestrianism, Automobiles and Flight).`); return false; }
-  const far = plan.gap > 1.5, T = countryAt(plan.ours);
-  const [sx, sy] = tileCenter(far ? plan.theirs : plan.ours);
+  const far = plan.gap > 1.5;
+  // across the sea, troops go by boat: they march to your port nearest the target, sail, and land by their coast
+  const sea = far && waterBetween(plan.ours, plan.theirs) ? seaCrossing(plan.theirs) : null;
+  if (far && waterBetween(plan.ours, plan.theirs) && !sea) {
+    toast(game.research.done.has('sailing') ? `Your troops need a port with a sea route to ${n.short}'s coast to cross the water.` : `Crossing water takes boats: research ${TECH.sailing.name} and build a port.`);
+    return false;
+  }
+  const T = countryAt(sea ? sea.port : plan.ours);
+  const [sx, sy] = sea ? tileCenter(sea.port) : tileCenter(far ? plan.theirs : plan.ours);
   const all = garrisons().filter(b => (b.units || 0) >= 1);
   const avail = all.reduce((a, b) => a + Math.floor(b.units), 0);
   const want = Math.floor(avail * game.troopPct / 100);
@@ -3111,7 +3700,12 @@ function launchAttack(n, tx, ty) {
     return false;
   }
   const opts = [];
-  for (const b of all) { const r = armyRoute(b.i, sx, sy, T); if (r) opts.push({ b, r }); }
+  for (const b of all) {
+    const r = armyRoute(b.i, sx, sy, T);
+    if (!r) continue;
+    if (sea) { r.pts = [...r.pts, ...sea.pts]; r.spd = [...r.spd, ...sea.spd]; }   // then the boats
+    opts.push({ b, r });
+  }
   if (!opts.length) { toast(`None of your troops can reach ${T.short}: link it to a domain with a fortress or base (port, rail or airport).`); return false; }
   const forts = opts.filter(o => o.b.type === 'fort').sort((p, q) => p.r.len - q.r.len);
   const bases = opts.filter(o => o.b.type === 'base').sort((p, q) => p.r.len - q.r.len);
@@ -3127,6 +3721,7 @@ function launchAttack(n, tx, ty) {
     at.coming += k; left -= k;
   }
   at.start = at.coming;
+  if (sea) [at.lx, at.ly] = tileCenter(sea.land);
   game.attacks.push(at);
   provoke(n);
   toast(`${at.coming} ${unitStats().type.name} march on ${n.full}${far ? `, ${Math.round(plan.gap)} tiles past your border` : ''}. They attack as they arrive.`);
@@ -3139,14 +3734,21 @@ function stepAttack(at, dt) {
   if (!n || !n.alive) { at.done = true; return; }
   if (at.units < 0.5) { if (at.coming < 0.5) at.done = true; return; }
   const us = unitStats(), them = nationStats(n);
-  const eng = Math.min(at.units, Math.max(0, n.units), 25 + at.units * 0.5);   // how many meet at the front
-  if (n.units >= 0.5) {
-    const k = M.kill * dt * eng;
-    const ourKill = Math.min(n.units, k * us.atk / them.hp);
+  // defenders meet the wave invading your land where it is; attackers meet the nation's army
+  const raid = at.defend ? game.raids.find(q => q.n === n.id && !q.done && q.lx != null && Math.hypot(q.lx - at.lx, q.ly - at.ly) < 30) : null;
+  if (raid) { at.tx = raid.lx; at.ty = raid.ly; }
+  const foeN = at.defend ? (raid ? raid.budget : 0) : Math.max(0, n.units);
+  const eng = Math.min(at.units, foeN, 25 + at.units * 0.5);   // how many meet at the front
+  if (foeN >= 0.5) {
+    const k = M.kill * dt * eng, home = at.defend ? 1.15 : 1;  // defenders fight on home ground
+    const ourKill = Math.min(foeN, k * us.atk * home / them.hp);
     const theirKill = Math.min(at.units, k * them.atk * them.def / us.hp);
-    n.units -= ourKill; at.units -= theirKill; at.killed = (at.killed || 0) + ourKill; at.lost = (at.lost || 0) + theirKill;
+    if (raid) { raid.budget -= ourKill; raid.killed = (raid.killed || 0) + ourKill; } else n.units -= ourKill;
+    n.lost = (n.lost || 0) + ourKill;
+    at.units -= theirKill; at.killed = (at.killed || 0) + ourKill; at.lost = (at.lost || 0) + theirKill;
   }
-  const odds = at.units / (at.units + (n.units >= 0.5 ? eng * them.def : 0) + 1e-6);
+  if (at.defend && raid) return;                   // first beat the wave; then take back what it took
+  const odds = at.units / (at.units + (!at.defend && n.units >= 0.5 ? eng * them.def : 0) + 1e-6);
   at.work += (1.5 + 1.2 * Math.sqrt(at.units)) * odds * dt * Math.sqrt(us.speed / M.speed);
   if (at.work < 1) return;
   if (at.far && !at.landed) {                      // troops that crossed open country first take a foothold
@@ -3164,8 +3766,9 @@ function stepAttack(at, dt) {
   const cands = [];
   for (const i of frontier) {
     if (owner[i] || (aiOf[i] && aiOf[i] !== n.id + 1) || !isLand(i)) continue;
+    if (at.defend && !(game.lost.has(i) && aiOf[i])) continue;   // defenders only take back what was yours
     const x = i % W, y = (i / W) | 0;
-    if (Math.abs(x - at.lx) > 14 || Math.abs(y - at.ly) > 14) continue;   // the fighting stays where the troops are
+    if (Math.abs(x - at.lx) > (at.defend ? 24 : 14) || Math.abs(y - at.ly) > (at.defend ? 24 : 14)) continue;   // the fighting stays where the troops are
     const d = Math.hypot(x - at.tx, y - at.ty);
     cands.push({ i, s: d + Math.random() * 4 - (aiOf[i] ? 3 : 0) });
   }
@@ -3183,11 +3786,54 @@ function stepAttack(at, dt) {
     const C = liveCountry(at.country) || countryAt(nearestFrontierOwned(c.i));
     if (!C) continue;
     claim(c.i, C.id, true);
+    game.lost.delete(c.i);
     at.lx = c.i % W + 0.5; at.ly = ((c.i / W) | 0) + 0.5;
     if (at.units < 0.5 || at.work < 1) break;
   }
   if (at.units < 0.5) at.units = 0;
-  if (!cands.some(c => aiOf[c.i] === n.id + 1)) at.done = true;   // nothing of theirs left to take here
+  if (!cands.some(c => aiOf[c.i] === n.id + 1) && !raid) at.done = true;   // nothing of theirs left to take here
+}
+// Your forts answer invasions: every second, each wave of invaders that your troops aren't yet matching draws
+// troops out of the forts (bases too, if need be): the wave pressing hardest first, and from the invaded domain's
+// own forts before any other's, nearest first. They beat the wave back, then retake the land it took.
+let defendTimer = 0;
+function autoDefend(dt) {
+  defendTimer += dt;
+  if (defendTimer < 1 || !game.autoDefend) return;
+  defendTimer = 0;
+  for (const [t, at] of game.lost) if (game.time - at > 300 || owner[t]) game.lost.delete(t);   // old losses are forgotten
+  const waves = game.raids.filter(r => !r.done && r.lx != null && r.budget >= 1);
+  const pressing = r => r.budget / (1 + game.attacks.filter(a => a.defend && a.nation === r.n).reduce((t, a) => t + a.units + a.coming, 0));
+  waves.sort((p, q) => pressing(q) - pressing(p));
+  for (const r of waves) {
+    let def = game.attacks.find(a => a.defend && a.nation === r.n && Math.hypot(a.tx - r.lx, a.ty - r.ly) < 30);
+    const want = Math.ceil(r.budget * 1.3) - (def ? def.units + def.coming : 0);
+    if (want < 2) continue;
+    const C = liveCountry(r.dom) || nearestDomain(r.lx, r.ly);
+    // the meeting point: your tile nearest the front (troops come out to the edge of what's still yours)
+    let meet = -1, md = Infinity;
+    for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) {
+      const x = Math.floor(r.lx) + dx, y = Math.floor(r.ly) + dy;
+      if (inb(x, y) && owner[idx(x, y)] && dx * dx + dy * dy < md) { md = dx * dx + dy * dy; meet = idx(x, y); }
+    }
+    if (meet < 0) continue;
+    const T = countryAt(meet), [mx, my] = tileCenter(meet);
+    const src = garrisons().filter(b => (b.units || 0) >= 2).map(b => ({ b, r: armyRoute(b.i, mx, my, T), home: countryAt(b.i) === C }))
+      .filter(o => o.r && o.r.len < 90).sort((p, q) => (q.home - p.home) || (p.b.type === 'fort' ? -1 : 1) - (q.b.type === 'fort' ? -1 : 1) || p.r.len - q.r.len);
+    if (!src.length) continue;
+    if (!def) {
+      def = { id: attackId++, nation: r.n, tx: r.lx, ty: r.ly, units: 0, coming: 0, work: 0, lx: mx, ly: my, country: T.id, start: 0, defend: true };
+      game.attacks.push(def);
+    }
+    let left = want;
+    for (const o of src) {
+      if (left < 1) break;
+      const k = Math.min(Math.floor(o.b.units * 0.8), left);   // each fort keeps a few on its walls
+      if (k < 1) continue;
+      sendArmy(o.b, k, o.r, 'attack', { attack: def.id });
+      def.coming += k; def.start += k; left -= k;
+    }
+  }
 }
 // your tile next to i (for a new tile's domain)
 function nearestFrontierOwned(i) {
@@ -3209,15 +3855,24 @@ function endAttack(at) {
     }
   }
   const nat = game.nations[at.nation];
-  if (at.start >= 1) toast(`Attack on ${nat ? nat.short : 'the enemy'} is over: ${Math.round(at.killed || 0)} of theirs fell, you lost ${Math.round(at.lost || 0)}${at.units >= 1 ? `, ${Math.floor(at.units)} are heading back` : ''}.`);
+  if (at.start >= 1 && at.defend) toast(`Your defenders are done near ${nat ? nat.short : 'the enemy'}'s border: ${Math.round(at.killed || 0)} invaders fell, you lost ${Math.round(at.lost || 0)}${at.units >= 1 ? `, ${Math.floor(at.units)} going back to their fort` : ''}.`);
+  else if (at.start >= 1) toast(`Attack on ${nat ? nat.short : 'the enemy'} is over: ${Math.round(at.killed || 0)} of theirs fell, you lost ${Math.round(at.lost || 0)}${at.units >= 1 ? `, ${Math.floor(at.units)} are heading back` : ''}.`);
 }
 
 // ======================================================================
 // simulation tick
 // ======================================================================
 let netTimer = 0, landTimer = 0, aiTimer = 0, aiFireTimer = 0, supplyTimer = 0;
-function tick(dt) {
-  game.time += dt;
+// every world advances each step: home first (it also runs research, nations and space), then the others
+function tickAll(dt) {
+  const was = WORLD;
+  useWorld(0); tick(dt, true);
+  for (let w = 1; w < WORLDS.length; w++) if (worldData[w]) { useWorld(w); tick(dt, false); }
+  useWorld(was);
+}
+const totalPop = () => WORLDS.reduce((a, P) => a + (P.id === WORLD ? game.population : worldData[P.id] ? worldData[P.id].g.population || 0 : 0), 0);
+function tick(dt, global = true) {
+  if (global) game.time += dt;
   netTimer += dt;
   landTimer += dt;
   if (game.netDirty && netTimer > 0.25) { recomputeNetwork(); netTimer = 0; landTimer = 0; }   // only when domains merge
@@ -3229,13 +3884,15 @@ function tick(dt) {
   // what burns oil (and wood, for early steamships) in each domain this second
   for (const c of game.countries) { c.fuel = 0; c.fuelWood = 0; c.prod = resBox(); c.goldRate = 0; }
   const R0 = game.research.done;
-  for (const cv of game.convoys) if (cv.tier === 'truck') { const C = liveCountry(cv.country); if (C) C.fuel += F.truck; }
-  for (const L of game.links) {
+  for (const v of game.cars) { const T = tierOf(v); if (T.fuel && v.moving) { const C = liveCountry(v.country); if (C) C.fuel += T.fuel; } }
+  for (const L of game.links) {                   // boats and planes burn fuel at both ends of their route, half each
     const A = countryAt(L.a), Bc = countryAt(L.b);
     if (!A || !Bc || A === Bc) continue;
-    if (L.kind === 'air') { A.fuel += F.plane / 2; Bc.fuel += F.plane / 2; }
-    if (L.kind === 'sea' && R0.has('steam')) {
-      if (R0.has('petroleum')) { A.fuel += F.ship / 2; Bc.fuel += F.ship / 2; } else { A.fuelWood += F.shipWood / 2; Bc.fuelWood += F.shipWood / 2; }
+    for (const V of L.ships || []) {
+      const T = tierOf(V);
+      if (!T.fuel || V.grounded) continue;
+      if (V.kind === 'boat' && !R0.has('petroleum')) { A.fuelWood += T.woodFuel / 2; Bc.fuelWood += T.woodFuel / 2; }
+      else { A.fuel += T.fuel / 2; Bc.fuel += T.fuel / 2; }
     }
   }
   const ut = unitStats(R0).type, perUnit = ut.tech === 'armor' ? F.tank : ut.tech === 'automobile' ? F.motor : 0;
@@ -3257,14 +3914,13 @@ function tick(dt) {
     for (const k of DEP_KINDS) {
       const n = b.work[k];
       if (!n) continue;
-      const rate = k === 'wheat' ? n * WH.perTile * farm * C.staff : n * CFG.prodPerTile[k] * (rig ? CFG.power.rigMult * (C.sat ?? 1) : C.staff);
+      const rate = k === 'wheat' ? n * WH.perTile * farm * C.staff * worldFarm() : n * CFG.prodPerTile[k] * (rig ? CFG.power.rigMult * (C.sat ?? 1) : C.staff);
       if (k === 'gold') { gold += rate; C.goldRate += rate; continue; }     // gold isn't stored: it boosts things as it's mined
       const r = DEP_RES[k];
       b.buf[r] = (b.buf[r] || 0) + rate * dt; C.prod[r] += rate;
     }
-    b.haulT = (b.haulT || 0) + dt;
-    const load = boxSum(b.buf);
-    if (load >= haulProf(C).cargo * 0.5 || (load >= 1 && b.haulT > 12)) sendHaul(b, C);   // a cart sets off half full, or after a short wait
+    const load = boxSum(b.buf);                  // it waits here for a car; a full yard stops the work
+    if (load > FLEET.car.store) { const k = FLEET.car.store / load; for (const r in b.buf) b.buf[r] *= k; b.full = true; }
   }
   game.goldRate = gold;
   for (const c of game.countries) {
@@ -3324,21 +3980,23 @@ function tick(dt) {
   }
   empireOil = game.countries.reduce((a, c) => a + (c.alive ? c.res.oil : 0), 0);
   game.population = pop;
-  if (pop > game.peakPop) game.peakPop = pop;
-  researchTick(dt, gold);
+  if (global && totalPop() > game.peakPop) game.peakPop = totalPop();
+  if (global) researchTick(dt, gold);
   militaryTick(dt);
 
   for (const p of game.pushes) stepPush(p, dt);
   gunStep(dt);
   for (const r of game.raids) stepRaid(r, dt);
+  autoDefend(dt);
   for (const r of game.raids) if (r.done && r.budget >= 0.5) game.nations[r.n].units += r.budget;
   game.raids = game.raids.filter(r => !r.done);
   for (const p of game.pushes) if (p.done && p.budget > 0) { const c = liveCountry(p.country); if (c) c.people += p.budget; }
   game.pushes = game.pushes.filter(p => !p.done);
   for (const a of game.armies) stepArmy(a, dt);
   game.armies = game.armies.filter(a => !a.done);
-  for (const cv of game.convoys) stepConvoy(cv, dt);
-  game.convoys = game.convoys.filter(cv => !cv.done);
+  stepCars(dt);
+  if (global) { stepSpace(dt); stepColonyShips(dt); }
+  stepTerraform(dt);
   for (const at of game.attacks) stepAttack(at, dt);
   for (const at of game.attacks) if (at.done) endAttack(at);
   game.attacks = game.attacks.filter(at => !at.done);
@@ -3356,14 +4014,15 @@ function tick(dt) {
   if (roadsDirty && Math.abs(game.time - roadsAt) > 1) { const t0 = performance.now(); buildRoads(); game.roadMs = Math.max(game.roadMs || 0, performance.now() - t0); }   // at most once a second
   if (supplyTimer > 1) { supplyTimer = 0; dispatchSupplies(); }
   if (aiFireTimer > 0.5) {
-    aiFireTimer = 0; aiFire(); yourMortars();
+    aiFireTimer = 0; if (global) { aiFire(); yourMortars(); }
     for (const b of game.buildings) if (b.dmg) {     // damage mends slowly, and a mending settlement holds more again
       b.dmg = Math.max(0, b.dmg - 0.5 / CFG.hp.repairSec);
       if (b.type === 'settlement') game.landDirty = true;
     }
   }
-  if (aiTimer > CFG.ai.think) { aiTimer = 0; for (const n of game.nations) aiThink(n); }
-  for (const n of game.nations) {
+  if (aiTimer > CFG.ai.think) { aiTimer = 0; if (global) for (const n of game.nations) aiThink(n); }
+  if (global) stepNationsWorld(dt);
+  if (global) for (const n of game.nations) {
     if (!n.alive) continue;
     // AI nations mine iron (the tiles their camps work, plus a trickle) into the same kind of capped store as yours
     const have = n.iron ?? CFG.iron.aiStart, cap = n.ironCap || CFG.storage.iron.base;
@@ -3371,6 +4030,12 @@ function tick(dt) {
     n.iron = Math.max(have, Math.min(cap, have + n.ironRate * dt));
     aiResearch(n, dt);
     aiTrain(n, dt);
+    // their other goods (what they can trade): a little a second for each tile they own, up to what they can store
+    const S = n.stock || (n.stock = resBox()), scap = 200 + n.tiles * 0.5;
+    S.wood = Math.min(scap, S.wood + n.tiles * 0.0012 * dt); S.stone = Math.min(scap, S.stone + n.tiles * 0.001 * dt);
+    S.wheat = Math.min(scap, S.wheat + n.tiles * 0.0012 * dt);
+    if (n.R.has("petroleum")) S.oil = Math.min(scap * 0.5, S.oil + n.tiles * 0.0003 * dt);
+    if (n.R.has('fission')) S.uranium = Math.min(60, S.uranium + n.tiles * 0.00004 * dt);
     // and regrow toward their capacity
     if (n.people >= n.cap) { n.growth = 0; continue; }
     n.growth = (CFG.growthRate * n.people * (1 - n.people / n.cap) + CFG.growthBase) * CFG.ai.growth;
@@ -3382,12 +4047,10 @@ function tick(dt) {
     if (A && B && A !== B) { A.nLinks++; B.nLinks++; }
   }
   for (const L of game.links) {
-    const A = countryAt(L.a), B = countryAt(L.b), from = L.dir > 0 ? A : B;
-    // planes need oil at both ends to fly; ships and trains go at their fuel-allowed speed
-    L.grounded = L.kind === 'air' && ((A && A.noOil) || (B && B.noOil));
-    const speed = L.grounded ? 0 : linkStats(L.kind, techIn(from)).speed;
+    const A = countryAt(L.a), B = countryAt(L.b);
     if (!L.out) L.out = { a: emptyBox(), b: emptyBox() };   // out.a: waiting at end a for b; out.b the other way
     if (!L.req) L.req = { a: [], b: [] };
+    if (!L.ships) L.ships = [];
     if (A && B && A !== B) {
       const fa = outputShare(A, B), fb = outputShare(B, A);
       for (const r of CARGO_RES) {
@@ -3402,12 +4065,22 @@ function tick(dt) {
       for (const r of CARGO_RES) { A.res[r] += L.out.a[r] + L.out.b[r]; L.out.a[r] = L.out.b[r] = 0; }
       for (const e of ['a', 'b']) { for (const q of L.req[e]) deliver(q, A); L.req[e] = []; }
     }
-    if (L.cargo === undefined) loadAt(L, L.dir > 0 ? A : B, L.dir > 0 ? B : A, L.dir > 0 ? 'a' : 'b');   // a new link loads at its first stop
-    L.t += speed * dt * L.dir;
+    // each boat, plane or train on the route shuttles between its ends, loading and unloading at each
     const end = L.path.length - 1;
-    if (L.t >= end) { L.t = end; L.dir = -1; unloadAt(L, B); loadAt(L, B, A, 'b'); }
-    else if (L.t <= 0) { L.t = 0; L.dir = 1; unloadAt(L, A); loadAt(L, A, B, 'a'); }
+    for (const V of L.ships) {
+      const from = V.dir > 0 ? A : B, T = FLEET[V.kind].tiers[V.tier];
+      if (T.fuel && from && (V.kind === 'boat' && !game.research.done.has('petroleum') ? from.noWood : from.noOil)) V.down = true;
+      V.grounded = V.kind === 'plane' && V.down && V.tier === 0;   // a propeller plane with no oil can't fly at all
+      const speed = V.grounded ? 0 : tierOf(V).speed * (L.kind === 'air' ? 1 : 1);
+      if (V.cargo === undefined) loadAt(L, V, V.dir > 0 ? A : B, V.dir > 0 ? B : A, V.dir > 0 ? 'a' : 'b');   // a new one loads at its first stop
+      V.t += speed * dt * V.dir;
+      if (V.t >= end) { V.t = end; V.dir = -1; unloadAt(V, B); if (B) atHub(V, B); loadAt(L, V, B, A, 'b'); }
+      else if (V.t <= 0) { V.t = 0; V.dir = 1; unloadAt(V, A); if (A) atHub(V, A); loadAt(L, V, A, B, 'a'); }
+    }
   }
+  for (const b of game.buildings) if (b.site && b.site.crew != null && game.time >= b.site.crew) finishSite(b);   // the crew is done
+  for (const p of game.puffs) p.t += dt / 1.2;
+  game.puffs = game.puffs.filter(p => p.t < 1);
   for (const f of game.floats) f.t += dt;
   game.floats = game.floats.filter(f => f.t < 2.4);
 }
@@ -3416,7 +4089,19 @@ function tick(dt) {
 let noSave = false;
 function saveGame() {
   if (noSave || !game.started || game.over) return;
+  const was = WORLD;
   try {
+    useWorld(0);
+    const data = worldSave();
+    data.worlds = WORLDS.map(P => P.id && worldData[P.id] ? onWorld(P.id, worldSave) : null);
+    if (was !== 0 && camOf[0]) data.cam = camOf[0];   // the view saved is home's
+    useWorld(was);
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    game.savedAt = game.time;
+  } catch (e) { useWorld(was); console.warn('Autosave failed', e); }
+}
+function worldSave() {
+  {
     // territory as runs of one code per tile: 0 = nobody, +k = your domain k-1, -k = AI nation k-1
     const runs = [];
     let prev = null, count = 0;
@@ -3429,7 +4114,7 @@ function saveGame() {
     const back = game.countries.map(() => ({ people: 0, ...resBox() }));
     for (const q of game.pushes) { const c = liveCountry(q.country); if (c) back[c.id].people += q.budget; }
     for (const e of game.expeditions) { const c = liveCountry(e.from); if (c) { back[c.id].people += e.n; for (const r in e.kit) back[c.id][r] += e.kit[r]; } }
-    for (const cv of game.convoys) { const c = liveCountry(cv.country); if (c && cv.purpose !== 'site') for (const r in cv.cargo) back[c.id][r] += cv.cargo[r] || 0; }
+    for (const v of game.cars) { const c = liveCountry(v.country); if (c && !(v.job && v.job.type === 'site')) for (const r in v.cargo) back[c.id][r] += v.cargo[r] || 0; }
     const homeUnits = new Map();
     const sendHome = (tile, n) => { const b = buildingAt(tile) && owner[tile] ? tile : (garrisons()[0] || {}).i; if (b != null) homeUnits.set(b, (homeUnits.get(b) || 0) + n); };
     for (const a of game.armies) sendHome(a.dest ?? a.home, a.n);
@@ -3440,24 +4125,36 @@ function saveGame() {
       v: SAVE_V, seed: SEED, savedAt: Date.now(), time: game.time, active: game.active, peakPop: game.peakPop,
       sendPct: game.sendPct, troopPct: game.troopPct, recruit: game.recruit, warhead: game.warhead,
       connects: game.connects.map(c => [c.a, c.b]), walls: game.walls.map(w => [w.a, w.b]),
+      bridges: game.bridges.map(br => [br.s, br.b, br.len, br.tiles]),
       research: { done: [...game.research.done], cur: game.research.cur, pts: game.research.pts },
       countries: game.countries.map(c => {
         const res = {};
         for (const r of RESOURCES) res[r] = c.res[r] + back[c.id][r];
         return { short: c.short, full: c.full, tier: c.tier, alive: c.alive, mergedInto: c.mergedInto, people: c.people + back[c.id].people, res };
       }),
-      nations: game.nations.map(n => ({ people: n.people, alive: n.alive, hostile: !!n.hostile, iron: n.iron ?? CFG.iron.aiStart,
-        units: n.units + n._back, R: [...n.R], rpts: n.rpts, pers: n.pers, lastRaid: n.lastRaid ?? null })),
+      dip: { op: game.dip.op, wars: [...game.dip.wars] }, alliances: game.alliances, autoDefend: game.autoDefend,
+      nations: game.nations.map(n => ({ people: n.people, alive: n.alive, hostile: !!n.hostile, iron: n.iron ?? CFG.iron.aiStart, stock: n.stock,
+        units: n.units + n._back, R: [...n.R], rpts: n.rpts, pers: n.pers, lastRaid: n.lastRaid ?? null, outposts: n.outposts || null, trades: n.trades || null })),
       buildings: game.buildings.map(b => ({ i: b.i, t: b.type, ready: b.ready || 0, units: (b.units || 0) + (homeUnits.get(b.i) || 0), oil: b.oil || 0,
         buf: b.buf && boxSum(b.buf) >= 0.5 ? b.buf : null,
+        sp: b.type === 'pad' ? { rocket: b.rocket ? b.rocket.fuel : null, supply: b.supply || null, paused: !!b.paused, only: !!b.shuttleOnly } : undefined,
         site: b.site ? { type: b.site.type, need: b.site.need, country: b.site.country, cost: b.site.cost } : null,
         field: b.field != null && deposits[b.field] ? deposits[b.field].tiles : null })),
-      links: game.links.map(L => ({ kind: L.kind, a: L.a, b: L.b, path: L.path, t: L.t, dir: L.dir, cargo: L.cargo || null, to: L.to ?? -1, out: L.out || null, req: L.req || null })),
+      links: game.links.map(L => ({ kind: L.kind, a: L.a, b: L.b, path: L.path, out: L.out || null, req: L.req || null,
+        ships: (L.ships || []).map(V => ({ kind: V.kind, tier: V.tier, t: V.t, dir: V.dir, cargo: V.cargo || null, to: V.to ?? -1 })) })),
+      cars: game.cars.map(v => ({ c: v.country, tier: v.tier, x: v.x, y: v.y })), fleetTarget: game.fleetTarget,
+      space: {                                     // what's in orbit stays there; anything mid-flight comes home
+        counts: [rocketCount, stationCount, shuttleId],
+        flights: game.flights.filter(f => !f.done && f.orbit).map(f => ({ ...f, trail: f.trail.slice(-60) })),
+        orbitals: game.orbitals,
+        shuttles: game.shuttles.map(sh => ({ id: sh.id, home: sh.home, pad: sh.pad, fuel: sh.state === 'docked' ? sh.fuel : 0, runs: sh.runs })),
+        returning: game.supplyRuns.map(r => r.cargo),
+        colonyShips: game.colonyShips,
+      },
       runs, cam: { x: cam.x, y: cam.y, zoom: cam.zoom },
     };
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-    game.savedAt = game.time;
-  } catch (e) { console.warn('Autosave failed', e); }
+    return data;
+  }
 }
 // lay a save over the freshly generated (same seed, so same) world
 function loadGame(sv) {
@@ -3472,16 +4169,20 @@ function loadGame(sv) {
     const c = newCountry({ people: sc.people, res: sc.res });
     Object.assign(c, { short: sc.short, full: sc.full, tier: sc.tier, alive: sc.alive, mergedInto: sc.mergedInto });
   }
-  game.nations.forEach((n, k) => {
+  const home = WORLD === 0;                        // research, nations, diplomacy and space are loaded once, with home
+  if (home) game.nations.forEach((n, k) => {
     const sn = sv.nations[k];
     if (!sn) return;
     Object.assign(n, { people: sn.people, alive: sn.alive, hostile: !!sn.hostile, units: sn.units || 0, rpts: sn.rpts || 0, lastRaid: sn.lastRaid ?? undefined });
     if (sn.iron != null) n.iron = sn.iron;
     if (sn.R) n.R = new Set(sn.R);
     if (sn.pers) n.pers = sn.pers;
+    if (sn.stock) n.stock = sn.stock;
+    if (sn.outposts) n.outposts = sn.outposts;
+    if (sn.trades) n.trades = sn.trades;
   });
   const RS = sv.research || {};
-  game.research.done = new Set(RS.done || []); game.research.cur = RS.cur || null; game.research.pts = RS.pts || 0;
+  if (home) { game.research.done = new Set(RS.done || []); game.research.cur = RS.cur || null; game.research.pts = RS.pts || 0; }
   let i = 0;
   for (let k = 0; k < sv.runs.length; k += 2) {
     const v = sv.runs[k], n = sv.runs[k + 1];
@@ -3496,6 +4197,7 @@ function loadGame(sv) {
     if (sb.units) b.units = sb.units;
     if (sb.oil) b.oil = sb.oil;
     if (sb.buf) b.buf = sb.buf;
+    if (sb.sp) { if (sb.sp.rocket != null) b.rocket = { fuel: sb.sp.rocket, told: true }; b.supply = sb.sp.supply; b.paused = sb.sp.paused; b.shuttleOnly = sb.sp.only; }
     if (sb.site) b.site = { ...sb.site, cost: sb.site.cost || {} };   // its delivery (if one was on the way) sets out again
     if (sb.field) {
       b.field = deposits.length;
@@ -3507,7 +4209,7 @@ function loadGame(sv) {
     const kind = linkKind(sb.t);
     if (kind && !underway(b)) game.hubs[kind].push(sb.i);
   }
-  game.links = sv.links.map(L => ({ ...L, req: L.req || { a: [], b: [] } }));
+  game.links = sv.links.map(L => ({ ...L, req: L.req || { a: [], b: [] }, ships: L.ships || [] }));
   for (let t = 0; t < N; t++) {
     if (!owner[t]) continue;
     const x = t % W, y = (t / W) | 0;
@@ -3517,25 +4219,44 @@ function loadGame(sv) {
       if (!owner[n] && isLand(n)) frontier.add(n);
     }
   }
-  Object.assign(game, { time: sv.time, active: sv.active, peakPop: sv.peakPop, sendPct: sv.sendPct || 25, troopPct: sv.troopPct || 50, recruit: sv.recruit !== false, warhead: sv.warhead || 'conventional' });
-  game.convoys = []; game.armies = []; game.attacks = [];
-  scanNationTiles();
+  game.active = sv.active;
+  if (home) {
+    Object.assign(game, { time: sv.time, peakPop: sv.peakPop, sendPct: sv.sendPct || 25, troopPct: sv.troopPct || 50, recruit: sv.recruit !== false, warhead: sv.warhead || 'conventional' });
+    game.dip = { op: (sv.dip && sv.dip.op) || {}, wars: new Set((sv.dip && sv.dip.wars) || []) };
+    game.alliances = sv.alliances || []; game.autoDefend = sv.autoDefend !== false;
+    game.fleetTarget = sv.fleetTarget || { car: 0, boat: 0, plane: 0 };
+  }
+  game.armies = []; game.attacks = []; game.lost = new Map();
+  game.cars = (sv.cars || []).map(c => ({ id: carId++, kind: 'car', country: c.c, tier: c.tier, x: c.x, y: c.y, cargo: {}, plan: [], pts: null, idle: 0 }));
+  game.bridges = []; bridgeAt.fill(0); bridgeEnd.fill(0);
+  for (const [s0, b, len, tiles] of sv.bridges || []) addBridge({ s: s0, b, len, tiles, t0: -99 });
+  if (home) {
+    const SP = sv.space || {};
+    [rocketCount, stationCount, shuttleId] = SP.counts || [0, 0, 0];
+    game.flights = SP.flights || []; game.orbitals = SP.orbitals || []; game.supplyRuns = []; game.flying = null;
+    game.shuttles = (SP.shuttles || []).map(sh => ({ ...sh, state: 'docked', cargo: {}, people: 0, plan: [] }));
+    for (const cargo of SP.returning || []) { const st = game.orbitals[0]; if (st && st.nation == null) unloadStation(st, cargo, cargo.people); }
+    game.colonyShips = SP.colonyShips || [];
+    scanNationTiles();
+  }
   buildFronts();
   recomputeNetwork();
   paintTerrain();                                  // wheat fields and (if known) oil
   fillLayer.img.data.fill(0); borderLayer.img.data.fill(0);
   for (let t = 0; t < N; t++) if (owner[t] || aiOf[t]) paintTerr(t);
   markDirty(fillLayer, 0, 0); markDirty(fillLayer, W - 1, H - 1); markDirty(borderLayer, 0, 0); markDirty(borderLayer, W - 1, H - 1);
-  if (!game.countries.some(c => c.alive && c.tiles)) throw new Error('save has no living domain');
+  if (home && !game.countries.some(c => c.alive && c.tiles) && !(sv.worlds || []).some(Boolean)) throw new Error('save has no living domain');
   // roads out to buildings and walls between forts: worked out again over the restored land
   game.connects = []; game.walls = [];
   buildRoads();
   for (const [a, b] of sv.connects || []) { const L = building[a] && makeLine(a, b, sideOf(a), true, 20000); if (L) game.connects.push({ a, b, ...L }); }
   for (const [a, b] of sv.walls || []) { const L = building[a] && building[b] && makeLine(a, b, sideOf(a), false, 20000); if (L) game.walls.push({ a, b, ...L }); }
   markNet();
-  for (const b of game.buildings) if (b.site && boxSum(b.site.need) < 0.01) b.site.convoy = false;
-  if (sv.cam) Object.assign(cam, sv.cam);
+  for (const b of game.buildings) if (b.site) { b.site.car = null; b.site.ready = boxSum(b.site.need) < 0.01; }
+  for (const b of game.buildings) { b.claim = 0; b.supplying = false; }
+  if (sv.cam && home) Object.assign(cam, sv.cam);
   game.savedAt = game.time;
+  if (home) (sv.worlds || []).forEach((sw, w) => { if (sw && WORLDS[w]) { genWorld(w); onWorld(w, () => loadGame(sw)); } });
 }
 function newGame() {
   noSave = true;                                   // don't let the unload autosave bring the old game back
@@ -3658,9 +4379,9 @@ function removeBuilding(i) {
   game.buildings.splice(game.buildings.indexOf(b), 1);
   bldVer++;
   for (const arr of Object.values(game.hubs)) { const k = arr.indexOf(i); if (k >= 0) arr.splice(k, 1); }
-  for (const L of game.links) if ((L.a === i || L.b === i) && L.cargo && L.cargo.req) {   // goods aboard a lost link go home
+  for (const L of game.links) if (L.a === i || L.b === i) {   // goods aboard a lost route go home
     const C = countryAt(L.a === i ? L.b : L.a);
-    if (C) for (const q of L.cargo.req) for (const r in q.res) C.res[r] += q.res[r];
+    if (C) for (const V of L.ships || []) if (V.cargo && V.cargo.req) for (const q of V.cargo.req) for (const r in q.res) C.res[r] += q.res[r];
   }
   game.links = game.links.filter(L => L.a !== i && L.b !== i);
   unsowFields(b);
@@ -3752,7 +4473,7 @@ function nukeFallout(x, y, R) {
 // ======================================================================
 // terrain image
 // ======================================================================
-const terrainCanvas = document.createElement('canvas');
+let terrainCanvas = document.createElement('canvas');
 let terrainCtx = null;
 const SHALLOW = [96, 152, 192], DEEP_SEA = [55, 108, 158];
 const GR_LO = [166, 199, 122], GR_HI = [182, 194, 132], HILL = [212, 192, 148];
@@ -3769,13 +4490,22 @@ function tileColor(i) {
     c = mix(GR_LO, GR_HI, h);
     if (detail[i] > 0.58 && h > 0.3) c = mix(c, HILL, clamp((detail[i] - 0.58) * 3.5, 0, 0.75));
   } else if (b === DESERT) {
-    c = mix(DS_A, DS_B, clamp((detail[i] - 0.3) * 1.6, 0, 1));
+    const P = worldPal();
+    c = P ? mix(P.desert[0], P.desert[1], clamp((0.75 - detail[i]) * 1.6, 0, 1)) : mix(DS_A, DS_B, clamp((detail[i] - 0.3) * 1.6, 0, 1));
+  } else if (b === POLAR) {                        // polar ice: white, blue in the cracks and hollows
+    const P = worldPal();
+    c = P ? mix(P.polar[0], P.polar[1], clamp((detail[i] - 0.35) * 1.8, 0, 1)) : mix([238, 244, 250], [196, 214, 232], clamp((detail[i] - 0.35) * 1.8, 0, 1));
+    if (detail[i] > 0.66) c = mix(c, [170, 196, 224], 0.6);
   } else if (b === ICE) {
-    c = mix([248, 251, 253], [150, 178, 206], clamp(iceT[i] * 0.9 + (detail[i] - 0.5) * 0.4, 0, 1));
-    if (detail[i] > 0.62) c = mix(c, [190, 212, 232], 0.7);
+    const P = worldPal();
+    if (P) c = mix(P.rim[0], P.rim[1], clamp(iceT[i] * 0.9 + (detail[i] - 0.5) * 0.4, 0, 1));
+    else {
+      c = mix([248, 251, 253], [150, 178, 206], clamp(iceT[i] * 0.9 + (detail[i] - 0.5) * 0.4, 0, 1));
+      if (detail[i] > 0.62) c = mix(c, [190, 212, 232], 0.7);
+    }
   } else {
-    const h = clamp((elev[i] - mtnLevel) / (maxElev - mtnLevel + 1e-6), 0, 1);
-    c = mix(MT_LO, MT_HI, clamp(h * 1.2 + (detail[i] - 0.5) * 0.5, 0, 1));
+    const h = clamp((elev[i] - mtnLevel) / (maxElev - mtnLevel + 1e-6), 0, 1), P = worldPal();
+    c = P ? mix(P.mtn[0], P.mtn[1], clamp(h * 1.2 + (detail[i] - 0.5) * 0.5, 0, 1)) : mix(MT_LO, MT_HI, clamp(h * 1.2 + (detail[i] - 0.5) * 0.5, 0, 1));
   }
   const dep = depositOf[i];
   if (depVisible(dep)) {
@@ -5072,41 +5802,53 @@ function strokeRoute(path, kind, z, ghost = false) {
   ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
 }
 
-function vehiclePos(L) {
-  const k = Math.min(Math.floor(L.t), L.path.length - 2), f = L.t - k;
-  const [ax, ay] = tileCenter(L.path[k]), [bx, by] = tileCenter(L.path[k + 1]);
-  return [lerp(ax, bx, f), lerp(ay, by, f), Math.atan2(by - ay, bx - ax)];
+function vehiclePos(L, V) {
+  const k = Math.min(Math.floor(V.t), L.path.length - 2), f = V.t - k;
+  const [x0, y0] = tileCenter(L.path[Math.max(0, k)]), [x1, y1] = tileCenter(L.path[Math.min(L.path.length - 1, k + 1)]);
+  return [lerp(x0, x1, f), lerp(y0, y1, f), Math.atan2(y1 - y0, x1 - x0)];
 }
-
-function cargoLabel(c) {
-  const parts = [];
-  const sent = resBox();
-  for (const q of c.req || []) for (const r in q.res) sent[r] += q.res[r];
-  for (const r of ['iron', 'stone', 'wood', 'oil', 'wheat']) if ((c[r] || 0) + sent[r] >= 1) parts.push(`${Math.round((c[r] || 0) + sent[r])} ${r}`);
-  if (c.people >= 1) parts.push(`${c.people} people`);
-  return parts.slice(0, 2).join(' · ') + (parts.length > 2 ? ' …' : '');
+// cargo: a row of resource icons with amounts (people as a figure)
+function cargoBadge(sx, sy, cargo, size = 10) {
+  const items = [];
+  const add = (r, n) => { if (n >= 1) items.push([r, n]); };
+  for (const r of RESOURCES) add(r, (cargo[r] || 0) + (cargo.req || []).reduce((t, q) => t + (q.res[r] || 0), 0));
+  add('people', cargo.people || 0);
+  if (!items.length) return;
+  ctx.font = `800 ${size}px 'Segoe UI', Inter, Arial, sans-serif`;
+  const parts = items.slice(0, 3).map(([r, n]) => [r, fmtNum(n), ctx.measureText(fmtNum(n)).width]);
+  const w = parts.reduce((t, p) => t + size * 1.25 + p[2] + 5, 4);
+  const x0 = sx - w / 2, h = size * 1.6;
+  ctx.fillStyle = 'rgba(14,18,28,0.88)'; ctx.beginPath(); ctx.roundRect(x0, sy - h / 2, w, h, h / 2); ctx.fill();
+  if ((cargo.req || []).length) { ctx.strokeStyle = '#7bd389'; ctx.lineWidth = 1.2; ctx.stroke(); }
+  let x = x0 + 4;
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  for (const [r, txt, tw] of parts) {
+    const ic = RAS[r === 'people' ? 'person' : RES_ICON[r]];
+    if (ic) ctx.drawImage(ic[1], x, sy - size * 0.62, size * 1.25, size * 1.25);
+    x += size * 1.25 + 1;
+    ctx.fillStyle = '#eef2f8'; ctx.fillText(txt, x, sy + 0.5);
+    x += tw + 4;
+  }
+  ctx.textAlign = 'center';
 }
+const SHIP_SPRITE = V => V.kind === 'rail' ? null : FLEET[V.kind].tiers[workTier(V)].id;
 function drawVehicles(z) {
-  for (const L of game.links) {
-    const [wx, wy, ang] = vehiclePos(L);
+  for (const L of game.links) for (const V of L.ships || []) {
+    const [wx, wy, ang] = vehiclePos(L, V);
     const [sx, sy] = toScreen(wx, wy);
     if (sx < -60 || sy < -60 || sx > cw + 60 || sy > ch + 60) continue;
-    if (L.cargo) {                                 // loaded: a gold crate marker, and what it carries up close
-      const off = Math.max(14, z * 1.2), forSite = L.cargo.req && L.cargo.req.length;
-      if (z >= 2) pill(sx, sy - off - 6, cargoLabel(L.cargo), { size: 10, fg: forSite ? '#7bd389' : '#f2c14e', dot: forSite ? '#7bd389' : '#a67c52' });
-      else { ctx.fillStyle = forSite ? '#7bd389' : '#f2c14e'; ctx.fillRect(sx - 3, sy - off, 6, 6); }
-    }
-    const back = L.dir < 0 ? Math.PI : 0;
-    if (L.kind === 'sea' || L.kind === 'air') {   // ships look like your shipbuilding allows; planes sit still without oil
-      const tier = L.kind === 'air' ? 'plane' : boatTier(techIn(countryAt(L.dir > 0 ? L.a : L.b)));
-      const s = Math.max(18, z * (L.kind === 'air' ? 1.4 : 1.6));
+    const back = V.dir < 0 ? Math.PI : 0;
+    if (V.kind === 'boat' || V.kind === 'plane') {   // the boat or plane you bought, at the tier it's working at
+      const spr = SHIP_SPRITE(V), s = Math.max(18, z * (V.kind === 'plane' ? 1.4 : 1.6));
       ctx.save(); ctx.translate(sx, sy);
-      if (L.kind === 'air') ctx.rotate(ang + back); else if (Math.cos(ang + back) < 0) ctx.scale(-1, 1);
-      if (RAS[tier]) ctx.drawImage(RAS[tier][s * dpr > 44 ? 0 : 1], -s / 2, -s / 2, s, s);
+      if (V.kind === 'plane') ctx.rotate(ang + back); else if (Math.cos(ang + back) < 0) ctx.scale(-1, 1);
+      if (RAS[spr]) ctx.drawImage(RAS[spr][s * dpr > 44 ? 0 : 1], -s / 2, -s / 2, s, s);
       ctx.restore();
-      if (L.grounded && z >= 1.5) pill(sx, sy + s * 0.7, 'grounded: no oil', { size: 9.5, fg: '#ff7a6b' });
+      if (V.grounded && z >= 1.5) pill(sx, sy + s * 0.7, 'grounded: no oil', { size: 9.5, fg: '#ff7a6b' });
+      if (V.cargo && z >= 2) cargoBadge(sx, sy - s * 0.75, V.cargo);
       continue;
     }
+    if (V.cargo && z >= 2) cargoBadge(sx, sy - Math.max(14, z * 1.2), V.cargo);
     const len = Math.max(9, z * 1.0), wid = Math.max(5, z * 0.5);
     ctx.save(); ctx.translate(sx, sy); ctx.rotate(ang + back);
     ctx.fillStyle = '#2f3540'; ctx.fillRect(-len * 1.15, -wid / 2, len * 0.95, wid);       // wagon
@@ -5114,6 +5856,30 @@ function drawVehicles(z) {
     ctx.fillStyle = '#f2c14e'; ctx.fillRect(len * 0.65, -wid * 0.25, len * 0.15, wid * 0.5); // headlight
     ctx.restore();
   }
+  // routes with nothing on them yet: a note at each end's hub, so you know to buy some
+  if (z >= 2) for (const L of game.links) if (!(L.ships || []).length) {
+    const [sx, sy] = toScreen(...tileCenter(L.a));
+    pill(sx, sy - Math.max(16, z * 1.3), L.kind === 'sea' ? 'no boats' : 'no planes', { size: 9.5, fg: '#f0a64a' });
+  }
+}
+// a stone bridge: deck, edges and piers (a dashed line while you're planning it)
+function drawBridge(s0, b, z, ghost = null) {
+  if (b < 0) return;
+  const [ax, ay] = toScreen(...tileCenter(s0)), [bx, by] = toScreen(...tileCenter(b));
+  const seg = (ox = 0, oy = 0) => { ctx.beginPath(); ctx.moveTo(ax + ox, ay + oy); ctx.lineTo(bx + ox, by + oy); };
+  ctx.lineCap = 'butt';
+  if (ghost) { seg(); ctx.setLineDash([6, 6]); ctx.lineWidth = Math.max(3, z * 0.8); ctx.strokeStyle = ghost; ctx.stroke(); ctx.setLineDash([]); return; }
+  if (z < 2) { seg(); ctx.lineWidth = Math.max(1.5, z * 0.9); ctx.strokeStyle = '#8b8376'; ctx.stroke(); return; }
+  const w = z * 0.8, len = Math.hypot(bx - ax, by - ay) / z;
+  seg(z * 0.18, z * 0.3); ctx.lineWidth = w; ctx.strokeStyle = 'rgba(10,30,50,0.3)'; ctx.stroke();   // shadow
+  ctx.fillStyle = '#4f4a44';
+  for (let k = 1, n = Math.max(1, Math.round(len / 3)); k < n; k++) {   // piers every ~3 tiles
+    const t = k / n, px = ax + (bx - ax) * t, py = ay + (by - ay) * t;
+    ctx.beginPath(); ctx.arc(px, py, w * 0.62, 0, Math.PI * 2); ctx.fill();
+  }
+  seg(); ctx.lineWidth = w + Math.max(2, z * 0.14); ctx.strokeStyle = '#4f4a44'; ctx.stroke();
+  seg(); ctx.lineWidth = w; ctx.strokeStyle = '#b3aa9b'; ctx.stroke();
+  seg(); ctx.setLineDash([Math.max(1, z * 0.06), Math.max(2, z * 0.42)]); ctx.lineWidth = w * 0.9; ctx.strokeStyle = '#958c7e'; ctx.stroke(); ctx.setLineDash([]);
 }
 // a small badge: an icon and a number (troops in green)
 function badge(sx, sy, n, { color = '#7bd389', bg = 'rgba(14,30,18,0.92)', icon = 'soldier', size = 11 } = {}) {
@@ -5146,20 +5912,1356 @@ function drawTroops(z) {
     const [sx, sy] = toScreen(at.mx, at.my);
     badge(sx, sy, at.units, { size: 13, bg: 'rgba(40,24,10,0.92)', icon: helm });
   }
-  // haulers and deliveries: what's carrying them is what your tech allows (a porter, a cart, a horse, a carriage, a truck)
+  // your cars, at the tier each is working at, with what they carry up close
   if (z < 1.2) return;
-  for (const cv of game.convoys) {
-    const [sx, sy] = toScreen(cv.x, cv.y);
+  for (const v of game.cars) {
+    const [sx, sy] = toScreen(v.x, v.y);
     if (sx < -30 || sy < -30 || sx > cw + 30 || sy > ch + 30) continue;
-    const size = clamp(z * 1.15, 12, 34), spr = RAS[cv.tier];
+    const size = clamp(z * 1.15, 12, 34), spr = RAS[tierOf(v).id];
     ctx.save(); ctx.translate(sx, sy);
-    if (Math.cos(cv.ang || 0) < 0) ctx.scale(-1, 1);
+    if (Math.cos(v.ang || 0) < 0) ctx.scale(-1, 1);
+    if (v.wait > 0) ctx.globalAlpha = 0.5 + 0.5 * Math.abs(Math.sin(game.time * 8));   // being refitted
     if (spr) ctx.drawImage(spr[size * dpr > 44 ? 0 : 1], -size / 2, -size * 0.6, size, size);
     ctx.restore();
-    if (z >= 7) {
-      const parts = Object.entries(cv.cargo).filter(([, v]) => v >= 1).map(([r, v]) => `${Math.round(v)} ${r}`);
-      if (parts.length) pill(sx, sy - size * 0.75, parts.slice(0, 2).join(' · '), { size: 9, fg: cv.purpose === 'haul' ? '#f2c14e' : '#7bd389' });
+    if (z >= 5 && carLoad(v) >= 1) cargoBadge(sx, sy - size * 0.85, v.cargo, 9);
+  }
+}
+// =====================================================================================================
+// ---------- the nations among themselves: borders, opinions, wars, alliances, trade, and offers to you ----------
+// =====================================================================================================
+// Every few seconds each nation weighs up its neighbours like a person would: who it borders, who it trades with,
+// who shares its enemies, who betrayed whom. Opinions drift toward what those facts say; wars, peace and
+// alliances follow from opinions, strength and personality. Now and then a nation makes you an offer.
+let aiBorders = new Map(), aiGap = new Map(), borderTimer = 99, dipTimer = 0, offerTimer = 0, newsAt = -99;
+const pairKey = (a, b) => (a < b ? a * 1000 + b : b * 1000 + a);
+// which nations touch which (and some of the tiles where), rescanned every 15 s
+function scanAiBorders() {
+  aiBorders = new Map(); aiGap = new Map();
+  const edges = game.nations.map(() => []), seen = game.nations.map(() => 0);
+  for (let y = 0; y < H - 1; y++) {
+    const row = y * W;
+    for (let x = 0; x < W - 1; x++) {
+      const i = row + x, a = aiOf[i];
+      if (!a) continue;
+      if (aiOf[i + 1] !== a || aiOf[i + W] !== a || (x && aiOf[i - 1] !== a) || (y && aiOf[i - W] !== a)) {   // an edge tile: keep a fair sample of them
+        const k = ++seen[a - 1], E = edges[a - 1];
+        if (E.length < 250) E.push(i); else if (Math.random() < 250 / k) E[(Math.random() * 250) | 0] = i;
+      }
+      for (const j of [i + 1, i + W]) {
+        const b = aiOf[j];
+        if (!b || b === a) continue;
+        const k = pairKey(a - 1, b - 1);
+        let L = aiBorders.get(k);
+        if (!L) aiBorders.set(k, L = []);
+        if (L.length < 800) L.push(i, j);
+      }
     }
+  }
+  // how far apart every two nations are, and the two edge tiles closest together
+  for (let a = 0; a < edges.length; a++) for (let b = a + 1; b < edges.length; b++) {
+    let best = null;
+    for (const p of edges[a]) { const px = p % W, py = (p / W) | 0; for (const q of edges[b]) { const d = (q % W - px) ** 2 + (((q / W) | 0) - py) ** 2; if (!best || d < best.d) best = { d, a: p, b: q }; } }
+    if (best) { best.d = Math.sqrt(best.d); aiGap.set(pairKey(a, b), best); }
+  }
+}
+// how far a nation's armies reach to fight another: over land nearby, across the sea with ships, anywhere with planes
+const aiReach = n => 40 + (n.R.has('sailing') ? 90 : 0) + (n.R.has('flight') ? 150 : 0);
+const gapOf = (a, b) => (aiGap.get(pairKey(a, b)) || { d: Infinity }).d;
+const canReach = (X, Y) => borders(X.id, Y.id) || gapOf(X.id, Y.id) <= aiReach(X);
+const borders = (a, b) => aiBorders.has(pairKey(a, b));
+// big news is shared, but not so often it drowns everything else
+function news(title, body, involvesYou) {
+  if (!involvesYou && game.time - newsAt < 45) return;
+  newsAt = game.time;
+  notify(title, body);
+}
+const cares = n => touchesYou(n) || allied('P', n.id) || n.hostile;
+// one nation's tile goes to another
+function aiSeize(win, lose, i) {
+  if (aiOf[i] !== lose.id + 1) return;
+  const x = i % W, y = (i / W) | 0;
+  aiOf[i] = win.id + 1; lose.tiles--; lose.sx -= x; lose.sy -= y; win.tiles++; win.sx += x; win.sy += y;
+  paintTerr(i);
+  for (const [dx, dy] of DIRS4) if (inb(x + dx, y + dy)) { const nb = idx(x + dx, y + dy); if (aiOf[nb]) paintTerr(nb); else if (freeLand(nb)) win.front.add(nb); }
+  game.landDirty = true;
+}
+// two nations at war fight along their border: both lose troops, the stronger side takes land
+function aiBattles() {
+  for (const k of game.dip.wars) {
+    const [a, b] = k.split('|').map(Number), A = game.nations[a], B = game.nations[b];
+    if (!A || !B || !A.alive || !B.alive) { game.dip.wars.delete(k); continue; }
+    let L = aiBorders.get(pairKey(a, b));
+    if (!L) {                                      // no shared border: whoever can reach lands troops on the other's nearest edge
+      const G2 = aiGap.get(pairKey(a, b));
+      if (!G2 || (G2.d > aiReach(A) && G2.d > aiReach(B))) continue;   // out of each other's reach: a cold war
+      L = [G2.a, G2.b];
+    }
+    const pa = unitStats(A.R).power * (A.pers.defense > 1.3 ? 1.15 : 1), pb = unitStats(B.R).power * (B.pers.defense > 1.3 ? 1.15 : 1);
+    const ca = A.units * 0.3, cb = B.units * 0.3, sa = ca * pa + 1, sb = cb * pb + 1;
+    const lossA = Math.min(ca, 0.2 * sb / pa), lossB = Math.min(cb, 0.2 * sa / pb);
+    A.units -= lossA; B.units -= lossB; A.lost = (A.lost || 0) + lossA; B.lost = (B.lost || 0) + lossB;
+    const edge = (sa - sb) / (sa + sb), take = Math.round(Math.abs(edge) * 40 + Math.random() * 4);
+    const [win, lose] = edge >= 0 ? [A, B] : [B, A];
+    let got = 0;
+    for (let k2 = 0; k2 < L.length && got < take; k2++) {
+      const t = L[(Math.random() * L.length) | 0];
+      if (aiOf[t] !== lose.id + 1) continue;
+      const x = t % W, y = (t / W) | 0;
+      if (L.length > 2 && !DIRS4.some(([dx, dy]) => inb(x + dx, y + dy) && aiOf[idx(x + dx, y + dy)] === win.id + 1)) continue;
+      aiSeize(win, lose, t); got++;
+      for (const [dx, dy] of DIRS4) {               // and push on a little past it
+        if (got >= take || !inb(x + dx, y + dy)) continue;
+        const nb = idx(x + dx, y + dy);
+        if (aiOf[nb] === lose.id + 1 && Math.random() < 0.5) { aiSeize(win, lose, nb); got++; L.push(nb, t); }
+      }
+    }
+    if (lose.tiles <= 0) {                          // wiped out
+      lose.alive = false; lose.people = 0; setWar(a, b, false);
+      for (const al of game.alliances) al.members = al.members.filter(m => m !== lose.id);
+      game.alliances = game.alliances.filter(al => al.members.length > 1);
+      news(`⚔ ${lose.full} has fallen`, `${win.full} has conquered the last of its land.`, cares(win));
+    }
+  }
+}
+// the opinion two players (nations, or you) "should" have of each other, given everything between them
+function opTarget(a, b) {
+  let t = 0;
+  if (allied(a, b)) t += 35;
+  if (atWar(a, b)) t -= 55;
+  const isP = a === 'P' || b === 'P', n = game.nations[isP ? (a === 'P' ? b : a) : a];
+  if (isP ? touchesYou(n) : borders(a, b) || gapOf(a, b) < 60) t -= 8;      // neighbours compete for land
+  const foes = id => game.nations.filter(m => m.alive && m.id !== a && m.id !== b && atWar(id, m.id)).map(m => m.id);
+  const fa = foes(a), fb = new Set(foes(b));
+  if (fa.some(f => fb.has(f))) t += 18;                                  // the enemy of my enemy
+  if (!isP && game.nations[b] && n.pers.id === game.nations[b].pers.id) t += 6;   // birds of a feather
+  t += Math.min(25, (n.trades || {})[isP ? 'P' : b] || 0);                 // old trading partners trust each other
+  if (!isP) {                                                              // a common threat draws them together
+    const B = game.nations[b];
+    if (game.nations.some(m => m.alive && m.id !== a && m.id !== b && m.pers.aggression >= 0.08 && gapOf(m.id, a) < 120 && gapOf(m.id, b) < 120 &&
+      m.units * unitStats(m.R).power > Math.max(n.units * unitStats(n.R).power, B.units * unitStats(B.R).power))) t += 14;
+    if (gapOf(a, b) > 120 && !atWar(a, b)) t += 6;                         // far enough apart to have nothing to fight over
+  }
+  if (n.pers.id === 'warlord') t -= 10;
+  if (n.pers.id === 'scholar' || n.pers.id === 'turtle') t += 5;
+  return t;
+}
+function driftOpinions() {
+  const live = game.nations.filter(n => n.alive && n.tiles);
+  const ids = ['P', ...live.map(n => n.id)];
+  for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
+    const a = ids[i], b = ids[j], o = getOp(a, b), t = opTarget(a, b);
+    if (Math.abs(o - t) > 0.5) addOp(a, b, Math.sign(t - o) * Math.min(1.2, Math.abs(t - o) * 0.04 + 0.3));
+  }
+}
+// nations decide on war, peace, alliances and trade with each other
+function aiRelations() {
+  const live = game.nations.filter(n => n.alive && n.tiles);
+  for (const A of live) for (const B of live) {
+    if (A.id >= B.id) continue;
+    const op = getOp(A.id, B.id), war = atWar(A.id, B.id), touch = canReach(A, B) || canReach(B, A);
+    const sa = A.units * unitStats(A.R).power, sb = B.units * unitStats(B.R).power;
+    if (!war && touch && !allied(A.id, B.id)) {
+      // who might start it: the more aggressive, the more it dislikes the other, the stronger it is, the more boxed in
+      for (const [X, Y, sx, sy] of [[A, B, sa, sb], [B, A, sb, sa]]) {
+        const cool = game.time - ((X.peaceAt || {})[Y.id] ?? -999) < 150;
+        if (cool || !canReach(X, Y)) continue;
+        const p = X.pers.aggression * 0.45 * (op < -40 ? 2.2 : op < -10 ? 1.2 : op < 20 ? 0.5 : 0.08) * (sx > sy * 1.3 ? 1.6 : sx < sy * 0.7 ? 0.3 : 1) * ((X.stuck || 0) >= 4 ? 2 : 1);
+        if (Math.random() < p) {
+          setWar(X.id, Y.id, true); addOp(X.id, Y.id, -25);
+          callAllies(Y.id, X.id);
+          news(`⚔ War: ${X.short} attacks ${Y.short}`, `${X.full} (${X.pers.name}) has declared war on ${Y.full}.${allied('P', Y.id) ? ' <b>They are your ally.</b>' : ''}`, cares(X) || cares(Y));
+          break;
+        }
+      }
+    } else if (war) {
+      // peace: when the war is costly, opinions soften, or one side is clearly losing and the winner is content
+      const weary = ((A.lost || 0) + (B.lost || 0)) / Math.max(20, A.units + B.units);
+      const p = 0.012 + weary * 0.05 + (op > -20 ? 0.03 : 0) + (A.pers.id === 'warlord' || B.pers.id === 'warlord' ? -0.01 : 0);
+      if (Math.random() < p) {
+        setWar(A.id, B.id, false); addOp(A.id, B.id, 12); A.lost = B.lost = 0;
+        (A.peaceAt || (A.peaceAt = {}))[B.id] = game.time; (B.peaceAt || (B.peaceAt = {}))[A.id] = game.time;
+        news(`🕊 Peace between ${A.short} and ${B.short}`, `${A.full} and ${B.full} have signed a peace.`, cares(A) || cares(B));
+      }
+    }
+    // alliances: friends band together, especially against a shared enemy (you, perhaps)
+    if (!war && op > 30 && Math.random() < 0.12) {
+      const alA = allianceOf(A.id), alB = allianceOf(B.id), both = getOp('P', A.id) < -35 && getOp('P', B.id) < -35;
+      if (!alA && !alB) {
+        const al = makeAlliance(A.id, B.id);
+        news(`🤝 ${al.name[4].toUpperCase() + al.name.slice(5)} founded`, `${A.full} and ${B.full} have formed ${al.name}${both ? ', and neither of them likes you' : ''}.`, both || cares(A) || cares(B));
+      } else if (alA && !alB && !alA.members.includes('P') && getOp(alA.leader, B.id) > 25) { joinAlliance(alA, B.id); news(`🤝 ${B.short} joins ${alA.name}`, `${B.full} has joined ${alA.name}.`, cares(B)); }
+      else if (alB && !alA && !alB.members.includes('P') && getOp(alB.leader, A.id) > 25) { joinAlliance(alB, A.id); news(`🤝 ${A.short} joins ${alB.name}`, `${A.full} has joined ${alB.name}.`, cares(A)); }
+    }
+    // a falling-out: members who have come to hate each other leave
+    if (allied(A.id, B.id) && op < -25) {
+      const quitter = A.pers.aggression > B.pers.aggression ? A : B;
+      leaveAlliance(quitter.id);
+      news(`💔 ${quitter.short} walks out`, `${quitter.full} has left its alliance after a falling-out.`, cares(quitter));
+    }
+    // trade: friends swap what they have plenty of, and like each other more for it
+    if (!war && op > 15 && Math.random() < 0.2 && A.stock && B.stock) {
+      const r = RESOURCES[(Math.random() * RESOURCES.length) | 0], give = A.stock[r] > B.stock[r] ? A : B, get = give === A ? B : A, n = Math.min(30, (give.stock[r] - get.stock[r]) / 3);
+      if (n > 5) { give.stock[r] -= n; get.stock[r] += n; addOp(A.id, B.id, 1.5); for (const [X, Y] of [[A, B], [B, A]]) (X.trades || (X.trades = {}))[Y.id] = ((X.trades || {})[Y.id] || 0) + 0.5; }
+    }
+  }
+  // allies share their science: research goes faster in an alliance (and faster still with a scholar in it)
+  for (const al of game.alliances) {
+    const ms = al.members.filter(m => m !== 'P').map(m => game.nations[m]).filter(n => n && n.alive);
+    const boost = 0.12 + (ms.some(n => n.pers.id === 'scholar') ? 0.08 : 0);
+    for (const n of ms) n.rpts += n.people * CFG.research.perPerson * CFG.research.aiMult * boost * 6;
+  }
+}
+// boxed in with nowhere left to grow: a nation with ships sends settlers across the water
+function aiOverseas(n) {
+  if (!n.R.has('sailing') || n.people < 120 || (n.stuck || 0) < 4 || Math.random() > 0.15) return;
+  let best = -1, bd = Infinity;
+  for (let k = 0; k < 500; k++) {
+    const t = (Math.random() * N) | 0;
+    if (!freeLand(t) || biome[t] !== GRASS || depositOf[t] >= 0) continue;
+    const x = t % W, y = (t / W) | 0;
+    let clear = true;
+    for (let dy = -8; dy <= 8 && clear; dy += 2) for (let dx = -8; dx <= 8 && clear; dx += 2) { if (!inb(x + dx, y + dy)) continue; const j = idx(x + dx, y + dy); if (owner[j] || aiOf[j]) clear = false; }
+    if (!clear) continue;
+    const d = Math.hypot(x - n.lx, y - n.ly);
+    if (d < bd && d < 260) { bd = d; best = t; }
+  }
+  if (best < 0) return;
+  const bx = best % W, by = (best / W) | 0;
+  for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) { if (dx * dx + dy * dy > 17 || !inb(bx + dx, by + dy)) continue; const t = idx(bx + dx, by + dy); if (freeLand(t)) aiClaim(n, t); }
+  placeBuilding(best, 'settlement'); game.bldDirty = true;
+  n.people -= 30; n.stuck = 0;
+  if (n.tiles && Math.hypot(bx - spawn.x, by - spawn.y) < 200) news(`⛵ ${n.short} settles overseas`, `${n.full} has founded a colony across the water.`, false);
+}
+
+// ---------- offers: a nation comes to you ----------
+function offerTo(n, title, body, yes, no, yesLabel = 'Accept', noLabel = 'Decline', expire = null) {
+  notify(`${n.short}: ${title}`, body, [{ label: yesLabel, cls: 'go', act: yes }, { label: noLabel, act: no || (() => {}) }], expire);
+}
+const resWord = (o) => Object.entries(o).filter(([, v]) => v >= 1).map(([r, v]) => `${Math.round(v)} ${r}`).join(' and ');
+function aiOffers() {
+  const C0 = activeCountry();
+  if (!C0 || document.querySelectorAll('#notes .nbtns').length >= 2) return;   // don't pile offers up
+  const near = n => game.countries.some(c => c.alive && c.tiles && Math.hypot(c.lx - n.lx, c.ly - n.ly) < 260);
+  const live = game.nations.filter(n => n.alive && n.tiles && (touchesYou(n) || near(n) || Math.abs(getOp('P', n.id)) > 20 || allied('P', n.id)));
+  if (!live.length) return;
+  const n = live[(Math.random() * live.length) | 0], op = getOp('P', n.id), C = nearestDomain(n.lx, n.ly) || C0;
+  if (game.time - (n.offerAt ?? -999) < 150) return;
+  const mine = allianceOf('P'), theirs = allianceOf(n.id);
+  const ideas = [];
+  // peace, with something to sweeten it, from a nation that's losing
+  if (n.hostile && ((n.lost || 0) > n.units * 0.6 || n.units < aiUnitCap(n) * 0.2)) ideas.push('peace');
+  // tribute: a strong, aggressive neighbour that doesn't like you
+  if (!n.hostile && touchesYou(n) && ['warlord', 'raider', 'opportunist'].includes(n.pers.id) && op < 10 && n.units * unitStats(n.R).power > yourStrength() * 1.3) ideas.push('demand');
+  if (!n.hostile && op > -30 && n.stock) ideas.push('trade');
+  if (!n.hostile && op > 50 && !allied('P', n.id) && !(mine && theirs)) ideas.push('ally');
+  if (allied('P', n.id)) { const foe = game.nations.find(m => m.alive && atWar(n.id, m.id) && !m.hostile && !allied('P', m.id)); if (foe) ideas.push('help:' + foe.id); }
+  if (!ideas.length) return;
+  const idea = ideas[(Math.random() * ideas.length) | 0];
+  n.offerAt = game.time;
+  if (idea === 'trade') {
+    // they offer what they have most of, for what you have most of (that they're short of); friends drive softer bargains
+    const theirs2 = RESOURCES.filter(r => r !== 'uranium' || n.R.has('fission')).sort((a, b) => (n.stock[b] || 0) * PRICE[b] - (n.stock[a] || 0) * PRICE[a])[0];
+    const want = RESOURCES.filter(r => r !== theirs2 && C.res[r] > 40).sort((a, b) => (C.res[b] / Math.max(1, C.store[b] || 1)) - (C.res[a] / Math.max(1, C.store[a] || 1)))[0];
+    if (!theirs2 || !want || (n.stock[theirs2] || 0) < 40) return;
+    const giveN = Math.floor(Math.min(n.stock[theirs2] * 0.5, 120)), value = giveN * PRICE[theirs2] * (op > 30 ? 1.15 : op > 0 ? 1 : 0.85);
+    const askN = Math.floor(Math.min(C.res[want] * 0.6, value / PRICE[want]));
+    if (giveN < 10 || askN < 5) return;
+    offerTo(n, 'a trade', `${n.full} offers <b>${giveN} ${theirs2}</b> for <b>${askN} ${want}</b> from ${C.short}.`, () => {
+      if (C.res[want] < askN) return toast(`${C.short} no longer has ${askN} ${want}`);
+      C.res[want] -= askN; C.res[theirs2] += giveN; n.stock[theirs2] -= giveN; n.stock[want] = (n.stock[want] || 0) + askN; addOp('P', n.id, 6);
+      (n.trades || (n.trades = {})).P = (n.trades.P || 0) + 3;
+      toast(`Trade done with ${n.short}: +${giveN} ${theirs2}`);
+    }, () => addOp('P', n.id, -1));
+  } else if (idea === 'ally') {
+    const join = theirs && !mine;
+    offerTo(n, join ? `join ${theirs.name}?` : 'an alliance?', join ? `${n.full} invites you into ${theirs.name}. Allies come to each other's aid, and a betrayal is never forgotten.`
+      : mine ? `${n.full} asks to join ${mine.name}.` : `${n.full} proposes an alliance with you.`, () => {
+      if (join) joinAlliance(theirs, 'P'); else if (mine) joinAlliance(mine, n.id); else makeAlliance('P', n.id);
+      addOp('P', n.id, 10); toast(`You and ${n.short} are now allies.`);
+      if (cmdOpen) updateCmdMenu();
+    }, () => addOp('P', n.id, -4));
+  } else if (idea === 'peace') {
+    const gift = {};
+    for (const r of ['iron', 'stone', 'wood']) if ((n.stock[r] || 0) > 30) gift[r] = Math.floor(n.stock[r] * 0.3);
+    offerTo(n, 'peace?', `${n.full} has had enough of the war and asks for peace${resWord(gift) ? `, offering ${resWord(gift)}` : ''}.`, () => {
+      setWar('P', n.id, false); n.lost = 0; addOp('P', n.id, 12);
+      for (const r in gift) { n.stock[r] -= gift[r]; C.res[r] += gift[r]; }
+      toast(`Peace with ${n.short}.`);
+    }, () => addOp('P', n.id, -3), 'Make peace', 'Fight on');
+  } else if (idea === 'demand') {
+    const r = C.res.iron > 60 ? 'iron' : C.res.stone > 60 ? 'stone' : 'wood', amt = Math.floor(Math.min(C.res[r] * 0.35, 150));
+    if (amt < 15) return;
+    let answered = false;
+    const refuse = () => {
+      if (answered) return; answered = true;
+      addOp('P', n.id, -15);
+      if (Math.random() < 0.45 && !n.hostile) { n.hostile = true; n.warSince = game.time; toast(`${n.full} takes your refusal as an insult and declares war!`); callAllies('P', n.id); }
+      else toast(`${n.short} grumbles, but backs down for now.`);
+    };
+    offerTo(n, 'a demand', `${n.full} (${n.pers.name}) demands <b>${amt} ${r}</b> from ${C.short}, "for the sake of peace". Refusing may mean war.`, () => {
+      if (answered) return; answered = true;
+      const pay = Math.min(amt, C.res[r]); C.res[r] -= pay; n.stock[r] = (n.stock[r] || 0) + pay; addOp('P', n.id, 8);
+      toast(`You paid ${n.short} ${Math.round(pay)} ${r}.`);
+    }, refuse, 'Pay', 'Refuse', refuse);           // ignoring it is refusing it
+  } else if (idea.startsWith('help:')) {
+    const foe = game.nations[+idea.slice(5)];
+    offerTo(n, 'a call for help', `Your ally ${n.full} is at war with ${foe.full} and asks you to join in.`, () => {
+      foe.hostile = true; foe.warSince = game.time; addOp('P', foe.id, -35); addOp('P', n.id, 15); callAllies(foe.id, 'P');
+      toast(`You declared war on ${foe.short} alongside ${n.short}.`);
+    }, () => addOp('P', n.id, -10), 'Declare war', 'Stay out');
+  }
+}
+// once a frame, from the home tick
+function stepNationsWorld(dt) {
+  borderTimer += dt; dipTimer += dt; offerTimer += dt;
+  if (borderTimer > 15) { borderTimer = 0; scanAiBorders(); }
+  if (dipTimer > 6) {
+    dipTimer = 0;
+    driftOpinions();
+    aiRelations();
+    aiBattles();
+    for (const n of game.nations) if (n.alive && n.tiles) aiOverseas(n);
+  }
+  if (offerTimer > 35 + Math.random() * 20) { offerTimer = 0; if (game.started && !game.over) aiOffers(); }
+}
+
+// =====================================================================================================
+// ---------- worlds: your home, the Moon and Aries. Each is a full map; the one on screen is "swapped in" ----------
+// =====================================================================================================
+// Every per-world thing (the tile arrays, deposits, roads, domains, buildings, links, cars, troops...) lives in
+// worldData[w] while another world is swapped in. Research, diplomacy, nations and space are shared.
+const WORLDS = [
+  { id: 0, key: 'home', name: 'Home', short: 'Home' },
+  { id: 1, key: 'moon', name: 'the Moon', short: 'Moon', body: 'moon', trip: 30, cap: 0.22, farm: 0.45, dome: 45, deps: ['stone', 'iron', 'gold', 'uranium'],
+    gen: { waterFraction: 0, desertShare: 1, mountainShare: 0.08, continentScale: 150, poles: { start: 0.86, wobble: 0.04, strait: 0.0 } }, craters: 260,
+    blurb: 'Grey dust and craters, ice at the poles. Nothing grows outside the domes.' },
+  { id: 2, key: 'aries', name: 'Aries', short: 'Aries', body: 'aries', trip: 80, cap: 0.3, farm: 0.6, dome: 55, deps: ['stone', 'iron', 'gold', 'uranium', 'oil'],
+    gen: { waterFraction: 0.1, desertShare: 1, mountainShare: 0.16, continentScale: 190, poles: { start: 0.8, wobble: 0.06, strait: 0.02 } }, craters: 70,
+    blurb: 'The red planet: rust deserts, old canyons and frozen poles. Terraform it green.' },
+];
+let WORLD = 0;
+const worldData = [];
+const GAME_KEYS = ['countries', 'active', 'landTiles', 'ownedCount', 'buildings', 'links', 'hubs', 'pushes', 'expeditions', 'floats', 'cars', 'connects', 'walls',
+  'puffs', 'bridges', 'armies', 'attacks', 'missiles', 'blasts', 'scorch', 'tracers', 'raids', 'lost', 'netDirty', 'bldDirty', 'landDirty', 'population', 'driving'];
+const worldGenerated = w => w === 0 || !!worldData[w];
+function stashWorld() {
+  const d = worldData[WORLD] || (worldData[WORLD] = {});
+  Object.assign(d, { elev, moist, detail, oceanDist, iceT, biome, landmass, owner, depositOf, building, aiOf, comp, countryOf, NET, DEFM, bridgeAt, bridgeEnd,
+    deposits, seaLevel, mtnLevel, maxElev, spawn, capitalTile, frontier, roads, roadsDirty, roadsAt, graphNet, lastSettlements, graphCache, graphStamp, planCache,
+    netTimer, landTimer, aiTimer, aiFireTimer, supplyTimer, transferTimer, defendTimer, terrainCanvas, terrainCtx, fillLayer, borderLayer });
+  d.g = {};
+  for (const k of GAME_KEYS) d.g[k] = game[k];
+}
+function useWorld(w) {
+  if (w === WORLD) return;
+  stashWorld();
+  const d = worldData[w];
+  ({ elev, moist, detail, oceanDist, iceT, biome, landmass, owner, depositOf, building, aiOf, comp, countryOf, NET, DEFM, bridgeAt, bridgeEnd,
+    deposits, seaLevel, mtnLevel, maxElev, spawn, capitalTile, frontier, roads, roadsDirty, roadsAt, graphNet, lastSettlements, graphCache, graphStamp, planCache,
+    netTimer, landTimer, aiTimer, aiFireTimer, supplyTimer, transferTimer, defendTimer, terrainCanvas, terrainCtx, fillLayer, borderLayer } = d);
+  for (const k of GAME_KEYS) game[k] = d.g[k];
+  WORLD = w;
+  bldVer++; graphVer++;
+}
+// do something on another world, then come back
+function onWorld(w, fn) {
+  const was = WORLD;
+  useWorld(w);
+  try { return fn(); } finally { useWorld(was); }
+}
+const worldCap = () => WORLD ? WORLDS[WORLD].cap : 1;        // land capacity off home, outside terraformed land (domes)
+const worldFarm = () => WORLD ? WORLDS[WORLD].farm : 1;      // greenhouse farms grow less
+// make a new world's map: same machinery as home, different settings, its own seed
+function genWorld(w) {
+  if (worldGenerated(w)) return;
+  const was = WORLD, P = WORLDS[w];
+  stashWorld();
+  elev = new Float32Array(N); moist = new Float32Array(N); detail = new Float32Array(N); oceanDist = new Uint8Array(N); iceT = new Float32Array(N);
+  biome = new Uint8Array(N); landmass = new Int32Array(N).fill(-1); owner = new Uint8Array(N); depositOf = new Int16Array(N).fill(-1);
+  building = new Uint8Array(N); aiOf = new Uint8Array(N); comp = new Int32Array(N).fill(-1); countryOf = new Int16Array(N).fill(-1);
+  NET = new Uint8Array(N); DEFM = new Uint8Array(N); bridgeAt = new Uint8Array(N); bridgeEnd = new Uint8Array(N);
+  deposits = []; frontier = new Set(); roads = []; roadsDirty = true; roadsAt = -9; graphNet = null; lastSettlements = -1; graphCache = null; graphStamp = -1;
+  planCache = { key: null, val: null }; netTimer = landTimer = aiTimer = aiFireTimer = supplyTimer = transferTimer = defendTimer = 0;
+  terrainCanvas = document.createElement('canvas'); terrainCtx = null; fillLayer = makeLayer(); borderLayer = makeLayer();
+  Object.assign(game, { countries: [], active: 0, landTiles: 0, ownedCount: 0, buildings: [], links: [], hubs: { road: [], sea: [], rail: [], air: [] },
+    pushes: [], expeditions: [], floats: [], cars: [], connects: [], walls: [], puffs: [], bridges: [], armies: [], attacks: [], missiles: [], blasts: [],
+    scorch: [], tracers: [], raids: [], lost: new Map(), netDirty: true, bldDirty: true, landDirty: false, population: 0, driving: null });
+  WORLD = w;
+  const rngWas = rng, keep = {};
+  rng = mulberry32((SEED * 31 + w * 1013) >>> 0);
+  for (const k in P.gen) { keep[k] = CFG[k]; CFG[k] = P.gen[k]; }
+  try { generateTerrain(); } finally { for (const k in keep) CFG[k] = keep[k]; }
+  stampCraters(P.craters);
+  spawn = { x: Math.floor(DISK.cx), y: Math.floor(DISK.cy) };
+  scatterDeposits(P.deps);
+  paintTerrain();
+  rng = rngWas;
+  stashWorld();
+  useWorld(was);
+}
+// craters: a raised rim (mountain) round a dusty floor, darker inside
+function stampCraters(n) {
+  for (let k = 0; k < n; k++) {
+    const a = rng() * Math.PI * 2, r0 = Math.sqrt(rng()) * DISK.R * 0.85, cx = DISK.cx + Math.cos(a) * r0, cy = DISK.cy + Math.sin(a) * r0;
+    const R = 3 + Math.pow(rng(), 2.2) * 26;
+    for (let dy = -Math.ceil(R + 2); dy <= R + 2; dy++) for (let dx = -Math.ceil(R + 2); dx <= R + 2; dx++) {
+      const x = Math.floor(cx + dx), y = Math.floor(cy + dy);
+      if (!inb(x, y)) continue;
+      const i = idx(x, y), d = Math.hypot(dx, dy) / R;
+      if (biome[i] !== DESERT && biome[i] !== MOUNTAIN) continue;
+      if (d < 0.82) { detail[i] = Math.max(0, detail[i] - 0.22 * (1 - d)); if (biome[i] === MOUNTAIN && R > 6) biome[i] = DESERT; }
+      else if (d < 1.08 && R > 5) { biome[i] = MOUNTAIN; elev[i] = Math.max(elev[i], mtnLevel + (maxElev - mtnLevel) * 0.3 * (1.08 - d) / 0.26); }
+      else if (d < 1.35) detail[i] = Math.min(1, detail[i] + 0.08);   // the bright splash round it
+    }
+  }
+}
+function scatterDeposits(kinds) {
+  const specs = [
+    { type: 'stone', ok: b => b === MOUNTAIN || b === DESERT, count: game.landTiles / 1500, min: 8, max: 16 },
+    { type: 'iron', ok: b => b === MOUNTAIN || b === DESERT, count: game.landTiles / 1300, min: 8, max: 16 },
+    { type: 'gold', ok: b => b === MOUNTAIN || b === DESERT, count: game.landTiles * CFG.gold.count, min: 5, max: 10 },
+    { type: 'oil', ok: b => b === DESERT, count: game.landTiles * CFG.oil.count, min: 8, max: 18 },
+    { type: 'uranium', ok: b => b === MOUNTAIN || b === DESERT, count: game.landTiles * CFG.uranium.count * 1.6, min: 4, max: 9 },
+  ].filter(sp => kinds.includes(sp.type));
+  for (const sp of specs) {
+    let made = 0, tries = 0;
+    while (made < sp.count && tries++ < sp.count * 30) {
+      const i = (rng() * N) | 0;
+      if (!sp.ok(biome[i]) || depositOf[i] >= 0) continue;
+      const before = deposits.length;
+      addDeposit(sp.type, growBlob(i % W, (i / W) | 0, sp.min + ((rng() * (sp.max - sp.min)) | 0), j => sp.ok(biome[j]) && depositOf[j] < 0));
+      if (deposits.length > before) made++;
+    }
+  }
+}
+// the colours of another world: grey regolith, or rust
+const PAL = {
+  moon: { desert: [[150, 150, 146], [112, 112, 110]], mtn: [[170, 170, 166], [226, 226, 222]], rim: [[96, 96, 98], [60, 60, 64]], polar: [[226, 232, 238], [184, 194, 206]] },
+  aries: { desert: [[198, 112, 70], [160, 84, 52]], mtn: [[132, 70, 46], [214, 150, 108]], rim: [[150, 92, 78], [96, 54, 46]], polar: [[240, 232, 228], [206, 190, 184]] },
+};
+const worldPal = () => WORLD ? PAL[WORLDS[WORLD].key] : null;
+
+// ---------- seeing another world ----------
+const camOf = [];
+function viewWorld(w) {
+  if (w === WORLD) return;
+  if (!worldGenerated(w)) genWorld(w);
+  camOf[WORLD] = { x: cam.x, y: cam.y, zoom: cam.zoom };
+  stopFollow(); cam.anim = null; setTool(null); setAiming(false); showBuildingCard(null); closeDiplomacy();
+  game.flying = null;
+  useWorld(w);
+  const c = camOf[w] || (() => { const C = activeCountry(); return C ? { x: C.lx, y: C.ly, zoom: 6 } : { x: DISK.cx, y: DISK.cy, zoom: fitZoom() }; })();
+  Object.assign(cam, c);
+  if (w && !game.countries.some(c2 => c2.alive)) toast(`${WORLDS[w].name[0].toUpperCase() + WORLDS[w].name.slice(1)}: ${WORLDS[w].blurb}`);
+  updateCmdMenu && cmdOpen && updateCmdMenu();
+}
+const worldsWithYou = () => WORLDS.filter(P => worldGenerated(P.id) && (P.id === WORLD ? game.countries : worldData[P.id].g.countries).some(c => c.alive));
+
+// ---------- colony ships: a ready rocket on a launch pad carries settlers and a kit to another world ----------
+const COLONY = { people: 40, kit: { iron: 80, stone: 80, wood: 40, wheat: 120 }, cost: { iron: 120 } };
+function colonyReady(b) {
+  const C = countryAt(b.i);
+  if (!game.research.done.has('domes')) return 'Research Bubble Habitats first';
+  if (rocketState(b) !== 'ready') return 'The pad needs a fuelled rocket';
+  if (!C || C.people < COLONY.people + 20) return `Needs ${COLONY.people} settlers to spare`;
+  const need = addCost(COLONY.kit, COLONY.cost), miss = missingFor(need, C);
+  return miss ? `Short of ${miss} (needs ${costText(need)})` : null;
+}
+// pick where they land: you look at that world and tap a spot (or it picks one near the middle)
+function startColony(b, w) {
+  const why = colonyReady(b);
+  if (why) return toast(why);
+  game.colonyFrom = { pad: b.i, w, home: WORLD };
+  viewWorld(w);
+  game.colonyPick = true;
+  toast(say(`Click where your colony should land on ${WORLDS[w].name} (Esc to cancel)`, `Tap where your colony should land on ${WORLDS[w].name}`));
+}
+function pickColonySite(t) {
+  const F = game.colonyFrom;
+  if (!F || t < 0) return;
+  if (!isLand(t) || biome[t] === POLAR) return toast('Land on open ground, not ice or water');
+  if (aiOf[t]) return toast('Someone has already settled there');
+  game.colonyPick = false;
+  const tx = t % W + 0.5, ty = ((t / W) | 0) + 0.5;
+  viewWorld(F.home);
+  const b = buildingAt(F.pad), C = b && countryAt(b.i), why = b ? colonyReady(b) : 'The pad is gone';
+  if (why) { game.colonyFrom = null; return toast(why); }
+  const need = addCost(COLONY.kit, COLONY.cost);
+  for (const r in need) C.res[r] -= need[r];
+  C.people -= COLONY.people;
+  b.rocket = null;
+  const [fx, fy] = tileCenter(b.i);
+  game.colonyShips.push({ w: F.w, tx, ty, n: COLONY.people, kit: { ...COLONY.kit }, t: 0, T: WORLDS[F.w].trip, fx, fy, from: WORLD });
+  floatText(fx, fy - 1.5, `Colony ship to ${WORLDS[F.w].short}!`, '#f2c14e');
+  toast(`The colony ship is on its way to ${WORLDS[F.w].name}: ${WORLDS[F.w].trip} s.`);
+  game.colonyFrom = null;
+}
+function stepColonyShips(dt) {
+  for (const s of game.colonyShips) {
+    s.t += dt;
+    if (s.t < s.T) continue;
+    s.done = true;
+    genWorld(s.w);
+    const name = onWorld(s.w, () => {
+      const before = game.countries.length;
+      let t = idx(Math.floor(s.tx), Math.floor(s.ty));
+      if (!isLand(t) || aiOf[t]) {                 // the spot was taken: the nearest open ground
+        let best = -1, bd = 1e9;
+        for (let r = 1; r < 40 && best < 0; r++) for (let dx = -r; dx <= r; dx++) for (const dy of [-r, r]) {
+          const j = idx(Math.floor(s.tx) + dx, Math.floor(s.ty) + dy);
+          if (inb(Math.floor(s.tx) + dx, Math.floor(s.ty) + dy) && isLand(j) && !aiOf[j] && biome[j] !== POLAR && dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = j; }
+        }
+        if (best >= 0) { s.tx = best % W + 0.5; s.ty = ((best / W) | 0) + 0.5; }
+      }
+      arrive({ tx: s.tx, ty: s.ty, n: s.n, kit: s.kit }, true);
+      const C = game.countries[before] || countryAt(idx(Math.floor(s.tx), Math.floor(s.ty)));
+      if (C) {                                     // a domed colony: a greenhouse farm beside its first dome
+        const S = game.buildings.find(b => b.type === 'settlement' && countryAt(b.i) === C);
+        if (S) {
+          let farmAt = -1;
+          for (let r = 2; r < 6 && farmAt < 0; r++) for (let dx = -r; dx <= r && farmAt < 0; dx++) { const j = S.i + dx + r * W; if (owner[j] && countryAt(j) === C && !building[j] && depositOf[j] < 0 && isLand(j) && biome[j] !== MOUNTAIN && biome[j] !== POLAR) farmAt = j; }
+          if (farmAt >= 0) { placeBuilding(farmAt, 'farm'); sowFields(farmAt); }
+          recomputeNetwork();
+        }
+      }
+      return C ? C.short : null;
+    });
+    notify(`Landed on ${WORLDS[s.w].name}`, `${name ? `The colony of ${name} is down` : 'The settlers are down'}: domes up, a greenhouse farm going. Land outside the domes holds few people until you terraform it. <b>${say('Click', 'Tap')} here to go there</b> (or use Worlds in the Command menu).`,
+      null, null, () => viewWorld(s.w));
+  }
+  if (game.colonyShips.some(s => s.done)) game.colonyShips = game.colonyShips.filter(s => !s.done);
+}
+// where a colony ship is, seen from home: climbing away toward its world
+function colonyShipPos(s, lead = 0) {
+  const P = WORLDS[s.w], body = LOCK[P.body], u = clamp((s.t + lead) / s.T, 0, 1);
+  const [bx, by] = body ? body.pos() : [DISK.cx + DISK.R * 4, DISK.cy];
+  const e = u * u * (3 - 2 * u);
+  let x = lerp(s.fx, bx, e), y = lerp(s.fy, by, e);
+  const dx = x - DISK.cx, dy = y - DISK.cy, d = Math.hypot(dx, dy) || 1, bow = Math.sin(Math.PI * u) * 120;
+  return [x + dx / d * bow, y + dy / d * bow];
+}
+
+// ---------- terraforming: a terraformer slowly turns the dust around it green (and so fit to live on) ----------
+let terraTimer = 0;
+function stepTerraform(dt) {
+  terraTimer += dt;
+  if (terraTimer < 1) return;
+  terraTimer = 0;
+  const T = CFG.buildings.terraformer;
+  for (const b of game.buildings) {
+    if (b.type !== 'terraformer' || underway(b) || !owner[b.i]) continue;
+    const C = countryAt(b.i);
+    if (!C || (C.sat ?? 1) < 0.3) continue;
+    for (let k = 0; k < T.rate * (C.sat ?? 1); k++) {
+      const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * T.reach;
+      const x = Math.floor(b.i % W + 0.5 + Math.cos(a) * r), y = Math.floor(((b.i / W) | 0) + 0.5 + Math.sin(a) * r);
+      if (!inb(x, y)) continue;
+      const i = idx(x, y);
+      if (biome[i] !== DESERT) continue;
+      // green spreads from green: the first tiles go anywhere near, then it grows outward
+      let near = 0;
+      for (const [dx, dy] of DIRS4) if (inb(x + dx, y + dy) && biome[idx(x + dx, y + dy)] === GRASS) near++;
+      if (!near && r > 2 && Math.random() < 0.8) continue;
+      biome[i] = GRASS; repaintTile(i);
+      if (owner[i]) game.landDirty = true;
+    }
+  }
+}
+
+// =====================================================================================================
+// ---------- space: rockets, hand flight, space stations and reusable rockets ----------
+// =====================================================================================================
+// A launch pad with no rocket builds one at once for `iron`. Then it is fuelled: the domain's ice drills pump into
+// every rocket (and docked reusable rocket) being fuelled, sharing what they make; with no drills, each pad burns oil.
+const rocketState = b => !b.rocket ? 'none' : b.rocket.fuel < CFG.rocket.tank - 0.01 ? 'fuelling' : 'ready';
+let rocketCount = 0, stationCount = 0, shuttleId = 0;
+const padsOf = C => game.buildings.filter(b => b.type === 'pad' && !underway(b) && owner[b.i] && countryAt(b.i) === C);
+function stepPads(dt) {
+  const R = CFG.rocket;
+  for (const C of game.countries) {
+    if (!C.alive) continue;
+    const pads = padsOf(C);
+    C.space = { drills: 0, pads: pads.length };
+    if (!pads.length) continue;
+    for (const b of game.buildings) if (b.type === 'drill' && !underway(b) && owner[b.i] && countryAt(b.i) === C) C.space.drills++;
+    // everything waiting for fuel here: rockets on pads, and reusable rockets sitting on their pads
+    const tanks = [];
+    for (const b of pads) {
+      b.useFuel = 0;
+      if (b.paused) continue;
+      if (!b.rocket && !b.shuttleOnly) {
+        if (C.res.iron - R.iron >= R.ironReserve) {
+          C.res.iron -= R.iron; b.rocket = { fuel: 0 };
+          floatText(b.i % W + 0.5, ((b.i / W) | 0) - 1.5, `Rocket built: -${R.iron} iron`, '#f2c14e');
+        }
+      }
+      if (b.rocket && b.rocket.fuel < R.tank) tanks.push({ o: b.rocket, cap: R.tank, pad: b });
+      for (const sh of game.shuttles) if (sh.pad === b.i && sh.state === 'docked' && sh.fuel < CFG.shuttle.tank) tanks.push({ o: sh, cap: CFG.shuttle.tank, pad: b });
+    }
+    if (!tanks.length) continue;
+    let from = C.space.drills * R.drillFuel * (C.sat ?? 1) * dt;   // the drills' output, shared
+    let oilUse = 0;
+    for (const T of tanks) {
+      const share = from / tanks.length;
+      let got = Math.min(share, T.cap - T.o.fuel);
+      if (!C.space.drills) {                       // no drills: burn oil, slowly and dearly
+        const can = Math.max(0, C.res.oil - R.oilKeep), oil = Math.min(R.padOil * dt, can, (T.cap - T.o.fuel) / R.oilFuel);
+        oilUse += oil; got = oil * R.oilFuel;
+      }
+      T.o.fuel = Math.min(T.cap, T.o.fuel + got); T.pad.useFuel += dt > 0 ? got / dt : 0;
+      if (T.o === T.pad.rocket && T.o.fuel >= T.cap - 1e-6 && !T.o.told) { T.o.told = true; floatText(T.pad.i % W + 0.5, ((T.pad.i / W) | 0) - 1.5, T.pad.supply ? 'Supply rocket ready' : 'Rocket ready', '#f2c14e'); }
+    }
+    C.res.oil -= oilUse; C.rates.oil -= dt > 0 ? oilUse / dt : 0;
+    for (const b of pads) if (b.supply && b.rocket && b.rocket.fuel >= R.tank - 1e-6) {   // supplying a station: up it goes, by itself
+      const st = stationByN(b.supply);
+      if (!st) b.supply = null; else launchSupply(b, C, st);
+    }
+  }
+}
+// ---------- hand flight: real thrust, mass, gravity and air ----------
+function launchRocket(b) {
+  const x = b.i % W + 0.5, y = ((b.i / W) | 0) + 0.5;
+  const f = { x, y, vx: 0, vy: 0, a: Math.atan2(y - DISK.cy, x - DISK.cx), fuel: b.rocket.fuel, throttle: 1, engine: false,
+    landed: true, left: false, orbit: false, t: 0, trail: [[x, y]], n: ++rocketCount, pad: b.i, home: countryAt(b.i) ? countryAt(b.i).id : null };
+  b.rocket = null;
+  game.flights.push(f);
+  takeRocket(f);
+  showBuildingCard(null);
+  toast(say('Rocket on the pad. Space: engine on / off · W / S: throttle · A / D: turn · Esc: let go',
+    'Rocket on the pad. Engine starts it, ▲ ▼ set the throttle, ◀ ▶ turn.'));
+}
+function toggleEngine(f) {
+  if (!f) return;
+  f.engine = !f.engine;
+  if (f.engine && f.throttle < 0.05) f.throttle = 1;
+  if (f.engine && f.fuel <= 0) toast('No fuel left: the engine has nothing to burn');
+}
+function takeRocket(f) {
+  stopFollow(); cam.anim = null;
+  game.driving = null; game.flying = f;
+  setTool(null); setAiming(false); toggleBuildMenu(false);
+  if (cam.zoom > 6) cam.zoom = 6;
+}
+function gravityAt(x, y) {
+  const F = CFG.rocket.flight, R = DISK.R, dx = x - DISK.cx, dy = y - DISK.cy, r = Math.max(1e-6, Math.hypot(dx, dy));
+  const g = r >= R ? F.mu / (r * r) : F.mu / (R * R) * (r / R) ** 3;   // over the land: weak, so a rocket can coast out to the rim
+  return [-dx / r * g, -dy / r * g, r];
+}
+// the air: thin high over the land, thickest at the rim where a rocket climbs out, thinning to nothing past it
+const airAt = r => { const F = CFG.rocket.flight; return r <= DISK.R ? 0.05 + 0.95 * (r / DISK.R) ** 12 : r >= DISK.R + F.atm ? 0 : Math.exp(-(r - DISK.R) / F.scaleH); };
+const rocketMass = f => CFG.rocket.flight.dry + CFG.rocket.flight.wet * f.fuel / CFG.rocket.tank;
+function orbitOf(x, y, vx, vy) {
+  const mu = CFG.rocket.flight.mu, dx = x - DISK.cx, dy = y - DISK.cy, r = Math.hypot(dx, dy), v2 = vx * vx + vy * vy;
+  const eps = v2 / 2 - mu / r, h = dx * vy - dy * vx, rv = dx * vx + dy * vy;
+  const ex = ((v2 - mu / r) * dx - rv * vx) / mu, ey = ((v2 - mu / r) * dy - rv * vy) / mu, e = Math.hypot(ex, ey);
+  const pe = h * h / mu / (1 + e);
+  if (eps >= 0) return { escape: true, pe, e, ex, ey };
+  const a = -mu / (2 * eps);
+  return { escape: false, pe, ap: a * (1 + e), e, ex, ey, period: 2 * Math.PI * Math.sqrt(a * a * a / mu) };
+}
+function stepFlight(f, dt) {
+  const F = CFG.rocket.flight, on = game.flying === f && !buildOpen && !modalOpen;
+  const key = (...ks) => on && ks.some(k => keys.has(k));
+  if (key('shift')) f.throttle = 1;
+  if (key('e', 'w', 'arrowup')) f.throttle = Math.min(1, f.throttle + F.throttleRate * dt);
+  if (key('q', 's', 'arrowdown')) f.throttle = Math.max(0, f.throttle - F.throttleRate * dt);
+  f.a += ((key('d', 'arrowright') ? 1 : 0) - (key('a', 'arrowleft') ? 1 : 0)) * F.turn * dt;
+  const n = Math.max(1, Math.ceil(dt / 0.02)), h = dt / n, tank = CFG.rocket.tank;
+  for (let k = 0; k < n && !f.done; k++) {
+    const m = rocketMass(f);
+    let thrust = f.fuel > 0 && f.engine ? F.thrust * f.throttle : 0;
+    const burn = thrust / F.ve / F.wet * tank * h;
+    if (burn > f.fuel) { thrust *= f.fuel / burn; f.fuel = 0; } else f.fuel -= burn;
+    f.burning = thrust > 0;
+    const [gx, gy, r] = gravityAt(f.x, f.y);
+    if (f.landed) { if (thrust / m <= Math.hypot(gx, gy)) continue; f.landed = false; }
+    let ax = gx + Math.cos(f.a) * thrust / m, ay = gy + Math.sin(f.a) * thrust / m;
+    const v = Math.hypot(f.vx, f.vy), air = airAt(r);
+    if (air > 0 && v > 0) { const d = F.drag * air * v / m; ax -= f.vx * d; ay -= f.vy * d; }
+    f.vx += ax * h; f.vy += ay * h;                // semi-implicit Euler: orbits stay closed
+    f.x += f.vx * h; f.y += f.vy * h; f.t += h;
+    const r2 = Math.hypot(f.x - DISK.cx, f.y - DISK.cy), vr = ((f.x - DISK.cx) * f.vx + (f.y - DISK.cy) * f.vy) / r2;
+    if (r2 > DISK.R) f.left = true;
+    if (r2 < DISK.R && f.t > 1.5 && vr < -2) return crashRocket(f);
+    if (r2 > DISK.R * F.lost) { endFlight(f); toast('The rocket drifted off into deep space.'); return; }
+  }
+  if (f.landed) return;
+  const last = f.trail[f.trail.length - 1];
+  if (Math.hypot(f.x - last[0], f.y - last[1]) > 3) { f.trail.push([f.x, f.y]); if (f.trail.length > 1500) f.trail.shift(); }
+  const o = orbitOf(f.x, f.y, f.vx, f.vy), r = Math.hypot(f.x - DISK.cx, f.y - DISK.cy), safe = DISK.R + F.atm;
+  const inOrbit = !o.escape && r > safe && o.pe > safe;
+  if (inOrbit && !f.orbit) {
+    f.orbit = true;
+    if (!f.everOrbit) { f.everOrbit = true; floatText(f.x, f.y - 6, 'IN ORBIT!', '#f2c14e'); toast(`Rocket ${f.n} is in orbit: ${Math.round(o.pe - DISK.R)} to ${Math.round(o.ap - DISK.R)} tiles above the rim, once round every ${Math.round(o.period)} s. ${say('Enter', 'Tap the button')} to make it a space station.`); }
+  } else if (!inOrbit) f.orbit = false;
+}
+function crashRocket(f) {
+  const i = idx(clamp(Math.floor(f.x), 0, W - 1), clamp(Math.floor(f.y), 0, H - 1));
+  floatText(f.x, f.y, 'Rocket lost', '#ff7a6b');
+  toast(`Rocket ${f.n} came back down ${biome[i] === OCEAN ? 'into the ocean' : 'on the land'} and was lost.`);
+  game.blasts.push({ x: f.x, y: f.y, t: 0, R: 2.5, life: 1.1, big: false, seed: (f.x * 31 + f.y * 17) | 0 });
+  endFlight(f);
+}
+function endFlight(f) { f.done = true; if (game.flying === f) game.flying = null; }
+function flightStatus(f) {
+  const F = CFG.rocket.flight, r = Math.hypot(f.x - DISK.cx, f.y - DISK.cy), o = orbitOf(f.x, f.y, f.vx, f.vy);
+  if (f.landed) return 'On the pad';
+  if (f.orbit) return 'In orbit';
+  if (o.escape) return 'Escaping the world';
+  if (r <= DISK.R) return 'Climbing over the land';
+  if (r < DISK.R + F.atm) return 'In the upper air';
+  return o.pe < DISK.R ? 'Falling back' : 'Coasting';
+}
+// the path ahead (gravity and air, engine off) until it lands, leaves, or comes round once
+function predictPath(f) {
+  const pts = [], h = 0.2, m = rocketMass(f), F = CFG.rocket.flight;
+  let x = f.x, y = f.y, vx = f.vx, vy = f.vy, ang = 0, prev = Math.atan2(y - DISK.cy, x - DISK.cx);
+  for (let k = 0; k < 2500; k++) {
+    const [gx, gy, r] = gravityAt(x, y), air = airAt(r), v = Math.hypot(vx, vy);
+    let ax = gx, ay = gy;
+    if (air > 0 && v > 0) { const d = F.drag * air * v / m; ax -= vx * d; ay -= vy * d; }
+    vx += ax * h; vy += ay * h; x += vx * h; y += vy * h;
+    if (k % 3 === 0) pts.push([x, y]);
+    const a = Math.atan2(y - DISK.cy, x - DISK.cx);
+    let da = a - prev; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;
+    ang += da; prev = a;
+    const r2 = Math.hypot(x - DISK.cx, y - DISK.cy);
+    if (r2 < DISK.R && ((x - DISK.cx) * vx + (y - DISK.cy) * vy) < 0 && k > 5) return { pts, end: 'crash' };
+    if (Math.abs(ang) > 2 * Math.PI) return { pts, end: 'loop' };
+    if (r2 > DISK.R * 12) return { pts, end: 'away' };
+  }
+  return { pts, end: 'more' };
+}
+// ---------- space stations ----------
+const stationCap = st => CFG.station.cap * st.level;
+const stationByN = n => game.orbitals.find(st => st.n === n);
+const myStations = () => game.orbitals.filter(st => st.nation == null);
+// a station in a circular orbit at height `alt` above the rim (AI nations put theirs up this way)
+function circularStation(alt, ang, extra) {
+  const r = DISK.R + alt, v = Math.sqrt(CFG.rocket.flight.mu / r);
+  return { n: ++stationCount, x: DISK.cx + Math.cos(ang) * r, y: DISK.cy + Math.sin(ang) * r, vx: -Math.sin(ang) * v, vy: Math.cos(ang) * v,
+    people: 0, level: 1, res: { wood: 0, stone: 0, iron: 0 }, runs: 0, a: 0, ...extra };
+}
+function makeStation(f) {
+  if (!f || !f.orbit) return toast('Get the rocket into a stable orbit first (its low point above the air)');
+  let home = liveCountry(f.home ?? -1), pad = f.pad != null ? buildingAt(f.pad) : null;
+  if (!home) home = activeCountry();
+  if (!pad || pad.type !== 'pad' || countryAt(pad.i) !== home) pad = padsOf(home)[0] || null;
+  const st = { n: ++stationCount, x: f.x, y: f.y, vx: f.vx, vy: f.vy, home: home ? home.id : null, pad: pad ? pad.i : null,
+    people: 0, level: 1, res: { wood: 0, stone: 0, iron: 0 }, runs: 0, a: 0 };
+  game.orbitals.push(st);
+  endFlight(f);
+  if (pad && !game.shuttles.some(sh => sh.home === (home && home.id))) pad.supply = st.n;
+  floatText(st.x, st.y - 6, `Station ${st.n}!`, '#f2c14e');
+  toast(`Rocket ${f.n} is now Space Station ${st.n}. ${pad ? `${home.short}'s launch pad keeps it supplied${game.research.done.has('reusable') ? ', or buy reusable rockets there' : ''}.` : 'Build a launch pad to supply it.'} Its people count toward your research.`);
+  showStationCard(st);
+}
+function stepOrbit(st, dt) {
+  const n = Math.max(1, Math.ceil(dt / 0.02)), h = dt / n;
+  for (let k = 0; k < n; k++) {
+    const [gx, gy] = gravityAt(st.x, st.y);
+    st.vx += gx * h; st.vy += gy * h; st.x += st.vx * h; st.y += st.vy * h;
+  }
+  st.a += dt * 0.25;
+}
+function incomingStation(st) {
+  const inc = { people: 0, wood: 0, stone: 0, iron: 0 };
+  for (const r of game.supplyRuns) if (r.st === st.n) for (const k in inc) inc[k] += r.cargo[k] || 0;
+  for (const sh of game.shuttles) if (sh.dest && sh.dest.st === st.n) for (const k in inc) inc[k] += (k === 'people' ? sh.people : sh.cargo[k]) || 0;
+  return inc;
+}
+// what a station could use from home right now: people while it has room, goods while it's short of its next expansion
+function stationWants(st, C, room = Infinity) {
+  const S = CFG.station, inc = incomingStation(st), cargo = { people: 0, wood: 0, stone: 0, iron: 0 };
+  cargo.people = Math.floor(Math.max(0, Math.min(S.people, room, C.people - 40, stationCap(st) - st.people - inc.people)));
+  for (const r of ['wood', 'stone', 'iron']) {
+    const want = (CFG.station.expand[r] || 15) * 1.5 - st.res[r] - inc[r];
+    cargo[r] = Math.floor(Math.max(0, Math.min(S.each, C.res[r] - S.keep, want)));
+  }
+  return cargo;
+}
+// a disposable supply rocket: the pad's fuelled rocket flies up by itself, loaded with what home can spare
+function launchSupply(b, C, st) {
+  const cargo = stationWants(st, C);
+  if (!(cargo.people + cargo.wood + cargo.stone + cargo.iron)) return false;   // nothing to send yet: it waits
+  C.people -= cargo.people;
+  for (const r of ['wood', 'stone', 'iron']) C.res[r] -= cargo[r];
+  const [fx, fy] = tileCenter(b.i);
+  game.supplyRuns.push({ st: st.n, t: 0, T: CFG.station.trip, fx, fy, cargo });
+  b.rocket = null;
+  floatText(fx, fy - 1.5, `Supply rocket to Station ${st.n}`, '#f2c14e');
+  return true;
+}
+function stepSupplyRuns(dt) {
+  for (const r of game.supplyRuns) {
+    r.t += dt;
+    if (r.t < r.T) continue;
+    r.done = true;
+    const st = stationByN(r.st);
+    if (st) unloadStation(st, r.cargo, r.cargo.people);
+  }
+  if (game.supplyRuns.some(r => r.done)) game.supplyRuns = game.supplyRuns.filter(r => !r.done);
+}
+function unloadStation(st, cargo, people) {
+  st.people += people || 0;
+  for (const k of ['wood', 'stone', 'iron']) st.res[k] += cargo[k] || 0;
+  st.runs++;
+  const got = [people ? `${people} people` : '', ...['wood', 'stone', 'iron'].filter(k => cargo[k]).map(k => `${Math.round(cargo[k])} ${k}`)].filter(Boolean).join(', ');
+  floatText(st.x, st.y - 4, `+${got || 'supplies'}`, '#7bd389');
+}
+function expandStation(st) {
+  const E = CFG.station.expand, miss = Object.keys(E).find(r => st.res[r] < E[r]);
+  if (miss) return toast(`Station ${st.n} needs ${E[miss]} ${miss} in its own stock to grow: supply rockets bring it`);
+  for (const r in E) st.res[r] -= E[r];
+  st.level++;
+  floatText(st.x, st.y - 5, `Station ${st.n}: room for ${stationCap(st)}`, '#f2c14e');
+}
+function supplyPos(r, lead = 0) {
+  const st = stationByN(r.st), u = clamp((r.t + lead) / r.T, 0, 1), e = u * u * (3 - 2 * u);
+  const [tx, ty] = st ? [st.x, st.y] : [r.fx, r.fy];
+  let x = lerp(r.fx, tx, e), y = lerp(r.fy, ty, e);
+  const dx = x - DISK.cx, dy = y - DISK.cy, d = Math.hypot(dx, dy) || 1, bow = Math.sin(Math.PI * u) * 60;
+  return [x + dx / d * bow, y + dy / d * bow];
+}
+// ---------- reusable rockets: they fly themselves, launch pad -> station -> landing pad -> home ----------
+const shuttlesOf = C => game.shuttles.filter(sh => sh.home === C.id);
+function buyShuttle(b) {
+  const C = countryAt(b.i), cost = CFG.shuttle.cost;
+  if (!C) return;
+  const miss = missingFor(cost, C);
+  if (miss) return toast(`A reusable rocket needs ${costText(cost)}: short of ${miss}`);
+  for (const r in cost) C.res[r] -= cost[r];
+  game.shuttles.push({ id: ++shuttleId, home: C.id, pad: b.i, state: 'docked', fuel: 0, cargo: {}, people: 0, plan: [], runs: 0 });
+  for (const p of padsOf(C)) p.supply = null;      // reusable rockets take over station supply from the one-way rockets
+  floatText(b.i % W + 0.5, ((b.i / W) | 0) - 1.5, 'Reusable rocket ready to fuel', '#f2c14e');
+}
+const SHUTTLE_LEG = { up: 'up', down: 'down', hop: 'hop', orbit: 'orbit' };
+function stopPos(stop) {
+  if (stop.st != null) { const st = stationByN(stop.st); return st ? [st.x, st.y] : null; }
+  if (stop.w) { const b = LOCK[WORLDS[stop.w].body]; return b ? b.pos().slice(0, 2) : null; }   // another world: seen from home, it flies off to it
+  return buildingAt(stop.i) ? tileCenter(stop.i) : null;
+}
+// plan a run from the launch pad: the neediest station (if any), then a landing pad (or straight home)
+function planShuttle(sh) {
+  const C = liveCountry(sh.home), pad = buildingAt(sh.pad), L = CFG.shuttle.legs;
+  if (!C || !pad) return null;
+  const plan = [];
+  let st = null, best = 0;
+  for (const s2 of myStations()) {
+    if (game.shuttles.some(o => o !== sh && o.dest && o.dest.st === s2.n)) continue;
+    const w = stationWants(s2, C, CFG.shuttle.people), score = w.people * 3 + w.wood + w.stone + w.iron;
+    if (score > best) { best = score; st = s2; }
+  }
+  const lpads = game.buildings.filter(b => b.type === 'lpad' && !underway(b) && owner[b.i]);
+  // a landing pad in another domain is worth flying to: goods for it, and goods back home
+  let lp = null, lpScore = 0;
+  for (const b of lpads) {
+    const D = countryAt(b.i);
+    if (!D) continue;
+    const sc = (D !== C ? 10 : 1) + Math.random();
+    if (sc > lpScore) { lpScore = sc; lp = b; }
+  }
+  // every other run, a colony's landing pad on another world gets a delivery (and sends something back)
+  const far = [];
+  for (const P of WORLDS.slice(1)) if (worldData[P.id] && P.id !== WORLD) for (const b of worldData[P.id].g.buildings) if (b.type === 'lpad' && !underway(b) && worldData[P.id].owner[b.i]) far.push({ w: P.id, i: b.i });
+  if (far.length && (sh.runs % 2 === 1 || !st && !lp)) {
+    const f = far[sh.runs % far.length], D = onWorld(f.w, () => countryAt(f.i));
+    if (D) {
+      const plan2 = [{ w: f.w, i: f.i, leg: 'trip' }, { i: pad.i, leg: 'trip', home: true, via: f.w }];
+      return { plan: plan2, fuel: L.trip * 2, st: null, lp: { i: f.i, w: f.w, D } };
+    }
+  }
+  if (st) plan.push({ st: st.n, leg: 'up' });
+  if (lp) plan.push({ i: lp.i, leg: st ? 'down' : 'hop' });
+  if (!plan.length) return null;
+  plan.push({ i: pad.i, leg: lp ? 'hop' : 'down', home: true });
+  const fuel = plan.reduce((a, p) => a + L[p.leg], 0);
+  return { plan, fuel, st, lp };
+}
+function loadShuttle(sh, C, st, lp) {
+  sh.cargo = {}; sh.people = 0;
+  const cap = CFG.shuttle.cargo;
+  if (st) {
+    const w = stationWants(st, C, CFG.shuttle.people);
+    sh.people = w.people; C.people -= w.people;
+    let room = cap;
+    for (const r of ['wood', 'stone', 'iron']) { const n = Math.min(room, w[r]); if (n > 0) { sh.cargo[r] = n; C.res[r] -= n; room -= n; } }
+  }
+  const D = lp && (lp.D || countryAt(lp.i));
+  if (D && D !== C) {                              // freight for the landing pad's domain: what it's shortest of
+    let room = cap - boxSum(sh.cargo);
+    const short = RESOURCES.filter(r => r !== 'uranium').sort((a, b) => D.res[a] / Math.max(1, D.store[a] || 1) - D.res[b] / Math.max(1, D.store[b] || 1));
+    const each = Math.ceil(room / 3);              // a share of each of the three things it's shortest of
+    for (const r of short) {
+      if (room < 1) break;
+      const n = Math.floor(Math.min(room, each, Math.max(0, C.res[r] - 60) * 0.5));
+      if (n >= 5) { sh.freight = sh.freight || {}; sh.freight[r] = n; C.res[r] -= n; room -= n; }
+    }
+  }
+}
+function stepShuttles(dt) {
+  const S = CFG.shuttle;
+  for (const sh of game.shuttles) {
+    const C = liveCountry(sh.home), pad = buildingAt(sh.pad);
+    if (!C || !pad || pad.type !== 'pad' || countryAt(pad.i) !== C) {   // its pad is gone: it moves to another of the domain's pads, or is scrapped
+      const other = C && padsOf(C)[0];
+      if (other && sh.state === 'docked') { sh.pad = other.i; continue; }
+      if (sh.state === 'docked') { sh.dead = true; continue; }
+    }
+    if (sh.state === 'docked') {
+      if (pad && pad.paused) continue;
+      sh.wait = (sh.wait || 0) + dt;
+      if (sh.wait < 2) continue;
+      const P = planShuttle(sh);
+      if (!P || sh.fuel < P.fuel) continue;
+      sh.wait = 0;
+      loadShuttle(sh, C, P.st, P.lp);
+      sh.plan = P.plan; sh.state = 'fly'; sh.fuel -= P.fuel;
+      startLeg(sh, tileCenter(sh.pad));
+      floatText(pad.i % W + 0.5, ((pad.i / W) | 0) - 1.5, 'Lift-off!', '#f2c14e');
+      continue;
+    }
+    sh.t += dt;
+    if (sh.t < sh.T) continue;
+    const stop = sh.plan.shift();                  // arrived
+    if (stop.st != null) {
+      const st = stationByN(stop.st);
+      if (st) unloadStation(st, sh.cargo, sh.people);
+      sh.cargo = {}; sh.people = 0; sh.dest = null;
+    } else if (!stop.home) {                        // a landing pad: freight off, freight for home on
+      const D = stop.w ? onWorld(stop.w, () => countryAt(stop.i)) : countryAt(stop.i);
+      if (D && sh.freight) {
+        const txt = `+${Object.entries(sh.freight).map(([r, n]) => `${Math.round(n)} ${r}`).join(', ')}`;
+        for (const r in sh.freight) D.res[r] += sh.freight[r];
+        if (stop.w) onWorld(stop.w, () => floatText(stop.i % W + 0.5, ((stop.i / W) | 0) - 1.5, txt, '#7bd389'));
+        else floatText(stop.i % W + 0.5, ((stop.i / W) | 0) - 1.5, txt, '#7bd389');
+      }
+      sh.freight = null;
+      if (D && C && D !== C) {
+        const short = RESOURCES.filter(r => r !== 'uranium').sort((a, b) => C.res[a] / Math.max(1, C.store[a] || 1) - C.res[b] / Math.max(1, C.store[b] || 1));
+        let room = S.cargo;
+        for (const r of short) { const n = Math.floor(Math.min(room, Math.ceil(S.cargo / 3), Math.max(0, D.res[r] - 60) * 0.5)); if (n >= 5) { sh.freight = sh.freight || {}; sh.freight[r] = n; D.res[r] -= n; room -= n; } }
+      }
+    } else {                                        // home: anything it brought back goes in
+      if (sh.freight && C) for (const r in sh.freight) C.res[r] += sh.freight[r];
+      sh.freight = null; sh.state = 'docked'; sh.runs++; sh.dest = null;
+      continue;
+    }
+    startLeg(sh, stopPos(stop) || tileCenter(sh.pad));
+  }
+  if (game.shuttles.some(sh => sh.dead)) game.shuttles = game.shuttles.filter(sh => !sh.dead);
+}
+function startLeg(sh, from) {
+  const next = sh.plan[0];
+  if (!next) { sh.state = 'docked'; return; }
+  sh.from = from; sh.t = 0; sh.leg = next.leg;
+  sh.T = next.leg === 'trip' ? WORLDS[next.w || next.via || 1].trip * CFG.shuttle.time.trip : CFG.shuttle.time[next.leg];
+  sh.dest = next.st != null ? next : null;
+}
+// where a reusable rocket is: up curves bow out from the world, landings drop in from above
+function shuttlePos(sh, lead = 0) {
+  if (sh.state === 'docked') return [...tileCenter(sh.pad), -Math.PI / 2];
+  const to = stopPos(sh.plan[0]) || tileCenter(sh.pad), u = clamp((sh.t + lead) / sh.T, 0, 1);
+  const e = sh.leg === 'up' ? u * u : sh.leg === 'down' ? 1 - (1 - u) * (1 - u) : u * u * (3 - 2 * u);
+  let x = lerp(sh.from[0], to[0], e), y = lerp(sh.from[1], to[1], e);
+  const dx = x - DISK.cx, dy = y - DISK.cy, d = Math.hypot(dx, dy) || 1;
+  const bow = Math.sin(Math.PI * u) * (sh.leg === 'hop' ? 45 : sh.leg === 'orbit' ? 10 : sh.leg === 'trip' ? 120 : 60);
+  return [x + dx / d * bow, y + dy / d * bow];
+}
+// ---------- the more advanced AI nations go to space too ----------
+let aiSpaceTimer = 0;
+function aiSpace(dt) {
+  aiSpaceTimer += dt;
+  if (aiSpaceTimer < 20) return;
+  aiSpaceTimer = 0;
+  for (const n of game.nations) {
+    if (!n.alive || !n.tiles || !n.R.has('spaceflight') || n.people < 300) continue;
+    const theirs = game.orbitals.filter(st => st.nation === n.id);
+    if (theirs.length >= (n.R.has('reusable') ? 3 : 1)) {
+      for (const st of theirs) if (st.people < stationCap(st)) st.people = Math.min(stationCap(st), st.people + 2);
+      continue;
+    }
+    if (Math.random() > 0.35) continue;
+    const ang = Math.atan2(n.ly - DISK.cy, n.lx - DISK.cx) + (Math.random() - 0.5);
+    const st = circularStation(CFG.rocket.flight.atm + 30 + Math.random() * 120, ang, { nation: n.id, people: 5 });
+    game.orbitals.push(st);
+    if (touchesYou(n) || game.research.done.has('spaceflight')) toast(`${n.full} has put a space station into orbit.`);
+  }
+  // nations that can build domes found outposts on the worlds people have reached, and grow them
+  for (const n of game.nations) {
+    if (!n.alive || !n.tiles || !n.R.has('domes') || n.people < 300) continue;
+    for (const P of WORLDS.slice(1)) {
+      if (!worldData[P.id]) continue;
+      onWorld(P.id, () => {
+        const mine = (n.outposts || (n.outposts = {}))[P.id];
+        if (!mine) {
+          if (Math.random() > 0.25) return;
+          let spot = -1;
+          for (let k = 0; k < 400 && spot < 0; k++) {
+            const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * DISK.R * 0.8, t = idx(Math.floor(DISK.cx + Math.cos(a) * r), Math.floor(DISK.cy + Math.sin(a) * r));
+            if (!isLand(t) || biome[t] === POLAR || owner[t] || aiOf[t] || depositOf[t] >= 0) continue;
+            let clear = true;                       // well clear of anyone already there
+            for (let dy = -25; dy <= 25 && clear; dy += 5) for (let dx = -25; dx <= 25 && clear; dx += 5) { const j = t + dx + dy * W; if (j >= 0 && j < N && (owner[j] || aiOf[j])) clear = false; }
+            if (clear) spot = t;
+          }
+          if (spot < 0) return;
+          n.outposts[P.id] = { i: spot, tiles: 0 };
+          growOutpost(n, P.id, 40);
+          placeBuilding(spot, 'settlement');
+          toast(`${n.full} has landed an outpost on ${P.name}.`);
+        } else growOutpost(n, P.id, 12);
+      });
+    }
+  }
+  for (const st of game.orbitals) if (st.nation != null && !(game.nations[st.nation] && game.nations[st.nation].alive)) st.dead = true;
+  if (game.orbitals.some(st => st.dead)) game.orbitals = game.orbitals.filter(st => !st.dead);
+}
+// an outpost spreads over the free land next to it (it stops at about 1,200 tiles)
+function growOutpost(n, w, k) {
+  const O = n.outposts[w], id = n.id + 1;
+  if (O.tiles > 1200) return;
+  const ox = O.i % W, oy = (O.i / W) | 0;
+  let got = 0;
+  for (let r = 0; r < 60 && got < k; r++) for (let dx = -r; dx <= r && got < k; dx++) for (const dy of (r ? [-r, r] : [0])) {
+    for (const [x, y] of dx === -r || dx === r ? [[ox + dx, oy + dy], [ox + dy, oy + dx]] : [[ox + dx, oy + dy], [ox + dy, oy + dx]]) {
+      if (got >= k || !inb(x, y)) continue;
+      const t = idx(x, y);
+      if (aiOf[t] || owner[t] || !isLand(t) || biome[t] === POLAR) continue;
+      if (r && !DIRS4.some(([a, b]) => inb(x + a, y + b) && aiOf[idx(x + a, y + b)] === id)) continue;
+      if (Math.random() < 0.3 && r > 2) continue;  // a ragged edge
+      aiOf[t] = id; frontier.delete(t); paintTerr(t); O.tiles++; got++;
+    }
+  }
+}
+// everything in space, once a frame
+function stepSpace(dt) {
+  stepPads(dt);
+  for (const f of game.flights) if (!f.done) stepFlight(f, dt);
+  if (game.flights.some(f => f.done)) game.flights = game.flights.filter(f => !f.done);
+  for (const st of game.orbitals) stepOrbit(st, dt);
+  stepSupplyRuns(dt);
+  stepShuttles(dt);
+  aiSpace(dt);
+}
+const stationPeople = () => myStations().reduce((a, st) => a + st.people, 0);
+
+// ---------- drawing space ----------
+function drawAtmosphere(z) {
+  const F = CFG.rocket.flight, [sx, sy] = toScreen(DISK.cx, DISK.cy), R = DISK.R * z, A = (DISK.R + F.atm) * z;
+  if (A - R < 3 || !(game.flights.length || game.orbitals.length || game.research.done.has('spaceflight'))) return;
+  const g = ctx.createRadialGradient(sx, sy, R, sx, sy, A);
+  g.addColorStop(0, 'rgba(150,200,255,0.30)'); g.addColorStop(0.3, 'rgba(130,180,255,0.12)'); g.addColorStop(1, 'rgba(110,160,255,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(sx, sy, A, 0, Math.PI * 2); ctx.arc(sx, sy, R, 0, Math.PI * 2, true); ctx.fill('evenodd');
+}
+// off home, a settlement lives under a glass dome
+function drawDome(b, z) {
+  const [sx, sy] = toScreen(...tileCenter(b.i)), r = z * (3.2 + Math.min(3, (b.base || 0) / 40));
+  const g = ctx.createRadialGradient(sx - r * 0.35, sy - r * 0.4, r * 0.1, sx, sy, r);
+  g.addColorStop(0, 'rgba(255,255,255,0.32)'); g.addColorStop(0.55, 'rgba(170,215,255,0.12)'); g.addColorStop(1, 'rgba(140,200,255,0.26)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(210,235,255,0.55)'; ctx.lineWidth = Math.max(1, z * 0.08); ctx.stroke();
+  ctx.strokeStyle = 'rgba(210,235,255,0.18)'; ctx.lineWidth = Math.max(0.6, z * 0.04);
+  for (const k of [-0.5, 0, 0.5]) { ctx.beginPath(); ctx.ellipse(sx, sy, r * Math.abs(Math.cos(k * 1.2)) + 0.1, r, 0, 0, Math.PI * 2); ctx.stroke(); }
+}
+function drawColonyShips(z) {
+  for (const s of game.colonyShips) { const [x, y] = colonyShipPos(s), [x2, y2] = colonyShipPos(s, 0.05); drawMovingRocket(x, y, x2, y2, z * 1.3, 'rocket'); }
+}
+function drawExhaust(size, k) {
+  const L = size * k * (0.85 + 0.3 * Math.random());
+  const g = ctx.createLinearGradient(0, size * 0.4, 0, size * 0.4 + L);
+  g.addColorStop(0, 'rgba(255,240,180,0.95)'); g.addColorStop(0.4, 'rgba(255,150,50,0.8)'); g.addColorStop(1, 'rgba(255,90,30,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.moveTo(-size * 0.12, size * 0.4); ctx.lineTo(size * 0.12, size * 0.4); ctx.lineTo(0, size * 0.4 + L); ctx.closePath(); ctx.fill();
+}
+function drawFlights(z) {
+  for (const f of game.flights) {
+    if (f.done) continue;
+    const mine = game.flying === f;
+    if (f.trail.length > 1) {
+      ctx.beginPath();
+      f.trail.forEach((q, k) => { const [sx, sy] = toScreen(q[0], q[1]); k ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
+      const [ex, ey] = toScreen(f.x, f.y); ctx.lineTo(ex, ey);
+      ctx.strokeStyle = mine ? 'rgba(242,193,78,0.55)' : 'rgba(242,193,78,0.25)'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    if (!f.landed && (mine || f.orbit)) {
+      const P = predictPath(f);
+      ctx.fillStyle = P.end === 'crash' ? 'rgba(255,122,107,0.85)' : mine ? 'rgba(200,230,255,0.85)' : 'rgba(200,230,255,0.35)';
+      const dot = mine ? 2 : 1.4;
+      for (let k = 0; k < P.pts.length; k += 2) { const [sx, sy] = toScreen(P.pts[k][0], P.pts[k][1]); ctx.fillRect(sx - dot / 2, sy - dot / 2, dot, dot); }
+      if (P.end === 'crash' && P.pts.length) {
+        const [cx, cy] = toScreen(...P.pts[P.pts.length - 1]);
+        ctx.strokeStyle = '#ff7a6b'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(cx - 5, cy - 5); ctx.lineTo(cx + 5, cy + 5); ctx.moveTo(cx + 5, cy - 5); ctx.lineTo(cx - 5, cy + 5); ctx.stroke();
+      }
+      const o = orbitOf(f.x, f.y, f.vx, f.vy);
+      if (mine && o.e > 0.02 && Math.hypot(f.x - DISK.cx, f.y - DISK.cy) > DISK.R) {   // the high and low points
+        const ux = o.ex / o.e, uy = o.ey / o.e, marks = [['Pe', o.pe, 1]];
+        if (!o.escape) marks.push(['Ap', o.ap, -1]);
+        for (const [lbl, d, sgn] of marks) {
+          const [mx, my] = toScreen(DISK.cx + ux * d * sgn, DISK.cy + uy * d * sgn);
+          if (mx < -40 || my < -40 || mx > cw + 40 || my > ch + 40) continue;
+          ctx.fillStyle = '#f2c14e'; ctx.beginPath(); ctx.arc(mx, my, 3.5, 0, Math.PI * 2); ctx.fill();
+          ctx.font = "600 11px 'Segoe UI', Arial, sans-serif"; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+          ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(4,6,12,0.85)';
+          const txt = `${lbl} ${Math.round(d - DISK.R)}`;
+          ctx.strokeText(txt, mx + 6, my); ctx.fillStyle = '#fff'; ctx.fillText(txt, mx + 6, my);
+        }
+      }
+    }
+    const [sx, sy] = toScreen(f.x, f.y), size = clamp(z * 2.4, 18, 64);
+    ctx.save(); ctx.translate(sx, sy); ctx.rotate(f.a + Math.PI / 2 + (cam.rot || 0));
+    if (f.burning) drawExhaust(size, 0.35 + 0.7 * f.throttle);
+    if (RAS.rocket) ctx.drawImage(RAS.rocket[size * dpr > 44 ? 0 : 1], -size / 2, -size / 2, size, size);
+    ctx.restore();
+    if (mine) { ctx.strokeStyle = 'rgba(242,193,78,0.8)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx, sy, size * 0.75, 0, Math.PI * 2); ctx.stroke(); }
+  }
+}
+function drawMovingRocket(x, y, x2, y2, z, sprite, retro = false) {
+  const [sx, sy] = toScreen(x, y), size = clamp(z * 1.8, 12, 40);
+  if (sx < -60 || sy < -60 || sx > cw + 60 || sy > ch + 60) return;
+  let rot = Math.atan2(y2 - y, x2 - x) + Math.PI / 2 + (cam.rot || 0);
+  if (retro) rot += Math.PI;                       // coming in to land: tail first, burning to slow down
+  ctx.save(); ctx.translate(sx, sy); ctx.rotate(rot);
+  drawExhaust(size, retro ? 0.45 : 0.7);
+  if (RAS[sprite]) ctx.drawImage(RAS[sprite][size * dpr > 44 ? 0 : 1], -size / 2, -size / 2, size, size);
+  ctx.restore();
+}
+function drawStations(z) {
+  for (const r of game.supplyRuns) { const [x, y] = supplyPos(r), [x2, y2] = supplyPos(r, 0.05); drawMovingRocket(x, y, x2, y2, z, 'rocket'); }
+  for (const sh of game.shuttles) {
+    if (sh.state === 'docked') continue;
+    const [x, y] = shuttlePos(sh), [x2, y2] = shuttlePos(sh, 0.05), u = sh.t / sh.T;
+    drawMovingRocket(x, y, x2, y2, z, 'shuttle', (sh.leg === 'down' || sh.leg === 'hop') && u > 0.7);
+  }
+  for (const st of game.orbitals) drawStation(st, z);
+}
+const stationSize = (st, z) => Math.max(z * 6, 16) * (1 + 0.1 * (st.level - 1));
+// solar wings on a truss, and a spinning habitat ring of lit windows round a hub; an AI nation's wears its colours
+function drawStation(st, z) {
+  const [sx, sy] = toScreen(st.x, st.y), s = stationSize(st, z) / 2;
+  if (sx < -s * 3 || sy < -s * 3 || sx > cw + s * 3 || sy > ch + s * 3) return;
+  const fill = clamp(st.people / stationCap(st), 0, 1), lw = Math.max(1, s * 0.03), n = st.nation != null ? game.nations[st.nation] : null;
+  const wing = n ? `rgb(${n.col.map(v => Math.round(v * 0.55)).join(',')})` : '#1f4f8c';
+  ctx.save(); ctx.translate(sx, sy); ctx.rotate(-0.35 + (cam.rot || 0));
+  const out = s * 1.25 + (st.level - 1) * s * 0.34;
+  ctx.fillStyle = '#7d8896'; ctx.fillRect(-out - s * 1.0, -s * 0.05, (out + s * 1.0) * 2, s * 0.1);
+  for (const side of [-1, 1]) for (const k of [0, 1]) {
+    const x0 = side * (out + k * s * 0.5) - (side < 0 ? s * 0.46 : 0), w = s * 0.46, h = s * 0.62;
+    ctx.fillStyle = wing; ctx.fillRect(x0, -h, w, h * 2);
+    ctx.strokeStyle = 'rgba(150,195,255,0.6)'; ctx.lineWidth = Math.max(0.6, lw * 0.5);
+    ctx.beginPath();
+    for (let q = 1; q < 3; q++) { ctx.moveTo(x0 + q * w / 3, -h); ctx.lineTo(x0 + q * w / 3, h); }
+    for (let q = -2; q <= 2; q++) { ctx.moveTo(x0, q * h / 3); ctx.lineTo(x0 + w, q * h / 3); }
+    ctx.stroke();
+    ctx.strokeStyle = '#0e2442'; ctx.lineWidth = lw; ctx.strokeRect(x0, -h, w, h * 2);
+  }
+  for (let q = 1; q < st.level; q++) for (const side of [-1, 1]) {
+    const cx = side * (s * 1.08 + q * s * 0.34);
+    ctx.fillStyle = '#d5dbe3'; ctx.strokeStyle = '#4a5562'; ctx.lineWidth = lw;
+    ctx.beginPath(); ctx.roundRect(cx - s * 0.14, -s * 0.12, s * 0.28, s * 0.24, s * 0.07); ctx.fill(); ctx.stroke();
+    for (const wx of [-0.07, 0, 0.07]) { ctx.fillStyle = fill > (q - 1) / st.level ? '#ffd27a' : '#2a3442'; ctx.fillRect(cx + wx * s - s * 0.02, -s * 0.03, s * 0.04, s * 0.06); }
+  }
+  ctx.save(); ctx.rotate(st.a);
+  for (let q = 0; q < 4; q++) {
+    const a = q * Math.PI / 2;
+    ctx.strokeStyle = '#8e99a6'; ctx.lineWidth = s * 0.07;
+    ctx.beginPath(); ctx.moveTo(Math.cos(a) * s * 0.22, Math.sin(a) * s * 0.22); ctx.lineTo(Math.cos(a) * s * 0.86, Math.sin(a) * s * 0.86); ctx.stroke();
+  }
+  ctx.lineWidth = s * 0.3; ctx.strokeStyle = '#3d4753'; ctx.beginPath(); ctx.arc(0, 0, s, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = s * 0.24; ctx.strokeStyle = '#dfe4ea'; ctx.beginPath(); ctx.arc(0, 0, s, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = s * 0.05; ctx.strokeStyle = n ? `rgb(${n.col.join(',')})` : '#b9c2cc'; ctx.beginPath(); ctx.arc(0, 0, s, 0, Math.PI * 2); ctx.stroke();
+  for (let k = 0; k < 24; k++) {
+    const a = k / 24 * Math.PI * 2, lit = ((k * 0.618034) % 1) < fill;
+    ctx.save(); ctx.rotate(a); ctx.translate(s, 0);
+    ctx.fillStyle = lit ? '#ffd27a' : '#253041';
+    ctx.fillRect(-s * 0.05, -s * 0.045, s * 0.1, s * 0.09);
+    ctx.restore();
+  }
+  ctx.restore();
+  ctx.fillStyle = '#eef1f5'; ctx.strokeStyle = '#4a5562'; ctx.lineWidth = lw * 1.2;
+  ctx.beginPath(); ctx.arc(0, 0, s * 0.26, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  for (let k = 0; k < 6; k++) {
+    const a = k / 6 * Math.PI * 2;
+    ctx.fillStyle = fill > 0 && k < Math.ceil(fill * 6) ? '#ffd27a' : '#2a3442';
+    ctx.beginPath(); ctx.arc(Math.cos(a) * s * 0.16, Math.sin(a) * s * 0.16, s * 0.04, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+  if (s > 14) pill(sx, sy + s * 1.35 + 10, `${n ? n.short + ' station' : 'Station ' + st.n} · ${Math.floor(st.people)} / ${stationCap(st)}`, { size: 11, dot: n ? `rgb(${n.col.join(',')})` : '#f2c14e' });
+}
+// the rocket on its pad (close up): faint while being fuelled, with a fuel bar; reusable rockets parked beside it
+function drawPadRockets(z, x0, y0, x1, y1) {
+  for (const b of game.buildings) {
+    if (b.type !== 'pad' && b.type !== 'lpad' || underway(b)) continue;
+    const x = b.i % W, y = (b.i / W) | 0;
+    if (x < x0 - 2 || x > x1 + 2 || y < y0 - 3 || y > y1 + 2) continue;
+    const docked = game.shuttles.filter(sh => sh.pad === b.i && sh.state === 'docked');
+    docked.forEach((sh, k) => drawSprite('shuttle', x + 0.15 + k * 0.35, y + 0.15, z * 1.2, 1));
+    if (b.type === 'lpad') continue;
+    if (b.rocket) drawSprite('rocket', x + 0.55, y + 0.2, z * 1.5, 1);
+    const st = rocketState(b), R = CFG.rocket;
+    const tank = b.rocket ? b.rocket.fuel / R.tank : docked.length ? docked[0].fuel / CFG.shuttle.tank : -1;
+    if (tank < 0 || tank >= 0.999 && !b.paused) {
+      if (!b.rocket && !docked.length && z >= CFG.cityZoom && owner[b.i] && !b.shuttleOnly) {
+        const [sx, sy] = toScreen(x + 0.5, y + 1.45), txt = b.paused ? 'Paused' : `Needs ${R.iron} iron`;
+        ctx.font = `700 ${Math.round(clamp(z * 0.42, 9, 13))}px 'Segoe UI', Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(4,6,12,0.85)'; ctx.strokeText(txt, sx, sy);
+        ctx.fillStyle = b.paused ? '#c4cad2' : '#e8a77f'; ctx.fillText(txt, sx, sy);
+      } else if (st === 'ready' && z >= CFG.cityZoom && !b.supply) {
+        const [sx, sy] = toScreen(x + 0.5, y + 1.45);
+        ctx.font = `700 ${Math.round(clamp(z * 0.42, 9, 13))}px 'Segoe UI', Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(4,6,12,0.85)'; ctx.strokeText(say('Ready: click to fly', 'Ready: tap to fly'), sx, sy);
+        ctx.fillStyle = '#f2c14e'; ctx.fillText(say('Ready: click to fly', 'Ready: tap to fly'), sx, sy);
+      }
+      continue;
+    }
+    const [sx, sy] = toScreen(x + 0.5, y + 1.45), w = z * 1.4, h = Math.max(2.5, z * 0.14);
+    ctx.fillStyle = 'rgba(20,26,37,0.85)'; ctx.fillRect(sx - w / 2 - 1, sy - 1, w + 2, h + 2);
+    ctx.fillStyle = b.paused ? '#8a9198' : '#5fc4f0'; ctx.fillRect(sx - w / 2, sy, w * tank, h);
+    if (z >= CFG.cityZoom) {
+      ctx.font = `700 ${Math.round(clamp(z * 0.42, 9, 13))}px 'Segoe UI', Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      const txt = b.paused ? 'Paused' : `Fuel ${Math.floor(tank * 100)}%`;
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(4,6,12,0.85)'; ctx.strokeText(txt, sx, sy + h + 3);
+      ctx.fillStyle = b.paused ? '#c4cad2' : '#8fd8ff'; ctx.fillText(txt, sx, sy + h + 3);
+    }
+  }
+}
+// the flight readout, shown while you fly
+function flightHud() {
+  let el = document.getElementById('flight-hud');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'flight-hud';
+    document.body.appendChild(el);
+    el.addEventListener('pointerdown', e => { const a = e.target.dataset && e.target.dataset.act; if (a === 'station') { e.preventDefault(); makeStation(game.flying); } if (a === 'engine') { e.preventDefault(); toggleEngine(game.flying); } if (a === 'letgo') { e.preventDefault(); game.flying = null; } });
+  }
+  const f = game.flying;
+  if (!f) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const F = CFG.rocket.flight, r = Math.hypot(f.x - DISK.cx, f.y - DISK.cy), o = orbitOf(f.x, f.y, f.vx, f.vy);
+  const bar = (v, col) => `<div class="fh-bar"><div style="width:${(clamp(v, 0, 1) * 100).toFixed(0)}%;background:${col}"></div></div>`;
+  const alt = d => `${Math.round(d - DISK.R)}`, st = flightStatus(f), stCol = f.orbit ? '#7be08a' : st === 'Falling back' ? '#ff7a6b' : '#f2c14e', air = airAt(r);
+  el.innerHTML = `<div class="fh-t">ROCKET ${f.n} · <span style="color:${stCol}">${st.toUpperCase()}</span></div>
+    <div>ENGINE <b style="color:${f.engine ? (f.fuel > 0 ? '#ff9a3c' : '#ff7a6b') : '#97a3b6'}">${f.engine ? (f.fuel > 0 ? 'ON' : 'ON · NO FUEL') : 'OFF'}</b></div>
+    <div class="fh-d">THROTTLE ${Math.round(f.throttle * 100)}%</div>${bar(f.throttle, f.engine ? '#ff9a3c' : 'rgba(255,154,60,0.35)')}
+    <div class="fh-d">FUEL ${Math.round(f.fuel)} / ${CFG.rocket.tank}</div>${bar(f.fuel / CFG.rocket.tank, '#5fc4f0')}
+    <div>Speed <b>${Math.hypot(f.vx, f.vy).toFixed(1)}</b> tiles/s</div>
+    <div>Height <b>${r < DISK.R ? 'over the land' : alt(r) + ' tiles'}</b>${air > 0.001 ? ` · air ${Math.round(air * 100)}%` : ' · no air'}</div>
+    ${r < DISK.R ? '<div>Past the rim: <b>' + Math.round(DISK.R - r) + ' tiles to go</b></div>' : `<div>High point <b>${o.escape ? 'none: escaping' : alt(o.ap)}</b></div>
+    <div>Low point <b style="color:${o.pe > DISK.R + F.atm ? '#7be08a' : '#ff9a8a'}">${o.pe < DISK.R ? 'under the rim' : alt(o.pe)}</b></div>`}
+    ${f.orbit ? `<button data-act="station" class="fh-btn go">${say('Enter: make it a space station', 'Make it a space station')}</button>` : ''}
+    ${TOUCH ? `<div class="fh-help">Orbit: low point above ${F.atm}</div>` : `<div class="fh-help">Orbit = low point above ${F.atm} (out of the air). Head out to the rim (a short burn, then coast across the land saves fuel), climb, then turn sideways and burn.<br>Space engine · W / S throttle · A / D turn · Shift full · Esc let go</div>`}`;
+}
+function padClick(b) {
+  if (rocketState(b) === 'ready' && !b.supply) launchRocket(b);
+}
+
+// ---------- machines at work: rigs (and ice drills) hammer away, as in the original ----------
+const DRILL_ANIM = {
+  rig:   { top: 6, bot: 18, base: 24, lamp: [14, 2, 4, 3], on: '#ffe066', off: '#9a7414', stack: [4, 15, 9], period: 0.85 },
+  drill: { top: 5, bot: 15, base: 19, lamp: [14, 1, 4, 3], on: '#8fe0ff', off: '#2a6f96', stack: [25, 9, 10], period: 1.0 },
+};
+const CHIP = { forest: ['#a0683e', '#d9a066'], stone: ['#9aa1a8', '#d6dade'], iron: ['#b4613d', '#ef9a6a'], gold: ['#c9a030', '#ffe080'], oil: ['#2b2f36', '#59616b'], uranium: ['#2e6b1f', '#7ee05a'], ice: ['#d8eef8', '#ffffff'] };
+function drillEffort(b) {
+  const c = owner[b.i] ? countryAt(b.i) : null;
+  if (b.type === 'drill') return c ? (b.pumping ? c.sat ?? 1 : 0) : 1;
+  return !b.work || !boxSum(b.work) ? 0 : c ? c.sat ?? 1 : 1;
+}
+function drillStroke(b) {
+  const A = DRILL_ANIM[b.type], e = drillEffort(b);
+  if (e <= 0) return { e, lift: 0, after: -1 };
+  const q = (game.time / (A.period / Math.max(0.35, e)) + hash2(b.i % 9973, 5, 81)) % 1;
+  const lift = q < 0.72 ? Math.sin(q / 0.72 * Math.PI / 2) : q < 0.8 ? 1 - (q - 0.72) / 0.08 : 0;   // haul up slow, drop fast
+  return { e, lift, after: q >= 0.8 ? (q - 0.8) / 0.2 : -1 };
+}
+const drillJolt = b => { const st = drillStroke(b); return st.after >= 0 && st.after < 0.12 ? 0.035 : 0; };
+function drawDrill(b, z) {
+  const A = DRILL_ANIM[b.type], x = b.i % W, y = (b.i / W) | 0, size = z * 1.25, p = size / 32, v = hash2(x, y, 82);
+  const { e, lift, after } = drillStroke(b), [sx, sy] = toScreen(x + 0.5, y + 0.5);
+  const kind = b.type === 'drill' ? 'ice' : b.work ? Object.keys(CHIP).reduce((m, k) => (b.work[k] || 0) > (b.work[m] || 0) ? k : m, 'stone') : 'stone';
+  const [chipD, chipL] = CHIP[kind] || CHIP.stone;
+  ctx.save();
+  ctx.translate(sx - size / 2, sy - size / 2 + drillJolt(b) * z); ctx.scale(p, p);
+  const R = (x2, y2, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x2, y2, w, h); };
+  const [kx, ky, kh] = A.stack;
+  R(kx - 0.5, ky - 0.5, 3, kh + 1, '#1c2028'); R(kx, ky, 2, kh, '#4a515c'); R(kx, ky, 1, kh, '#6b7480'); R(kx - 0.5, ky - 1, 3, 1.2, '#2b3038');
+  const hy = A.bot - (A.bot - A.top) * lift;     // the hammer block riding up the derrick and dropping
+  R(15.5, A.top - 1, 1, A.base - A.top + 1, '#3d434a');
+  R(13, hy - 0.5, 6, 4, '#1c2028'); R(13.5, hy, 5, 3, '#8d96a0'); R(13.5, hy, 5, 1, '#c9ced6'); R(17.5, hy, 1, 3, '#5f6b7d');
+  const [lx, ly, lw, lh] = A.lamp, c = owner[b.i] ? countryAt(b.i) : null;
+  const noPower = c && (c.sat ?? 1) < 0.05, blink = Math.floor(game.time * 2.2 + v * 4) % 2 === 0;
+  if ((e > 0 && blink) || (noPower && blink)) { ctx.fillStyle = noPower ? 'rgba(255,90,74,0.28)' : A.on + '44'; ctx.beginPath(); ctx.arc(lx + lw / 2, ly + lh / 2, 4.5, 0, Math.PI * 2); ctx.fill(); }
+  R(lx, ly, lw, lh, noPower ? (blink ? '#ff5a4a' : '#7a1f18') : e > 0 && blink ? A.on : A.off);
+  if (after >= 0) {
+    const cx = 16, cy = A.base, k = after;
+    if (k < 0.3) { ctx.globalAlpha = 1 - k / 0.3; for (let j = 0; j < 6; j++) { const a = -Math.PI * (0.1 + 0.8 * hash2(j, Math.floor(game.time * 3), 83)), r = 2 + k * 14; R(cx + Math.cos(a) * r - 0.5, cy - 1 + Math.sin(a) * r * 0.7 - 0.5, 1, 1, j % 2 ? '#ffd166' : '#fff4c2'); } }
+    ctx.globalAlpha = 1;
+    for (let j = 0; j < 8; j++) { const side = j % 2 ? 1 : -1, r = 3 + k * (10 + (j >> 1) * 2.5), sz = 2 + k * 4; ctx.fillStyle = `rgba(150,128,100,${0.6 * (1 - k)})`; ctx.fillRect(cx + side * r - sz / 2, cy + 1 - k * 3 - (j >> 1) * 0.8 - sz / 2, sz, sz); }
+    for (let j = 0; j < 3; j++) { const tx = j % 2 ? 29.5 : 2, ty = A.base + 6; const sx2 = cx + (tx - cx) * k, sy2 = cy - 1 + (ty - cy + 1) * k - Math.sin(k * Math.PI) * (6 + j * 2); R(sx2 - 0.75 + j * 0.6, sy2 - 0.75, 1.5, 1.5, j === 1 ? chipL : chipD); }
+  }
+  ctx.restore();
+  if (e <= 0) return;                              // exhaust: sooty puffs, and a cough on every blow
+  const ox = sx - size / 2 + (kx + 1) * p, oy = sy - size / 2 + (ky - 1) * p, u = Math.max(1.5, p * 1.6), n = 4 + Math.round(e * 4);
+  for (let k = 0; k < n; k++) {
+    const f = (game.time * 0.5 + v * 3 + k / n) % 1, sz = u * (1 + f * 3.4), r = Math.round(30 + f * 85), g = Math.round(28 + f * 78), bl = Math.round(26 + f * 70);
+    const a = (0.65 + 0.3 * e) * Math.pow(1 - f, 0.6) * Math.min(1, f * 8);
+    ctx.fillStyle = `rgba(${r},${g},${bl},${a})`; ctx.fillRect(ox + Math.sin(f * 6 + v * 9 + k) * u + f * f * size * 0.5 - sz / 2, oy - f * size * 0.9 - sz / 2, sz, sz);
+  }
+  if (after >= 0 && after < 0.7) { const k = after / 0.7, sz = u * (2.2 + k * 4); ctx.fillStyle = `rgba(24,22,20,${0.75 * (1 - k)})`; ctx.fillRect(ox - sz / 2 + k * u * 2, oy - k * size * 0.3 - sz / 2, sz, sz); }
+}
+// ---------- people at work: they walk out from farms, cabins and camps to the tiles they work, work a while, and back ----------
+const WORKER = { cabin: 'lumberjack', camp: 'miner', farm: 'farmer', farm2: 'farmer', farm3: 'farmer', derrick: 'miner' };
+function drawWorkers(x0, y0, x1, y1, z) {
+  if (z < 7) return;
+  for (const b of game.buildings) {
+    const spr = WORKER[b.type];
+    if (!spr || !b.sample || !b.sample.length || underway(b) || !RAS[spr]) continue;
+    const bx = b.i % W, by = (b.i / W) | 0;
+    if (bx < x0 - 5 || bx > x1 + 5 || by < y0 - 5 || by > y1 + 5) continue;
+    const C = owner[b.i] ? countryAt(b.i) : null, crew = C && C.staff < 0.5 ? 1 : 2;   // short-handed: fewer out working
+    for (let k = 0; k < crew; k++) {
+      const cyc = 9 + k * 2, ph = (game.time + hash2(b.i % 9973, k, 71) * cyc) % cyc;
+      const t = b.sample[(Math.floor((game.time + k * 5) / cyc) + k * 3) % b.sample.length];
+      const [tx, ty] = tileCenter(t), [hx, hy] = tileCenter(b.i);
+      // out (3 s), work (cyc - 6 s), back (3 s)
+      const f = ph < 3 ? ph / 3 : ph < cyc - 3 ? 1 : (cyc - ph) / 3, working = ph >= 3 && ph < cyc - 3;
+      const wx = lerp(hx, tx, f) + (k ? 0.25 : -0.2), wy = lerp(hy + 0.3, ty, f);
+      const [sx, sy] = toScreen(wx, wy), size = z * 0.55, bob = working ? Math.abs(Math.sin(game.time * 6 + k)) * z * 0.08 : Math.abs(Math.sin(game.time * 10 + k)) * z * 0.04;
+      ctx.save(); ctx.translate(sx, sy - bob);
+      if ((tx < hx) !== (ph >= cyc - 3)) ctx.scale(-1, 1);
+      ctx.drawImage(RAS[spr][1], -size / 2, -size, size, size);
+      ctx.restore();
+    }
+  }
+}
+// ---------- construction crews: scaffolding and builders at every site, a cloud of dust when it's done ----------
+function drawCrew(b, z) {
+  const [sx, sy] = toScreen(...tileCenter(b.i)), u = z, busy = b.site && b.site.crew != null;
+  // scaffolding: a timber frame that rises as the work goes on
+  const prog = busy ? clamp(1 - (b.site.crew - game.time) / b.site.crewDur, 0, 1) : 0.15;
+  ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = Math.max(1, u * 0.06);
+  const h = u * (0.3 + 0.7 * prog);
+  for (const ox of [-0.45, 0.45]) { ctx.beginPath(); ctx.moveTo(sx + ox * u, sy + 0.45 * u); ctx.lineTo(sx + ox * u, sy + 0.45 * u - h); ctx.stroke(); }
+  for (let k = 0; k <= 2; k++) { const yy = sy + 0.45 * u - h * k / 2; ctx.beginPath(); ctx.moveTo(sx - 0.5 * u, yy); ctx.lineTo(sx + 0.5 * u, yy); ctx.stroke(); }
+  if (!RAS.builder) return;
+  for (let k = 0; k < (busy ? 3 : 1); k++) {      // waiting for materials: one builder pacing; building: three hammering
+    const ang = k * 2.1 + (busy ? 0 : game.time * 0.6), r = u * 0.62;
+    const bx = sx + Math.cos(ang) * r, by = sy + Math.sin(ang) * r * 0.45 + u * 0.3;
+    const bob = busy ? Math.abs(Math.sin(game.time * 9 + k * 1.7)) * u * 0.1 : 0, size = u * 0.5;
+    ctx.save(); ctx.translate(bx, by - bob); if (Math.cos(ang) > 0) ctx.scale(-1, 1);
+    ctx.drawImage(RAS.builder[1], -size / 2, -size, size, size);
+    ctx.restore();
+  }
+}
+function drawPuffs(z) {
+  for (const p of game.puffs) {
+    const [sx, sy] = toScreen(p.x, p.y), k = p.t;
+    for (let j = 0; j < 9; j++) {
+      const a = j / 9 * Math.PI * 2 + p.seed, r = z * (0.4 + k * 1.6), s2 = z * (0.25 + k * 0.5);
+      ctx.fillStyle = `rgba(190,170,140,${0.55 * (1 - k)})`;
+      ctx.beginPath(); ctx.arc(sx + Math.cos(a) * r, sy + Math.sin(a) * r * 0.5 - k * z * 0.4, s2, 0, Math.PI * 2); ctx.fill();
+    }
+    if (k < 0.5) { ctx.fillStyle = `rgba(255,240,180,${0.8 * (1 - k * 2)})`; for (let j = 0; j < 5; j++) { const a = j * 1.3 + p.seed; ctx.fillRect(sx + Math.cos(a) * z * k * 2, sy - z * 0.6 - k * z * 1.2 + Math.sin(a) * z * 0.3, 2, 2); } }
   }
 }
 // a construction site: the building, faint, with a turning gear over it
@@ -5168,6 +7270,7 @@ function drawSites(z) {
     if (!b.site) continue;
     const [sx, sy] = toScreen(...tileCenter(b.i));
     if (sx < -40 || sy < -40 || sx > cw + 40 || sy > ch + 40) continue;
+    if (z >= 6) drawCrew(b, z);
     const s = clamp(z * 1.2, 14, 34);
     ctx.save(); ctx.translate(sx, sy - (z >= CFG.cityZoom ? z * 0.9 : 0)); ctx.rotate(game.time * 1.6);
     if (SPR.gear.complete) ctx.drawImage(SPR.gear, -s / 2, -s / 2, s, s);
@@ -5184,10 +7287,13 @@ function render() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawSpace(z);
   canvas.style.cursor = '';
-  drawSun(z);
-  drawVulcan(z);
-  drawOuterBodies(z);
-  drawMoon(z);
+  if (!WORLD) {                                    // the sun, moons and planets are drawn around home
+    drawSun(z);
+    drawVulcan(z);
+    drawOuterBodies(z);
+    drawMoon(z);
+    drawAtmosphere(z);
+  }
   drawLockHover(z);
 
   // terrain + territory (1 px per tile, scaled up crisp)
@@ -5236,6 +7342,7 @@ function render() {
     ctx.lineCap = 'butt';
   }
 
+  for (const br of game.bridges) drawBridge(br.s, br.b, z);
   drawRoads(z);
   // roads, rail lines and air routes (sea routes aren't drawn: the ships sailing them are enough)
   for (const L of game.links) if (L.kind === 'road') strokeRoute(L.path, 'road', z);
@@ -5247,13 +7354,16 @@ function render() {
     drawDepositsDetail(x0, y0, x1, y1, z);
     for (const b of game.buildings) {
       const x = b.i % W, y = (b.i / W) | 0;
-      if (b.type === 'settlement' && x >= x0 - 9 && x <= x1 + 9 && y >= y0 - 9 && y <= y1 + 9) drawSettlementDetail(b, z);
+      if (b.type === 'settlement' && x >= x0 - 9 && x <= x1 + 9 && y >= y0 - 9 && y <= y1 + 9) { drawSettlementDetail(b, z); if (WORLD) drawDome(b, z); }
     }
     for (const b of game.buildings) {
       const x = b.i % W, y = (b.i / W) | 0;
       if (b.type === 'settlement' || x < x0 || x > x1 || y < y0 || y > y1) continue;
-      drawSprite(b.type, x + 0.5, y + 0.5, z * (b.type === 'solar' ? 1.15 : 1.25), underway(b) ? 0.45 : 1);
+      drawSprite(b.type, x + 0.5, y + 0.5 + (DRILL_ANIM[b.type] ? drillJolt(b) : 0), z * (b.type === 'solar' ? 1.15 : 1.25), underway(b) ? 0.45 : 1);
+      if (z >= 6 && DRILL_ANIM[b.type] && !underway(b)) drawDrill(b, z);
     }
+    drawWorkers(x0, y0, x1, y1, z);
+    drawPadRockets(z, x0, y0, x1, y1);
   } else if (z >= CFG.cityZoom) {
     // middle view: buildings as solid squares
     for (const b of game.buildings) {
@@ -5279,6 +7389,8 @@ function render() {
 
   drawVehicles(z);
   drawSites(z);
+  drawPuffs(z);
+  if (!WORLD) { drawStations(z); drawFlights(z); drawColonyShips(z); }
   drawBuildPreview(z);
   drawReachHover(z);
   drawSettlementHover(z);
@@ -5558,9 +7670,11 @@ function drawCountryLabels(z) {
   }
   for (const n of game.nations) {
     if (!n.alive) continue;
-    const span = Math.sqrt(n.tiles) * z;
+    const O = WORLD && n.outposts && n.outposts[WORLD];   // off home: only their outposts here
+    if (WORLD && !O) continue;
+    const span = Math.sqrt(O ? O.tiles : n.tiles) * z;
     if (span < 18) continue;
-    const [sx, sy0] = toScreen(n.lx, n.ly);
+    const [sx, sy0] = O ? toScreen(O.i % W + 0.5, ((O.i / W) | 0) + 0.5) : toScreen(n.lx, n.ly);
     const size = clamp(span * 0.14, 10, 22);
     const sy = sy0 + (z < CFG.cityZoom ? 14 + size * 0.6 : 0);
     const text = (span > 160 ? n.full : n.short).toUpperCase();
@@ -5641,12 +7755,32 @@ window.addEventListener('mouseup', e => {
 // a click (or a tap: btn 0; a long press: btn 2) at a screen point
 function clickAt(btn, x, y) {
   mouse.x = x; mouse.y = y;
+  if (game.colonyPick) { const t = tileAtScreen(x, y); if (btn === 0) pickColonySite(t); else { game.colonyPick = false; viewWorld(game.colonyFrom ? game.colonyFrom.home : 0); game.colonyFrom = null; } return; }
   if (btn === 0 && game.aiming) { const t = hoverTile(); if (t) fireMissile(t.x, t.y); return; }
   if (btn === 2 && game.aiming) { setAiming(false); return; }
+  if (game.ghost && game.ghost.type === 'bridge') {   // a bridge: first your coast, then the land across
+    const t = tileAtScreen(x, y), g = game.ghost;
+    if (btn !== 0 || t < 0) { setTool(null); return; }
+    if (g.a < 0 || owner[t] && !g.set) { if (!owner[t]) return toast('Start the bridge on your own land, at the coast'); g.a = t; g.i = -1; g.set = false; }
+    else { g.i = t; g.set = true; }
+    updateConfirm();
+    return;
+  }
   if (game.ghost) {                                // build mode: a click puts the building there; Confirm builds it
     if (btn === 0) { moveGhost(x, y); updateConfirm(); }
     else setTool(null);
     return;
+  }
+  if (btn === 0) {                                 // a rocket in flight: take the controls; a station: its card
+    for (const f of game.flights) {
+      if (f.done) continue;
+      const [fx, fy] = toScreen(f.x, f.y);
+      if (Math.hypot(fx - x, fy - y) < Math.max(16, cam.zoom * 1.4)) { takeRocket(f); return; }
+    }
+    for (const st of game.orbitals) {
+      const [sx2, sy2] = toScreen(st.x, st.y);
+      if (Math.hypot(sx2 - x, sy2 - y) < Math.max(14, stationSize(st, cam.zoom) * 0.7)) { showStationCard(st); return; }
+    }
   }
   // a plain click on any body (or your world from far out) locks onto it
   if (btn === 0) {
@@ -5670,7 +7804,7 @@ function commandClick(t) {
   }
   if (game.cmd === 'attack') {
     if (!foe) return toast("Pick a nation's land to attack (tap Expand to claim free land).");
-    launchAttack(foe, t.x, t.y); return;
+    guardedAttack(foe, t.x, t.y); return;
   }
   if (game.wallFrom >= 0) {                       // picking the second fort for a wall
     const b = building[t.i] ? buildingAt(t.i) : null;
@@ -5685,10 +7819,7 @@ function commandClick(t) {
     else if (c && c.id !== game.active) { game.active = c.id; toast(`Viewing ${c.full}`); }
     return;
   }
-  if (foe) {
-    if (strikePlan(foe, t.x, t.y)) return askAttack(foe, t.x, t.y);
-    toast(`${foe.full} is beyond your troops' reach (${strikeReach()} tiles past your border). Expanding toward it: your people will stop at its border.`);
-  }
+  if (foe) return openDiplomacy(foe, t.x, t.y);   // a nation: diplomacy (attack, war, peace, alliances, trade)
   startPush(t.x, t.y);
 }
 // you clicked a neighbour's land: attack it, or just push your border up to theirs?
@@ -5731,12 +7862,14 @@ window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (k === 'escape') cancelAll();
   if (k === 'enter' && game.ghost) { e.preventDefault(); confirmGhost(); }
-  if (k === ' ' && game.driving) { e.preventDefault(); if (!e.repeat) settleExpedition(game.driving); }
+  if (k === ' ' && game.flying) { e.preventDefault(); if (!e.repeat) toggleEngine(game.flying); }
+  else if (k === ' ' && game.driving) { e.preventDefault(); if (!e.repeat) settleExpedition(game.driving); }
+  if (k === 'enter' && game.flying && game.flying.orbit && !e.repeat) makeStation(game.flying);
   if (k === 'x' && !e.repeat) nextVehicle();
-  if (k.startsWith('arrow') && game.driving) e.preventDefault();
+  if (k.startsWith('arrow') && (game.driving || game.flying)) e.preventDefault();
   if (k === 'f' && !e.repeat) setAiming(!game.aiming);
-  if ((k === 'e' || k === 'b') && !e.repeat) toggleBuildMenu();
-  if (k === 'q' && !e.repeat) toggleCmdMenu();
+  if ((k === 'e' && !game.flying || k === 'b') && !e.repeat) toggleBuildMenu();
+  if (k === 'q' && !game.flying && !e.repeat) toggleCmdMenu();
   if (k === '1' && !e.repeat) setCmd('expand');
   if (k === '2' && !e.repeat) setCmd('attack');
   if (k === '3' && !e.repeat) setCmd('expedition');
@@ -5760,8 +7893,10 @@ window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
 
 // Esc: let go of whatever you're doing
 function cancelAll() {
+  if (game.colonyPick) { game.colonyPick = false; viewWorld(game.colonyFrom ? game.colonyFrom.home : 0); game.colonyFrom = null; toast('Colony ship cancelled'); return; }
+  if (game.flying && !game.tool && !buildOpen) { game.flying = null; toast(say('Let go of the rocket: it flies on. Press X or click it to take it back.', 'Let go of the rocket: it flies on. Tap it to take it back.')); return; }
   if (game.driving && !game.tool && !buildOpen && !game.aiming) { game.driving = null; toast(say('Parked. Press X to take the wheel again.', 'Parked. Tap Drive to take the wheel again.')); }
-  setTool(null); stopFollow(); setAiming(false); toggleBuildMenu(false); showBuildingCard(null); game.wallFrom = -1;
+  setTool(null); stopFollow(); setAiming(false); toggleBuildMenu(false); showBuildingCard(null); closeDiplomacy(); game.wallFrom = -1;
   if (game.cmd !== 'expand') setCmd('expand');
 }
 function goHome() { game.driving = null; stopFollow(); cam.anim = null; cam.x = spawn.x + 0.5; cam.y = spawn.y + 0.5; }
@@ -5862,6 +7997,11 @@ function toggleMapView() {
   }
 }
 function panKeys(dt) {
+  if (game.flying) {                               // flying a rocket: the camera rides along
+    const f = game.flying, k = Math.min(1, dt * 7);
+    cam.x += (f.x - cam.x) * k; cam.y += (f.y - cam.y) * k;
+    return;
+  }
   if (game.driving) {                              // at the wheel: the keys drive, and the camera rides along
     const e = game.driving, k = Math.min(1, dt * 7);
     cam.x += (e.x - cam.x) * k; cam.y += (e.y - cam.y) * k;
@@ -5962,7 +8102,7 @@ function applyFollow() {
 function iconFill() {
   document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = SVG[el.dataset.icon]; });
 }
-const CATEGORIES = ['Housing', 'Food', 'Resources', 'Transport', 'Military', 'Energy'];
+const CATEGORIES = ['Housing', 'Food', 'Resources', 'Transport', 'Military', 'Energy', 'Space'];
 const costHtml = (cost, C) => Object.entries(cost).map(([r, n]) =>
   `<span class="${C && C.res[r] < n ? 'no' : ''}">${SVG[RES_ICON[r]]}${n}</span>`).join('');
 function initUI() {
@@ -5984,6 +8124,7 @@ function initUI() {
   $('cm-close').addEventListener('click', () => toggleCmdMenu(false));
   $('cf-ok').addEventListener('click', confirmGhost);
   $('cf-cancel').addEventListener('click', () => setTool(null));
+  $('autodef').addEventListener('click', () => { game.autoDefend = !game.autoDefend; toast(game.autoDefend ? 'Your forts will send troops to meet invaders' : 'Your forts will only defend their own walls'); updateCmdMenu(); });
   $('recruit').addEventListener('click', () => { game.recruit = !game.recruit; toast(game.recruit ? 'Your bases are training troops' : 'Your bases have stopped training troops'); updateCmdMenu(); });
   $('cmdmenu').addEventListener('click', e => {
     const b = e.target.closest('button');
@@ -6006,7 +8147,7 @@ function initUI() {
     b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); keys.add(k); b.classList.add('on'); });
     b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('lostpointercapture', up);
   }
-  $('dp-settle').addEventListener('click', () => { if (game.driving) settleExpedition(game.driving); });
+  $('dp-settle').addEventListener('click', () => { if (game.flying) toggleEngine(game.flying); else if (game.driving) settleExpedition(game.driving); });
   $('dp-park').addEventListener('click', () => cancelAll());
   setMode('command');
   if (!TOUCH) toggleCmdMenu(true);
@@ -6041,7 +8182,8 @@ function setTool(t) {
       }
       if (best >= 0) start = best;
     } else start = tileAtScreen(mouse.x, mouse.y);
-    game.ghost = { type: t, i: start, set: TOUCH || !mouse.in };
+    game.ghost = t === 'bridge' ? { type: t, i: -1, a: -1, set: false } : { type: t, i: start, set: TOUCH || !mouse.in };
+    if (t === 'bridge') toast(say('Click your coast where the bridge starts, then the land across the water', 'Tap your coast where the bridge starts, then the land across the water'));
     setMode('build');
     toggleCmdMenu(false, true);
   } else {
@@ -6055,6 +8197,7 @@ function setTool(t) {
 function confirmGhost() {
   const g = game.ghost;
   if (!g) return;
+  if (g.type === 'bridge') { if (g.a >= 0 && g.i >= 0 && buildBridge(g.a, g.i)) setTool(null); else updateConfirm(); return; }
   if (!g.set && !TOUCH) { toast('Click where it should go first'); return; }
   if (tryBuild(g.i, g.type)) {
     if (!TOUCH) g.set = false;                     // desktop: the next one follows the mouse again
@@ -6066,6 +8209,15 @@ function confirmGhost() {
 function updateConfirm() {
   const g = game.ghost, el = $('cf-info');
   if (!g) { el.innerHTML = ''; return; }
+  if (g.type === 'bridge') {
+    const p = g.a >= 0 && g.i >= 0 ? bridgePlan(g.a, g.i) : null, C = g.a >= 0 ? countryAt(g.a) : null;
+    el.innerHTML = `<div class="cf-name"><span class="cf-ic">${SVG.rock}</span>Bridge ${p && !p.why ? `<span class="cost">${costHtml(p.cost, C)}</span>` : ''}</div>
+      <div class="cf-line">${g.a < 0 ? say('Click your coast where it starts', 'Tap your coast where it starts') : !p ? say('Now click the land across the water', 'Now tap the land across the water')
+        : p.why ? `<span class="r">${p.why}</span>` : `<span class="g">${p.len} tiles of water · paid by ${C.short}</span>`}</div>
+      <div class="cf-hint">Each tile of water costs more than the last: 10 tiles = 125 stone, 30 = 675</div>`;
+    $('cf-ok').disabled = !p || !!p.why;
+    return;
+  }
   const type = g.type, def = CFG.buildings[type], i = g.i;
   const why = i >= 0 ? canBuild(i, type) : 'Off the map', C = i >= 0 ? countryAt(i) : null;
   const plan = !why ? planFor(i, type) : null, cost = totalCost(type, plan, i);
@@ -6088,13 +8240,13 @@ let buildOpen = false, cmdOpen = false;
 function toggleBuildMenu(force) {
   buildOpen = force === undefined ? !buildOpen : force;
   $('buildmenu').classList.toggle('show', buildOpen);
-  if (buildOpen) { renderBuildMenu(); toggleCmdMenu(false, true); setAiming(false); }
+  if (buildOpen) { renderBuildMenu(); toggleCmdMenu(false, true); setAiming(false); closeDiplomacy(); showBuildingCard(null); }
   setMode(game.mode);
 }
 function toggleCmdMenu(force, keepMode) {
   cmdOpen = force === undefined ? !cmdOpen : force;
   $('cmdmenu').classList.toggle('show', cmdOpen);
-  if (cmdOpen) { if (buildOpen) toggleBuildMenu(false); if (!keepMode) { setTool(null); setMode('command'); } updateCmdMenu(); }
+  if (cmdOpen) { if (buildOpen) toggleBuildMenu(false); if (!keepMode && dipOf >= 0) closeDiplomacy(); if (!keepMode) { setTool(null); setMode('command'); } updateCmdMenu(); }
 }
 function researchHtml() {
   const RS = game.research, t = RS.cur && TECH[RS.cur], known = RS.done.size, all = CFG.techs.length;
@@ -6104,7 +8256,7 @@ function researchHtml() {
     <div class="rs-name">${t.name} <span class="rs-pct">${Math.floor(f * 100)}%</span><span class="rs-eta">${eta < 1e6 ? '~' + fmtTime(eta) + ' left' : 'paused: no people'}</span></div></div></div>
     <div class="rbar big"><span style="width:${(f * 100).toFixed(1)}%"></span></div>
     <div class="rs-what">${techSummary(t.id)}</div>
-    <div class="rs-why">${fmtNum(RS.rate * 60)} points a minute from your ${fmtNum(game.population)} people${RS.gold > 0 ? ` + ${fmtNum(RS.gold * 60)} from gold` : ''}. Picked because it uses ${t.uses.join(' and ')}.</div>`;
+    <div class="rs-why">${fmtNum(RS.rate * 60)} points a minute from your ${fmtNum(game.population)} people${stationPeople() >= 1 ? ` and ${fmtNum(stationPeople())} in space` : ""}${RS.gold > 0 ? ` + ${fmtNum(RS.gold * 60)} from gold` : ''}. Picked because it uses ${t.uses.join(' and ')}.</div>`;
 }
 function renderBuildMenu() {
   const C = activeCountry();
@@ -6145,11 +8297,21 @@ function updateCmdMenu() {
   $('warhead-row').hidden = !game.research.done.has('nukes') || !silosOf().length;
   document.querySelectorAll('[data-warhead]').forEach(b => b.classList.toggle('on', game.warhead === b.dataset.warhead));
   $('warhead-cost').textContent = game.warhead === 'nuke' ? Object.entries(CFG.nuke.cost).map(([r, n]) => `${n} ${r}`).join(' · ') : '';
-  const anyOut = game.expeditions.some(e => !e.auto && !e.done);
-  document.querySelector('#cmdmenu [data-act="drive"]').hidden = !(anyOut && !game.driving);
+  const ws = WORLDS.filter(P => P.id === WORLD || worldsWithYou().includes(P) || game.colonyShips.some(s => s.w === P.id));
+  $('world-row').hidden = ws.length < 2;
+  const wb = $('world-buttons'), wkey = ws.map(P => P.id).join(',') + ':' + WORLD;
+  if (wb.dataset.key !== wkey) {
+    wb.dataset.key = wkey; wb.innerHTML = '';
+    for (const P of ws) { const el = document.createElement('button'); el.className = 'pbtn wide' + (P.id === WORLD ? ' on' : ''); el.textContent = P.short; el.addEventListener('click', () => viewWorld(P.id)); wb.appendChild(el); }
+  }
+  const anyOut = game.expeditions.some(e => !e.auto && !e.done) || game.flights.some(f => !f.done);
+  document.querySelector('#cmdmenu [data-act="drive"]').hidden = !(anyOut && !game.driving && !game.flying);
   document.querySelector('#cmdmenu [data-act="next"]').hidden = game.countries.filter(c => c.alive && c.tiles).length < 2;
   $('recruit').textContent = game.recruit ? '✓ Bases training troops' : '✕ Bases not training';
   $('recruit').classList.toggle('on', game.recruit);
+  $('autodef').textContent = game.autoDefend ? '✓ Forts defend by themselves' : '✕ Forts hold back';
+  $('autodef').classList.toggle('on', game.autoDefend);
+  allianceRow();
   const us = unitStats(), g = garrisons(), bases = g.filter(b => b.type === 'base').length, forts = g.length - bases;
   const marching = game.armies.reduce((a, q) => a + q.n, 0), fighting = game.attacks.reduce((a, q) => a + q.units, 0);
   $('army-info').innerHTML = isUnlocked('base') ? `<b class="g">${fmtNum(totalUnits())} ${us.type.name}</b> · reach ${strikeReach()} tiles · ${bases} base${bases === 1 ? '' : 's'}, ${forts} fortress${forts === 1 ? '' : 'es'}${marching >= 1 ? ` · ${fmtNum(marching)} marching` : ''}${fighting >= 1 ? ` · ${fmtNum(fighting)} fighting` : ''}<br><span class="d">attack ${us.atk.toFixed(1)} · toughness ${us.hp.toFixed(1)} · speed ${us.speed.toFixed(1)}</span>`
@@ -6160,8 +8322,9 @@ function updateCmdMenu() {
 // ---------- one of your buildings: tap it (in Command mode) to see it and act on it ----------
 const isConnected = b => b.type === 'settlement' || game.connects.some(c => c.a === b.i);
 // a road out to building b: to the nearest road (or settlement) of its domain within reach. { line, to, cost } or a reason
-function connectPlan(b) {
+function connectPlan(b, own = null) {
   const C = countryAt(b.i), R = CFG.roads.connectReach, bx = b.i % W, by = (b.i / W) | 0;
+  const mine = own ? new Set(own.tiles) : null;    // when re-routing: its own road doesn't count as a road to join
   if (!C) return { why: 'Not your land' };
   let to = -1, td = Infinity;
   for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
@@ -6169,7 +8332,7 @@ function connectPlan(b) {
     if (d >= td || d > R * R || !inb(bx + dx, by + dy)) continue;
     const t = idx(bx + dx, by + dy);
     if (t === b.i || countryAt(t) !== C) continue;
-    if ((NET[t] & 1) || building[t] === BLD_CODE.settlement) { td = d; to = t; }
+    if (((NET[t] & 1) && !(mine && mine.has(t))) || building[t] === BLD_CODE.settlement) { td = d; to = t; }
   }
   if (to < 0) return { why: `No road or settlement of ${C.short} within ${R} tiles` };
   const line = makeLine(b.i, to, sideOf(b.i), true, 20000);
@@ -6218,13 +8381,39 @@ function pickWallEnd(b) {
      { label: 'Cancel', act: () => {} }]);
 }
 let cardOf = -1;
+function refreshCard(force) {
+  if (force) $('bcard').dataset.key = '';
+  if (cardOf <= -1000) { const st = stationByN(-1000 - cardOf); return st ? showStationCard(st) : showBuildingCard(null); }
+  const b = cardOf >= 0 && buildingAt(cardOf);
+  if (b && (owner[b.i] || game.time === 0)) showBuildingCard(b); else showBuildingCard(null);
+}
+function showStationCard(st) {
+  cardOf = -1000 - st.n;
+  const S = CFG.station, n = st.nation != null ? game.nations[st.nation] : null, cap = stationCap(st), o = orbitOf(st.x, st.y, st.vx, st.vy);
+  $('bc-ic').innerHTML = SVG.rocket;
+  $('bc-title').textContent = n ? `${n.short} space station` : `Space Station ${st.n}`;
+  const lines = [], btns = [], inc = incomingStation(st);
+  lines.push(`<b>${Math.floor(st.people)} / ${cap} people</b>${inc.people ? ` · <span class="g">+${inc.people} on the way up</span>` : ''}`);
+  if (n) lines.push(`Run by ${n.full}.`);
+  else {
+    lines.push(`Stock: ${['wood', 'stone', 'iron'].map(r => `${Math.floor(st.res[r])} ${r}`).join(', ')} · level ${st.level}`);
+    lines.push(`Its people are all scientists: each counts ${S.research}x toward your research.`);
+    const E = S.expand, can = Object.keys(E).every(r => st.res[r] >= E[r]);
+    btns.push({ label: `Expand: +${S.cap} room · ${costText(E)} from its stock`, cls: can ? 'go' : '', act: () => { expandStation(st); refreshCard(true); }, off: !can });
+    const sup = game.buildings.find(b => b.type === 'pad' && b.supply === st.n && owner[b.i]), sh = game.shuttles.length;
+    lines.push(sup ? `Supplied by one-way rockets from ${countryAt(sup.i) ? countryAt(sup.i).short : '?'}'s launch pad.` : sh ? `Supplied by your ${sh} reusable rocket${sh > 1 ? 's' : ''}.` : '<span class="a">Nothing supplies it: open a launch pad\'s card to send rockets up.</span>');
+    lines.push(`${st.runs} supply run${st.runs === 1 ? '' : 's'} so far`);
+  }
+  lines.push(`Orbit: ${o.escape ? 'escaping' : `${Math.round(o.pe - DISK.R)} to ${Math.round(o.ap - DISK.R)} tiles up, once round every ${Math.round(o.period)} s`}`);
+  fillCard(lines, btns);
+}
 function showBuildingCard(b) {
-  if (!b) { $('bcard').classList.remove('show'); cardOf = -1; return; }
+  if (!b) { $('bcard').classList.remove('show'); $('bcard').dataset.key = ''; cardOf = -1; return; }
   cardOf = b.i;
   const def = CFG.buildings[b.type], C = countryAt(b.i), lines = [], btns = [];
   $('bc-ic').innerHTML = SVG[b.type];
   $('bc-title').textContent = def.name + (underway(b) ? ' (under construction)' : '');
-  if (b.site) lines.push(`<span class="a">${b.site.convoy ? 'Materials on their way' : 'Waiting for ' + (Object.entries(b.site.need).filter(([, v]) => v >= 0.5).map(([r, v]) => `${Math.ceil(v)} ${r}`).join(', ') || 'a delivery')}</span>`);
+  if (b.site) lines.push(`<span class="a">${b.site.car != null ? 'Materials on their way by car' : b.site.ready ? 'Waiting for a free car (buy more at any settlement)' : 'Waiting for ' + (Object.entries(b.site.need).filter(([, v]) => v >= 0.5).map(([r, v]) => `${Math.ceil(v)} ${r}`).join(', ') || 'a delivery')}</span>`);
   if (b.type === 'settlement') lines.push(`Holds ${Math.round(settlementCap(b))} people from ${b.tiles} tiles in reach. Roads join it to the other settlements of ${C ? C.short : 'its domain'} by themselves, and haulers bring harvests here.`);
   if (b.type === 'base' || b.type === 'fort') lines.push(`<b class="g">${Math.floor(b.units || 0)} / ${garrisonCap(b)} ${unitStats().type.name}</b>${b.training ? ' · training' : ''}${b.incoming ? ` · ${b.incoming} on the way` : ''}${b.oil != null && unitStats().type.oil ? ` · ${fmtNum(b.oil)} oil` : ''}`);
   if (b.type === 'fort') lines.push(`Land within ${CFG.walls.fortReach} tiles is ${CFG.walls.fortDefense}x harder for raiders to take.`);
@@ -6242,10 +8431,58 @@ function showBuildingCard(b) {
     }
   }
   if (b.type === 'fort' && !underway(b) && isUnlocked('fort')) btns.push({ label: 'Build a wall…', act: () => { game.wallFrom = b.i; showBuildingCard(null); toast(say('Now click another fortress (within ', 'Now tap another fortress (within ') + CFG.walls.range + ' tiles) to wall them together'); } });
+  // a settlement, port or airport: your cars, boats or planes. Buy more; order the whole fleet upgraded.
+  const fk = { settlement: 'car', port: 'boat', airport: 'plane' }[b.type];
+  if (fk && !underway(b) && tierOpen(fk) >= 0) {
+    const F = fleetSummary(fk), T = FLEET[fk].tiers[Math.max(0, F.tgt)], busy = fk === 'car' ? F.list.filter(v => v.job).length : F.list.filter(v => v.cargo).length;
+    const tiers = {};
+    for (const v of F.list) { const n = FLEET[fk].tiers[workTier(v)].name; tiers[n] = (tiers[n] || 0) + 1; }
+    lines.push(`<b>${F.count} ${FLEET[fk].name}</b>${F.count ? ` (${Object.entries(tiers).map(([n, k]) => `${k} ${n.toLowerCase()}`).join(', ')}) · ${busy} busy` : ''}${fk === 'car' ? ` · carrying ${T.cargo} each` : ''}`);
+    btns.push({ label: `Buy ${T.name.toLowerCase().replace(/s$/, '')} · ${costText(T.cost)}`, cls: 'go', act: () => { buyVehicle(fk, b.i); showBuildingCard(b); } });
+    if (F.up) {
+      const pending = game.fleetTarget[fk] >= F.open;
+      btns.push({ label: pending ? `Upgrading to ${F.up.name.toLowerCase()}… (${costText(F.upCost)} left)` : `Upgrade all to ${F.up.name.toLowerCase()} · ${costText(F.upCost)}`,
+        act: () => { orderUpgrade(fk); showBuildingCard(b); }, off: pending });
+    }
+  }
+  if (b.type === 'pad' && !underway(b)) {
+    const st = rocketState(b), R = CFG.rocket, sp = C && C.space || { drills: 0 };
+    lines.push(sp.drills ? `Fuel from ${sp.drills} ice drill${sp.drills > 1 ? 's' : ''} (${(sp.drills * R.drillFuel * (C.sat ?? 1)).toFixed(1)}/s, shared)` : `<span class="a">No ice drills in ${C ? C.short : 'this domain'}: fuel comes from burning oil (${R.padOil}/s for ${R.padOil * R.oilFuel} fuel/s). Ice drills on the polar caps are free.</span>`);
+    if (!b.shuttleOnly) lines.push(b.paused ? '<span class="d">Paused</span>' : st === 'none' ? `<span class="a">Waiting for ${R.iron} iron to build a rocket</span>` : st === 'fuelling' ? `Rocket fuelling: ${Math.floor(b.rocket.fuel / R.tank * 100)}%` : b.supply ? `<span class="g">Supply rocket loading for Station ${b.supply}</span>` : '<span class="g">Rocket ready to fly</span>');
+    if (st === 'ready' && !b.supply) btns.push({ label: 'Fly the rocket', cls: 'go', act: () => launchRocket(b) });
+    if (b.supply) btns.push({ label: `Stop supplying Station ${b.supply}`, act: () => { b.supply = null; refreshCard(true); } });
+    else if (myStations().length && !(C && shuttlesOf(C).length)) btns.push({ label: `Supply Station ${myStations()[0].n} with one-way rockets`, act: () => { b.supply = myStations()[0].n; refreshCard(true); } });
+    const mine = game.shuttles.filter(sh => sh.pad === b.i);
+    if (game.research.done.has('reusable')) {
+      if (mine.length) lines.push(`<b>${mine.length} reusable rocket${mine.length > 1 ? 's' : ''}</b>: ${mine.map(sh => sh.state === 'docked' ? `fuelling ${Math.floor(sh.fuel / CFG.shuttle.tank * 100)}%` : sh.dest ? 'flying to a station' : 'in flight').join(', ')}. They fly themselves: up to the station that needs supplies most, down to a landing pad, and home.`);
+      btns.push({ label: `Buy a reusable rocket · ${costText(CFG.shuttle.cost)}`, cls: mine.length ? '' : 'go', act: () => { buyShuttle(b); refreshCard(true); }, off: C && !!missingFor(CFG.shuttle.cost, C) });
+      if (mine.length) btns.push({ label: b.shuttleOnly ? 'Build hand-flown rockets here again' : 'Only reusable rockets here', act: () => { b.shuttleOnly = !b.shuttleOnly; if (b.shuttleOnly && b.rocket) { C.res.iron += R.iron; b.rocket = null; } refreshCard(true); } });
+    }
+    if (game.research.done.has('domes')) {
+      const why = colonyReady(b);
+      lines.push(`Colony ship: the ready rocket carries ${COLONY.people} settlers and ${costText(COLONY.kit)} (plus ${costText(COLONY.cost)} for the lander).${why ? ` <span class="a">${why}.</span>` : ''}`);
+      for (const P of WORLDS.slice(1)) btns.push({ label: `Colony ship to ${P.short} · ${P.trip} s`, cls: why ? '' : 'go', act: () => { showBuildingCard(null); startColony(b, P.id); }, off: !!why });
+    }
+    btns.push({ label: b.paused ? 'Resume' : 'Pause', act: () => { b.paused = !b.paused; refreshCard(true); } });
+  }
+  if (b.type === 'terraformer' && !underway(b)) lines.push(`Greening the desert within ${CFG.buildings.terraformer.reach} tiles${C && (C.sat ?? 1) < 0.3 ? ': <span class="r">not enough power</span>' : ''}. Green land holds people like home does.`);
+  if (b.type === 'lpad' && !underway(b)) {
+    const n = game.shuttles.filter(sh => sh.plan && sh.plan.some(p => p.i === b.i)).length;
+    lines.push(`Reusable rockets land here between runs: they drop off freight for ${C ? C.short : 'this domain'} and take some home.${n ? ` <b>${n} on the way.</b>` : ''}`);
+  }
+  if (b.type === 'drill' && !underway(b)) lines.push(`Pumps ${(CFG.rocket.drillFuel * (C ? C.sat ?? 1 : 1)).toFixed(2)} fuel/s into the rockets on ${C ? C.short : 'its domain'}'s launch pads${C && C.space && C.space.pads ? '' : ' (no launch pad yet: it waits)'}.`);
   for (const [t, d] of Object.entries(CFG.buildings)) {          // upgrades that sit on this one
     const from = Array.isArray(d.from) ? d.from : [d.from];
     if (!underway(b) && !b.site && from.includes(b.type) && isUnlocked(t)) btns.push({ label: `Upgrade: ${d.name}`, act: () => { showBuildingCard(null); setTool(t); if (game.ghost) { game.ghost.i = b.i; game.ghost.set = true; updateConfirm(); } } });
   }
+  fillCard(lines, btns);
+}
+// the card's text and buttons (left alone when nothing changed, so a refresh never swallows a tap)
+function fillCard(lines, btns) {
+  game.cardAt = game.time;
+  const key = cardOf + '@' + lines.join('|') + '#' + btns.map(x => x.label + !!x.off).join('|');
+  if ($('bcard').dataset.key === key && $('bcard').classList.contains('show')) return;
+  $('bcard').dataset.key = key;
   $('bc-body').innerHTML = lines.map(l => `<div>${l}</div>`).join('');
   const wrap = $('bc-btns');
   wrap.innerHTML = '';
@@ -6258,12 +8495,134 @@ function showBuildingCard(b) {
   $('bcard').classList.add('show');
 }
 
+// ---------- the diplomacy panel: click a nation ----------
+let dipOf = -1, dipDraft = null, dipMsg = '';
+function opWord(op) { return op >= 60 ? 'Friendly' : op >= 25 ? 'Cordial' : op > -25 ? 'Neutral' : op > -60 ? 'Wary' : 'Hostile'; }
+function openDiplomacy(n, tx = null, ty = null) {
+  if (!n || !n.alive) return closeDiplomacy();
+  if (dipOf !== n.id) { dipDraft = { give: { res: {}, towns: [] }, ask: { res: {}, towns: [] } }; dipMsg = ''; }
+  dipOf = n.id;
+  game.dipTarget = tx != null ? [tx, ty] : game.dipTarget;
+  toggleCmdMenu(false, true); toggleBuildMenu(false); showBuildingCard(null);
+  renderDiplomacy();
+  $('diplo').classList.add('show'); document.body.classList.add('dip-open');
+}
+function closeDiplomacy() { dipOf = -1; $('diplo').classList.remove('show'); document.body.classList.remove('dip-open'); }
+function renderDiplomacy() {
+  const n = game.nations[dipOf];
+  if (!n) return;
+  const op = getOp('P', n.id), al = allianceOf(n.id), mine = allianceOf('P'), us = unitStats(n.R);
+  const st = n.hostile ? '<span class="r">⚔ AT WAR WITH YOU</span>' : allied('P', n.id) ? `<span class="g">🤝 Your ally (${al.name})</span>` : '<span class="d">At peace</span>';
+  const [tx, ty] = game.dipTarget || [Math.floor(n.lx), Math.floor(n.ly)];
+  const plan = strikePlan(n, tx, ty);
+  const wars = game.nations.filter(m => m !== n && m.alive && atWar(n.id, m.id)).map(m => m.short);
+  const C = nearestDomain(n.lx, n.ly);
+  const resRow = (side, r) => {
+    const have = side === 'give' ? Math.floor(Math.max(0, C.res[r])) : Math.floor(r === 'iron' ? n.iron || 0 : (n.stock || {})[r] || 0);
+    return `<div class="dp-res"><span class="ri">${SVG[RES_ICON[r]]}</span><input type="number" min="0" step="10" data-side="${side}" data-r="${r}" value="${dipDraft[side].res[r] || ''}" placeholder="0"><span class="have">${side === 'give' ? 'you have' : 'they have'} ${fmtNum(have)}</span></div>`;
+  };
+  const towns = (side) => {
+    const list = game.buildings.filter(b => b.type === 'settlement' && !underway(b) && (side === 'give' ? owner[b.i] : aiOf[b.i] === n.id + 1))
+      .sort((p, q) => (side === 'give' ? tileDist(p.i, n.lx, n.ly) - tileDist(q.i, n.lx, n.ly) : tileDist(p.i, C.lx, C.ly) - tileDist(q.i, C.lx, C.ly))).slice(0, 4);
+    return list.map(b => `<label class="dp-town"><input type="checkbox" data-side="${side}" data-town="${b.i}" ${dipDraft[side].towns.includes(b.i) ? 'checked' : ''}>
+      ${CFG.settlement.levels[settlementLevel(b)].name} · ${settlementLand(b).length} tiles</label>`).join('') || '<div class="d" style="font-size:11px">none near</div>';
+  };
+  const resList = RESOURCES.filter(r => (r !== 'oil' || oilKnown()) && (r !== 'uranium' || uraniumKnown()));
+  $('diplo').innerHTML = `
+    <div class="dp-head"><span class="dp-flag" style="background:${n.hex}"></span><div style="flex:1"><div class="dp-name">${n.full}</div>
+      <div class="dp-sub">${n.pers.name} · ${fmtNum(n.people)} people · ${fmtNum(n.units)} ${us.type.name} · ${n.R.size} techs${al ? ` · in ${al.name}` : ''}</div></div>
+      <button class="x" id="dp-close">✕</button></div>
+    <div class="dp-status">${st}${wars.length ? ` <span class="d">· at war with ${wars.join(', ')}</span>` : ''}</div>
+    <div class="lbl">THEIR OPINION OF YOU: ${opWord(op).toUpperCase()} (${Math.round(op)})</div>
+    <div class="op-bar"><i style="left:${(op + 100) / 2}%"></i></div>
+    <div class="dp-row">
+      ${plan ? `<button class="danger" data-dp="attack">⚔ Attack${allied('P', n.id) ? ' (betrayal)' : ''}</button>` : `<button disabled>Out of reach (${strikeReach()} tiles)</button>`}
+      <button data-dp="expand">Expand to their border</button>
+    </div>
+    <div class="dp-row">
+      ${n.hostile ? '<button class="go" data-dp="peace">🕊 Ask for peace</button>' : `<button class="danger" data-dp="war">Declare war</button>`}
+      ${allied('P', n.id) ? (mine && mine.leader === 'P' ? '<button data-dp="kick">Remove from alliance</button>' : '') :
+        mine ? `<button class="go" data-dp="invite">Invite to ${mine.name}</button>` : al ? `<button class="go" data-dp="join">Ask to join ${al.name}</button>` : '<button class="go" data-dp="ally">🤝 Propose an alliance</button>'}
+    </div>
+    <div class="dp-trade"><div class="lbl">TRADE · PAID FROM / RECEIVED BY ${C.short.toUpperCase()}</div>
+      <div class="dp-cols">
+        <div class="dp-col"><div class="lbl">YOU GIVE</div>${resList.map(r => resRow('give', r)).join('')}<div class="lbl" style="margin-top:6px">YOUR SETTLEMENTS</div>${towns('give')}</div>
+        <div class="dp-col"><div class="lbl">YOU ASK FOR</div>${resList.map(r => resRow('ask', r)).join('')}<div class="lbl" style="margin-top:6px">THEIR SETTLEMENTS</div>${towns('ask')}</div>
+      </div>
+      <div class="dp-row"><button class="send" data-dp="trade">Propose trade</button></div>
+      <div class="dp-result">${dipMsg}</div>
+    </div>`;
+  $('dp-close').onclick = closeDiplomacy;
+  $('diplo').querySelectorAll('input[data-r]').forEach(el => el.oninput = () => { dipDraft[el.dataset.side].res[el.dataset.r] = Math.max(0, Math.floor(+el.value || 0)); });
+  $('diplo').querySelectorAll('input[data-town]').forEach(el => el.onchange = () => {
+    const L = dipDraft[el.dataset.side].towns, t = +el.dataset.town;
+    if (el.checked) L.push(t); else L.splice(L.indexOf(t), 1);
+  });
+  $('diplo').querySelectorAll('button[data-dp]').forEach(el => el.onclick = () => dipAction(n, el.dataset.dp, tx, ty));
+}
+function dipAction(n, act, tx, ty) {
+  const say2 = (r) => { dipMsg = `<span class="${r.accept ? 'g' : 'r'}">${r.accept ? '✓' : '✕'} ${r.why}</span>`; renderDiplomacy(); };
+  if (act === 'attack') { closeDiplomacy(); return guardedAttack(n, tx, ty); }
+  if (act === 'expand') { closeDiplomacy(); startPush(tx, ty); return toast(`Your border will stop at ${n.short}'s.`); }
+  if (act === 'war') {
+    return showModal(`<div class="md-title">Declare war on ${n.full}?</div><div class="md-body">${allied('P', n.id) ? '<b class="r">They are your ally: this betrays the alliance, and every member will remember it.</b><br>' : ''}Their allies may join in. Your cannons and their missile silos open fire.</div>`,
+      [{ label: 'Declare war', cls: 'danger', act: () => { if (allied('P', n.id)) leaveAlliance('P', true); provoke(n); n.warSince = game.time; renderDiplomacy(); } }, { label: 'Cancel', act: () => {} }]);
+  }
+  if (act === 'peace') return say2(aiPeace(n));
+  if (act === 'ally') return say2(aiAlly(n, 'new'));
+  if (act === 'invite') return say2(aiAlly(n, 'invite'));
+  if (act === 'join') return say2(aiAlly(n, 'join'));
+  if (act === 'kick') { const al = allianceOf('P'); al.members = al.members.filter(m => m !== n.id); addOp('P', n.id, -20); if (al.members.length < 2) game.alliances = game.alliances.filter(a => a !== al); return say2({ accept: true, why: `${n.short} is no longer in ${al.name}.` }); }
+  if (act === 'trade') {
+    const offer = JSON.parse(JSON.stringify(dipDraft));
+    const C = nearestDomain(n.lx, n.ly);
+    for (const r in offer.give.res) if (offer.give.res[r] > C.res[r]) return say2({ accept: false, why: `${C.short} only has ${fmtNum(C.res[r])} ${r}.` });
+    if (!offerValue(offer.give) && !offerValue(offer.ask)) return say2({ accept: false, why: 'Put something in the offer first.' });
+    const gift = !offerValue(offer.ask);
+    const r = gift ? { accept: true, why: `They gladly accept your gift (opinion up).` } : aiConsider(n, offer);
+    if (r.accept) { doTrade(n, offer); dipDraft = { give: { res: {}, towns: [] }, ask: { res: {}, towns: [] } }; }
+    return say2(r);
+  }
+}
+// attacking an ally is a betrayal: ask first
+function guardedAttack(n, tx, ty) {
+  if (WORLD) return toast(`${n.short}'s outpost here is protected by the Outer Space Treaty, and so are yours: wars are fought on the home world. You can still trade with them.`);
+  if (!allied('P', n.id)) return launchAttack(n, tx, ty);
+  const al = allianceOf('P');
+  showModal(`<div class="md-title">Betray ${al.name}?</div><div class="md-body">${n.full} is your ally. Attacking it betrays the alliance: you'll be thrown out, and <b class="r">every member will think far worse of you</b> (other nations will hear of it too).</div>`,
+    [{ label: 'Betray and attack', cls: 'danger', act: () => { leaveAlliance('P', true); launchAttack(n, tx, ty); } }, { label: 'Cancel', act: () => {} }]);
+}
+// your alliance, in the Command menu: its members, and leave (or disband, if you founded it)
+function allianceRow() {
+  const al = allianceOf('P'), el = $('alliance-row');
+  if (!al) { el.innerHTML = '<span class="d">No alliance: click a nation to propose one.</span>'; return; }
+  el.innerHTML = `<span>🤝 <b>${al.name}</b>: ${al.members.filter(m => m !== 'P').map(m => shortOf(m)).join(', ')}</span>
+    <button id="al-leave">${al.leader === 'P' ? 'Disband' : 'Leave'}</button>`;
+  $('al-leave').onclick = () => showModal(`<div class="md-title">${al.leader === 'P' ? 'Disband' : 'Leave'} ${al.name}?</div><div class="md-body">Its members will think less of you (not as much as a betrayal).</div>`,
+    [{ label: al.leader === 'P' ? 'Disband' : 'Leave', cls: 'danger', act: () => { leaveAlliance('P'); updateCmdMenu(); } }, { label: 'Cancel', act: () => {} }]);
+}
+
 // ---------- notifications and questions ----------
-function notify(title, body) {
+function notify(title, body, buttons = null, onExpire = null, onClick = null) {
   const el = document.createElement('div');
   el.className = 'note';
   el.innerHTML = `<div class="nt">${title}</div><div class="nb">${body}</div>`;
-  el.addEventListener('click', () => el.remove());
+  if (buttons) {                                   // an offer: it stays until you answer (or it expires)
+    const row = document.createElement('div');
+    row.className = 'nbtns';
+    for (const b of buttons) {
+      const x = document.createElement('button');
+      x.textContent = b.label; if (b.cls) x.className = b.cls;
+      x.onclick = e => { e.stopPropagation(); el.remove(); b.act(); };
+      row.appendChild(x);
+    }
+    el.appendChild(row);
+    $('notes').prepend(el);
+    setTimeout(() => { if (el.isConnected) { el.remove(); if (onExpire) onExpire(); } }, 30000);
+    return;
+  }
+  el.addEventListener('click', () => { el.remove(); if (onClick) onClick(); });
+  if (onClick) el.style.cursor = 'pointer';
   $('notes').prepend(el);
   while ($('notes').children.length > 3) $('notes').lastChild.remove();
   setTimeout(() => { el.classList.add('fade'); setTimeout(() => el.remove(), 600); }, 9000);
@@ -6303,8 +8662,15 @@ function toast(msg) {
 
 const fmtCap = cap => cap >= 10000 ? (cap / 1000).toFixed(1) + 'k' : fmtNum(cap);
 function updateHud() {
+  $('dpad').classList.toggle('show', !!(game.driving || game.flying) && TOUCH);
+  $('dp-settle').textContent = game.flying ? (game.flying.engine ? 'Cut engine' : 'Engine') : 'Settle';
+  $('dp-park').textContent = game.flying ? 'Let go' : 'Park';
+  flightHud();
+  if (cardOf !== -1 && $('bcard').classList.contains('show') && game.time - (game.cardAt || 0) > 0.5) refreshCard();
+  // on a phone, an open sheet hides the plain notifications (offers waiting for an answer stay)
+  document.body.classList.toggle('sheet-open', TOUCH && (buildOpen || cmdOpen || $('bcard').classList.contains('show')));
   const C = activeCountry();
-  if (!C) return;                                  // game over: nothing left to show
+  if (!C) { $('val-view').textContent = WORLD ? WORLDS[WORLD].short + (game.colonyPick ? ' · pick a landing site' : '') : $('val-view').textContent; return; }   // game over, or a world you haven't landed on
   const live = game.countries.filter(c => c.alive);
   $('val-country').textContent = C.full;
   $('country-count').textContent = live.length > 1 ? `${live.indexOf(C) + 1} of ${live.length}` : '';
@@ -6315,7 +8681,7 @@ function updateHud() {
     for (const r of RESOURCES) { tot[r] += Math.max(0, c.res[r]); rate[r] += c.rates[r] || 0; cap[r] += c.store ? c.store[r] : CFG.storage[r].base; }
     gold += c.goldRate || 0; eat += c.eat || 0; hungry = hungry || c.hungry;
   }
-  for (const L of game.links) if (L.cargo) for (const r of RESOURCES) inc[r] += L.cargo[r] || 0;
+  for (const L of game.links) for (const V of L.ships) if (V.cargo) for (const r of RESOURCES) inc[r] += V.cargo[r] || 0;
   $('res-oil').hidden = !oilKnown();
   $('res-uranium').hidden = !uraniumKnown();
   for (const r of RESOURCES) {
@@ -6341,7 +8707,7 @@ function updateHud() {
   $('val-terr').textContent = (game.ownedCount / game.landTiles * 100).toFixed(1) + '%';
   $('val-time').textContent = fmtTime(game.time);
   $('save-note').textContent = game.savedAt != null && game.time - game.savedAt < 2.5 ? 'SAVED' : '';
-  $('val-view').textContent = cam.follow ? (mapStage === 3 ? 'Solar system' : LOCK[cam.follow].short)
+  $('val-view').textContent = WORLD ? WORLDS[WORLD].short + (game.colonyPick ? ' · pick a landing site' : '') : cam.follow ? (mapStage === 3 ? 'Solar system' : LOCK[cam.follow].short)
     : cam.zoom < orbitZoom() * 0.6 ? 'Solar' : cam.zoom >= CFG.detailZoom ? 'Detail' : cam.zoom >= CFG.cityZoom ? 'Region'
     : cam.zoom > fitZoom() * 0.8 ? 'Map' : 'Orbit';
   // people (in the domain you're viewing), its troops in green below
@@ -6368,8 +8734,7 @@ function updateHud() {
   if (buildOpen) { $('research-box').innerHTML = researchHtml(); }
   if (cmdOpen) updateCmdMenu();
   if (game.ghost) updateConfirm();
-  $('dpad').classList.toggle('show', !!game.driving && TOUCH);
-  if (!game.driving) for (const k of ['arrowup', 'arrowdown', 'arrowleft', 'arrowright']) if (TOUCH) keys.delete(k);
+  if (!game.driving && !game.flying) for (const k of ['arrowup', 'arrowdown', 'arrowleft', 'arrowright']) if (TOUCH) keys.delete(k);
   document.body.style.setProperty('--bottom-h', $('bottom').offsetHeight + 'px');
   document.body.style.setProperty('--top-h', $('topbar').offsetHeight + 'px');
   updateHover();
@@ -6396,6 +8761,7 @@ function updateHover() {
   const b = biome[t.i];
   let info = BIOME_NAME[b];
   if (b === ICE) info += ' · the edge of the world';
+  if (b === OCEAN && bridgeAt[t.i]) info += ' · bridge';
   if (isLand(t.i)) {
     const foe = nationAt(t.i);
     info += foe ? ` · ${foe.full} (${foe.pers.name}) · ${fmtNum(foe.people)} people · ${fmtNum(foe.units)} ${unitStats(foe.R).type.name} · ${foe.R.size} techs${foe.hostile ? ' · AT WAR' : ''}`
@@ -6593,6 +8959,15 @@ function drawMissiles(z) {
 // the building you're placing: where it would go, what it would reach, and whether it can go there
 function drawBuildPreview(z) {
   const g = game.ghost;
+  if (g && g.type === 'bridge') {                  // the span you're planning, green if it can be built
+    const end = g.i >= 0 ? g.i : mouse.in ? tileAtScreen(mouse.x, mouse.y) : -1;
+    if (g.a >= 0) {
+      const [sx, sy] = toScreen(...tileCenter(g.a));
+      ctx.beginPath(); ctx.arc(sx, sy, Math.max(6, z * 0.6), 0, Math.PI * 2); ctx.strokeStyle = '#f2c14e'; ctx.lineWidth = 2; ctx.stroke();
+      if (end >= 0) { const p = bridgePlan(g.a, end); if (p.b >= 0 || p.tiles.length) drawBridge(p.s, p.b >= 0 ? p.b : p.tiles[p.tiles.length - 1], z, p.why ? '#ff7a6b' : '#7bd389'); }
+    }
+    return;
+  }
   if (!g || g.i < 0) return;
   const i = g.i, x = i % W, y = (i / W) | 0, type = g.type, def = CFG.buildings[type];
   const plan = planFor(i, type);
@@ -6651,6 +9026,10 @@ function start() {
       return;
     }
   }
+  if (!RESUME || noSave) {                         // a new game: the first settlement starts with a few porters
+    const C = activeCountry(), S = C && nearestSettlement(C, C.lx, C.ly);
+    if (S) for (let k = 0; k < FLEET.car.start; k++) addCar(C, S, 0);
+  }
   initUI();
   setInterval(saveGame, 10000);
   window.addEventListener('beforeunload', saveGame);
@@ -6667,7 +9046,7 @@ function start() {
     const dt = Math.min(0.25, (now - last) / 1000);
     last = now;
     acc += dt;
-    while (acc >= step) { tick(step); acc -= step; }
+    while (acc >= step) { tickAll(step); acc -= step; }
     panKeys(dt);
     stepCamAnim(dt);
     applyFollow();
@@ -6680,10 +9059,10 @@ function start() {
 }
 
 // handy for debugging/testing in the browser console
-window.__game = { TOUCH, mouse, game, cam, CFG, SEED, tick, updateHud, liveCountry, countryAt, activeCountry, countryOf, isUnlocked, toggleBuildMenu, toggleCmdMenu,
+window.__game = { TOUCH, mouse, game, cam, CFG, SEED, tick: tickAll, tickOne: tick, WORLDS, worldData, viewWorld, genWorld, onWorld, startColony, pickColonySite, getWorld: () => WORLD, arrays: () => ({ biome, owner, aiOf, countryOf, building, depositOf }), updateHud, liveCountry, countryAt, activeCountry, countryOf, isUnlocked, toggleBuildMenu, toggleCmdMenu,
   startPush, toWorld, toScreen, tryBuild, launchExpedition, recomputeNetwork, idx, biome, owner, landmass, isCoastal, OCEAN, depositOf, deposits, canBuild, aiOf, nationAt,
   fireMissile, setAiming, explode, saveGame, SAVE_KEY, recomputeBuildings, building, buildingAt, freePeople, params, isHarvested, aiTake, stepRaid, aiThink, aiFire, provoke,
-  render, keys, settleExpedition, takeWheel, completeTech, setPct, setTroopPct, roadsList: () => roads, buildRoads, netGraph, findRoute, connectPlan, connectToRoad, wallPlan, pickWallEnd, showBuildingCard, strikePlan, strikeReach, techIn, goldBoost, haulProf, NET, defenseMult, nextVehicle, driveStep: (e, dt) => driveStep(e, dt), fireMissile, removeBuilding, TECH, unitStats, garrisons, totalUnits, launchAttack, frontWith, setTool, confirmGhost, setCmd, clickAt, commandClick,
+  render, buildBridge, bridgePlan, POLAR, claim, isLand, launchRocket, makeStation, buyShuttle, toggleEngine, orbitOf, DISK, keys, showBuildingCard, refreshCard, openDiplomacy, aiConsider, doTrade, aiPeace, aiAlly, allianceOf, getOp, addOp, atWar, setWar, settlementLand, guardedAttack, autoDefend, buyVehicle, orderUpgrade, fleetSummary, tierOpen, addCar, seaCrossing, keys, settleExpedition, takeWheel, completeTech, setPct, setTroopPct, roadsList: () => roads, buildRoads, netGraph, findRoute, connectPlan, connectToRoad, wallPlan, pickWallEnd, showBuildingCard, strikePlan, strikeReach, techIn, goldBoost, haulProf, NET, defenseMult, nextVehicle, driveStep: (e, dt) => driveStep(e, dt), fireMissile, removeBuilding, TECH, unitStats, garrisons, totalUnits, launchAttack, frontWith, setTool, confirmGhost, setCmd, clickAt, commandClick,
   routesTo, dispatchSupplies, linkStats, techCost, pickTech, playerTechScore, resourceProfile, research: () => game.research, hasDep, oilKnown, W, frontier, tileCenter,
-  stopSaving: () => { noSave = true; } };
+  stopSaving: () => { noSave = true; }, scanAiBorders, dbgAI: () => ({ borders: [...aiBorders.keys()], gaps: [...aiGap.entries()].map(([k, v]) => k + ':' + Math.round(v.d)), dipTimer, borderTimer, offerTimer }), aiOffers, aiRelations, driftOpinions };
 init();

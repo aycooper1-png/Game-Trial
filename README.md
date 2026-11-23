@@ -1,6 +1,6 @@
 # Game Trial
 
-A remake of the [Map Factory prototype](https://yclen.github.io/map-factory/prototype) by yclen: a territory and economy game on a seeded disk world floating in space. Grow your domains, feed your people, research your way from the Wheel to Rocketry, and fight AI nations that each play their own way.
+A remake of the [Map Factory prototype](https://yclen.github.io/map-factory/prototype) by yclen: a territory and economy game on a seeded disk world floating in space. Grow your domains, feed your people, research your way from the Wheel to reusable rockets, settle the Moon and Aries, and deal with AI nations that trade, ally, scheme and fight like people.
 
 **▶ Play:** https://aycooper1-png.github.io/Game-Trial/
 
@@ -9,65 +9,74 @@ The game works on phones as well as on desktops. It autosaves in your browser ev
 ## What's new compared with the original prototype
 
 ### 1. Technology research
-- Every player (you and every AI nation) has a research bar. It fills faster the more people you have.
-- Each discovery shows a notification. The **Build** button shows what's being researched and how far along it is. The Build menu shows the full details.
-- The 21 techs follow the general order of history, from Warrior Code, the Wheel and Masonry to Steam Power, Petroleum, Flight, Nuclear Fission and Nuclear Weapons. The next tech is picked from the earliest ones you can research, preferring the ones that use the resources you produce most. A tech that needs a resource you don't have is only picked first when no other tech makes sense.
+- Every player (you and every AI nation) has a research bar that fills faster the more people they have. People on your space stations count double.
+- Each discovery shows a notification. The **Build** button shows what's being researched; the Build menu has the details.
+- 25 techs follow the general order of history: Warrior Code, the Wheel and Masonry through Steam Power, Petroleum, Flight and Nuclear Fission, up to Spaceflight, Reusable Rockets, Bubble Habitats and Terraforming. The next tech is picked from the earliest ones you can research, preferring those that use what you produce most.
 - Gold you mine goes straight into research.
 
 ### 2. Build and Command
-- **Build:** pick a building, then tap or click the map to place it. You can drag it around before tapping **Confirm** to build it.
-- **Command:** click past your border to spend people on free land. If you click a nation within your troops' reach, the game asks whether to attack. Choose **Attack** to send your troops, or **No** to make your border stop at theirs. Click one of your own buildings to connect it to a road, build a wall or upgrade it.
-- **Command menu:** also holds Attack, Expedition, Fire (with a choice of warhead), people and troop percentages, and a switch to turn troop training on or off.
-- **Expeditions:** an expedition travels overland as a wagon and becomes a boat as soon as it reaches water, so it can always set out.
+- **Build:** pick a building, tap or click the map to place it, drag it if you like, then **Confirm**.
+- **Command:** click past your border to spend people on free land. Click a nation to open **diplomacy**; in Attack mode, clicking a nation in reach sends your troops.
+- **Your buildings:** click one to see what it's doing: connect it to a road, build a wall, upgrade it, buy vehicles, fly a rocket.
 
-### 3. Roads and logistics
-- **Roads** link the settlements of each domain automatically and for free. They're laid out with pathfinding, then smoothed, so they curve around hills and water the way real roads do.
-- **Connecting buildings:** tap one of your buildings and choose **Connect to road** (costs a little stone). Anything not on a road still works, it just moves more slowly.
-- **Fastest route:** everything travels faster on roads, and haulers and troops take whichever mix of road and open country gets them there quickest.
-- **Harvests:** each collector fills a cart, which takes the load to the nearest settlement. The goods join the domain's stock (its hidden inventory) when the cart arrives.
-- **Building:** a new building gets a turning gear and waits while its materials are carted out from the settlement nearest to it. If the domain is short, the rest is shipped in from your other domains first.
-- **Between domains:** ports, rail stations and airports link separate domains. Goods, people and troops travel on them, and the caravan post is gone.
-- **Vehicles change with tech:**
-  - On land: a porter, then a handcart (the Wheel), a horse (Equestrianism), a carriage (Carriages) and finally a truck (Automobiles).
-  - At sea: a rowboat, then a sailboat, a galleon and a steamship.
-  - Roads go from dirt to stone to asphalt.
+### 3. Roads, vehicles and logistics
+- **One stock per domain.** Collectors keep what they harvest in their yard until a vehicle picks it up.
+- **Roads** link a domain's settlements by themselves and curve naturally. They share stretches with the roads out to your buildings, and re-route when new settlements appear.
+- **Cars:** you buy them (at a settlement) and the game puts them where they're needed most. They drive on roads, turn off at the nearest point to a collector, crawl across to it, load up and crawl back. Construction deliveries come first, then the biggest loads waiting.
+- **Boats and planes** are bought at ports and airports and carry goods, people and troops between domains; rail lines come with a train. Cargo shows as resource icons.
+- **Upgrades** happen only when you order them (from a settlement, port or airport card): each vehicle is refitted when it next calls at a hub, and you see the total price up front. Out of fuel, vehicles drop back a tier and refit by themselves when fuel returns.
+- **Bridges:** pick your coast, then the land across the water. Roads, cars, rail and troops cross them.
+- **Workers you can watch:** builders and scaffolding on construction sites (with a cloud of dust when they finish), lumberjacks, miners and farmers walking out to the tiles they work, and mining rigs hammering away.
 
 ### 4. Military
-- **Bases and fortresses:** military bases train people into units, which then march to fortresses. Both have a capacity that grows with tech, and training stops when everything is full.
-- **Helmets:** troop counts show beside a pixel-art helmet that changes with your tech (leather, bronze, iron, steel, then modern). They appear in green below your population too.
-- **Walls:** tap a fortress, choose **Build a wall…**, then tap another fortress within range and pay in stone. Walls make the land next to them much harder to take, and your troops can march along them.
-- **Fortress defence:** fortresses make the land around them harder to take.
-- **Attacking:** attacks draw on fortresses first. You can attack a nation even if your borders don't touch, as long as it's within reach. Reach grows with Equestrianism, Automobiles, Flight and Armored Warfare. Your troops cross the gap and take a foothold.
+- **Bases and fortresses** train and hold units; capacity grows with tech. Helmets beside troop counts change with your tech.
+- **Walls** between two fortresses you pick (paid in stone) make the land harder to take and speed up marching.
+- **Defence:** with "Forts defend by themselves" on, troops march out of nearby forts to meet invaders and take back lost land, nearest or hardest-pressed front first, your own domain first.
+- **Attacking** a nation draws on fortresses first. Troops follow roads, and cross the sea by boat from your ports. You can strike nations whose borders don't touch yours, within your reach.
+- **Cannons and machine guns** fire on any nation you're at war with.
 
 ### 5. Resources, fuel and gold
-- **Gold** isn't stored. What you mine each second speeds up research and troop training, and makes your troops slightly stronger (up to +20%).
-- **Oil** appears with Petroleum. Trucks, planes, ships, motorized troops, tanks and oil power plants burn it. The oil counter shows your net gain or loss. A domain with no oil falls back to older tech: carriages instead of trucks, sail instead of steam, and grounded planes. With no oil anywhere, motorized troops fight as cavalry.
-- **Uranium** appears with Nuclear Fission. It powers **nuclear reactors**, and with Nuclear Weapons your missile silos can carry a **nuclear warhead** (Command → Fire → Nuclear).
-- **Wheat:** farms turn nearby plain land into fields, and the wheat is carted to your settlements like any other harvest. Without enough food your population stops growing, and if the stores run out it slowly shrinks.
+- **Gold** isn't stored: what you mine speeds up research and training and toughens your troops.
+- **Oil** (with Petroleum) runs trucks, planes, ships, motorized troops and oil power plants. The counter shows the net rate. Without oil, things fall back to older tech.
+- **Uranium** (with Nuclear Fission) runs reactors and, with Nuclear Weapons, nuclear warheads.
+- **Wheat:** farms turn plain land into fields. No food, no growth.
 
-### 6. AI personalities
-Each nation is dealt a personality, and its numbers are varied a little on every map:
-- **Warlord:** aggressive.
-- **Expansionist:** grabs land.
-- **Fortress-builder:** turtles and builds defenses.
-- **Scholar:** researches fast and attacks once it's ahead in tech.
-- **Opportunist:** strikes when you look weak.
-- **Raider:** sends frequent small raids.
+### 6. Diplomacy
+- **Click a nation** to see how it feels about you, who it's at war with and who it's allied to. Offer trades (resources, or whole settlements and their land), declare war, make peace, or propose, found or join an alliance.
+- **Allies** come to each other's aid. Attacking an ally is a betrayal: you're warned first, and every member (and every other nation) thinks far worse of you. Leaving or disbanding (Command menu) hurts less.
+- **The nations live their own lives:** opinions drift with borders, shared enemies, common threats and trade. They declare war on each other, fight along their borders or across the sea, make peace when the war costs too much, found alliances (sometimes against you), fall out, and settle overseas when they're boxed in.
+- **They come to you too:** trade offers, alliance invitations, peace offers from a losing enemy, calls for help from an ally, and the occasional threat ("pay, or else").
+
+### 7. Space
+- **Polar ice caps** at the north and south of the world. **Ice drills** there make rocket fuel; without them, launch pads burn oil.
+- **Launch pads** build and fuel a rocket. Fly it by hand like the original: coast out past the rim, climb, turn and burn. Once it's in orbit, make it a **space station**. Stations house scientists and grow with supplies.
+- **Reusable rockets** (bought at a launch pad) fly themselves: up to the station that needs supplies, down to a **landing pad**, and home.
+- **The more advanced AI nations** put up stations of their own.
+
+### 8. Other worlds
+- **The Moon and Aries are full maps.** With Bubble Habitats, a launch pad can send a **colony ship**: you pick the landing spot on that world's map.
+- Colonies live under **domes**: the land outside holds few people. **Terraformers** slowly turn the dust green so it holds people like home does.
+- Switch worlds from **Command → Worlds**. Every world keeps running while you look at another. Reusable rockets also fly freight to landing pads on other worlds.
+- Advanced nations found outposts on the worlds you reach.
+
+### 9. AI personalities
+Each nation is dealt a personality, varied a little on every map: **Warlord**, **Expansionist**, **Fortress-builder**, **Scholar**, **Opportunist** and **Raider**. It shapes how they build, research, fight, make friends and hold grudges.
 
 ## Controls
 
 | Desktop | Phone | Action |
 |---|---|---|
 | Click past your border | Tap | Expand (Command mode) |
-| Click a neighbour's land | Tap | Attack it, or stop at its border |
+| Click a nation | Tap a nation | Diplomacy (or attack, in Attack mode) |
 | Right-click | Long-press, or Command → Expedition | Send an expedition (steer it, then Settle) |
-| Click your building | Tap your building | Connect to road · build a wall · upgrade |
+| Click your building | Tap your building | Its card: roads, walls, upgrades, vehicles, rockets |
 | B / E | Build button | Build menu |
 | Q | Command button | Command menu |
 | Click or drag, then Enter | Tap or drag, then Confirm | Place a building |
 | 1 / 2 / 3 | Command menu | Expand / Attack / Expedition |
 | F | Command → Fire | Aim missile silos |
-| Arrows/WASD, Space, X | Steering pad | Drive and settle an expedition |
+| Arrows/WASD, Space, X | Steering pad | Drive an expedition, or fly a rocket |
+| Space · W/S · A/D · Enter | Engine · ▲▼ · ◀▶ · button | Rocket: engine · throttle · turn · make a station |
 | Drag · scroll | Drag · pinch | Pan · zoom |
 | Tab · M · H · Esc | Command menu | Next domain · map view · home · cancel |
 
