@@ -18,7 +18,7 @@
 html, body { margin: 0; height: 100%; overflow: hidden; background: #04050b; color: var(--text); user-select: none;
   -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 button { touch-action: manipulation; font-family: inherit; color: var(--text); }
-button[hidden] { display: none !important; }
+[hidden] { display: none !important; }
 canvas#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
 canvas#game.dragging { cursor: grabbing; }
 canvas#game.building { cursor: copy; }
@@ -180,6 +180,21 @@ button.x { background: var(--panel); border: 1px solid #3a4560; border-radius: 8
 #cf-ok { background: var(--good); color: #0e2414; border-color: #2c6a3a; }
 #cf-ok:disabled { background: #3a4458; color: #8792a6; border-color: #3a4458; cursor: default; }
 
+/* ---------- one of your buildings ---------- */
+#bcard {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(122px + env(safe-area-inset-bottom)); z-index: 7;
+  display: none; padding: 11px 13px; width: min(440px, calc(100vw - 20px)); border: 1.5px solid #6fb6ff; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+#bcard.show { display: block; }
+.bc-head { display: flex; align-items: center; gap: 8px; }
+.bc-title { flex: 1; font-size: 15px; font-weight: 800; }
+#bc-body { font-size: 12px; line-height: 1.5; margin-top: 6px; color: var(--text); }
+#bc-btns { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 9px; }
+#bc-btns button { flex: 1 1 150px; border-radius: 10px; font-size: 13px; font-weight: 800; padding: 10px; cursor: pointer; border: 1px solid #3a4560; background: var(--panel); }
+#bc-btns button.go { background: var(--good); color: #0e2414; border-color: #2c6a3a; }
+#bc-btns button:disabled { opacity: 0.45; cursor: default; }
+.pbtn.wide { width: auto; padding: 0 10px; }
+
 /* ---------- notifications ---------- */
 #notes { position: fixed; right: 14px; top: calc(var(--top-h, 58px) + 10px); z-index: 8; display: flex; flex-direction: column; gap: 8px; width: min(340px, calc(100vw - 28px)); pointer-events: none; }
 .note { pointer-events: auto; background: rgba(18, 30, 48, 0.97); border: 1.5px solid #6fb6ff; border-radius: 12px; padding: 10px 13px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
@@ -282,6 +297,7 @@ button.x { background: var(--panel); border: 1px solid #3a4560; border-radius: 8
   .cm-row > .lbl { min-width: 0; width: 100%; }
   .pbtn { width: 52px; height: 32px; }
   #confirmbar { bottom: calc(var(--bottom-h, 140px) + 12px); gap: 10px; padding: 9px 10px; }
+  #bcard { bottom: calc(var(--bottom-h, 140px) + 12px); }
   .cf-btns { flex-direction: column; }
   #cf-ok, #cf-cancel { padding: 11px 14px; }
   #notes { right: 6px; width: calc(100vw - 12px); top: calc(var(--top-h, 90px) + 6px); }
