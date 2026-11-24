@@ -4090,7 +4090,10 @@ const DEBUG_RES = 1e7;
 function toggleDebug() {
   if (!game.debug) {
     game.debug = true;
-    toast('Creative mode on: every resource is infinite. Press it again to switch it off (that starts a new map).');
+    for (const t of CFG.techs) if (!game.research.done.has(t.id)) completeTech(t.id, true);   // every technology, at once
+    game.research.cur = null; game.research.pts = 0;
+    if (buildOpen) renderBuildMenu();
+    toast('Creative mode on: every resource is infinite and every technology is researched. Press it again to switch it off (that starts a new map).');
     updateCmdMenu();
     return;
   }
