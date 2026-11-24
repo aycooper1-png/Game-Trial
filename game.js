@@ -4083,17 +4083,20 @@ function tick(dt, global = true) {
   game.puffs = game.puffs.filter(p => p.t < 1);
   for (const f of game.floats) f.t += dt;
   game.floats = game.floats.filter(f => f.t < 2.4);
-  if (game.debug) for (const c of game.countries) if (c.alive) for (const r of RESOURCES) c.res[r] = DEBUG_RES;   // creative mode: never runs out
+  if (game.debug) for (const c of game.countries) if (c.alive) {   // creative mode: never runs out of anything, or anyone
+    for (const r of RESOURCES) c.res[r] = DEBUG_RES;
+    c.people = Math.max(c.people, DEBUG_PEOPLE);
+  }
 }
 // ---------- debug ("Do not touch"): creative mode, every resource infinite. Turning it off starts a new map ----------
-const DEBUG_RES = 1e7;
+const DEBUG_RES = 1e7, DEBUG_PEOPLE = 5000;   // people: plenty for any push or colony, few enough that a click stays sane
 function toggleDebug() {
   if (!game.debug) {
     game.debug = true;
     for (const t of CFG.techs) if (!game.research.done.has(t.id)) completeTech(t.id, true);   // every technology, at once
     game.research.cur = null; game.research.pts = 0;
     if (buildOpen) renderBuildMenu();
-    toast('Creative mode on: every resource is infinite and every technology is researched. Press it again to switch it off (that starts a new map).');
+    toast('Creative mode on: every resource and person is infinite and every technology is researched. Press it again to switch it off (that starts a new map).');
     updateCmdMenu();
     return;
   }
@@ -8732,11 +8735,11 @@ function updateHud() {
   // people (in the domain you're viewing), its troops in green below
   const cinc = incomingTo(C);
   $('people-lbl').textContent = live.length > 1 ? `PEOPLE · ${C.short.toUpperCase()} · EMPIRE ${fmtNum(game.population)}` : 'PEOPLE';
-  $('val-people').textContent = `${fmtNum(C.people)} / ${fmtNum(C.cap)}`;
+  $('val-people').textContent = game.debug ? '∞' : `${fmtNum(C.people)} / ${fmtNum(C.cap)}`;
   const du = unitsIn(C), tu = totalUnits();
   $('val-units').textContent = tu >= 1 || isUnlocked('base') ? `⚔ ${fmtNum(du)} ${unitStats().type.name}${live.length > 1 && tu - du >= 1 ? ` · ${fmtNum(tu)} in all` : ''}` : '';
   $('people-fill').style.width = (C.cap ? clamp(C.people / C.cap, 0, 1) * 100 : 0) + '%';
-  $('people-rate').innerHTML = (cinc.people >= 1 ? `<span class="incoming">+${fmtNum(cinc.people)} arriving</span> ` : '') +
+  $('people-rate').innerHTML = game.debug ? '<span style="color:#ff9a8a">Creative mode</span>' : (cinc.people >= 1 ? `<span class="incoming">+${fmtNum(cinc.people)} arriving</span> ` : '') +
     (C.hungry && C.growth < 0 ? `<span style="color:var(--bad)">Starving: ${C.growth.toFixed(1)}/s</span>`
       : C.hungry ? `<span style="color:var(--bad)">Not enough food to grow</span>`
       : C.growth > 0 ? `+${C.growth.toFixed(1)} / sec` : C.growth < 0 ? `<span style="color:var(--bad)">Overcrowded: ${C.growth.toFixed(1)} / sec</span>` : (C.people >= C.cap - 0.5 ? 'Full' : ''));
