@@ -4083,6 +4083,19 @@ function tick(dt, global = true) {
   game.puffs = game.puffs.filter(p => p.t < 1);
   for (const f of game.floats) f.t += dt;
   game.floats = game.floats.filter(f => f.t < 2.4);
+  if (game.debug) for (const c of game.countries) if (c.alive) for (const r of RESOURCES) c.res[r] = DEBUG_RES;   // creative mode: never runs out
+}
+// ---------- debug ("Do not touch"): creative mode, every resource infinite. Turning it off starts a new map ----------
+const DEBUG_RES = 1e7;
+function toggleDebug() {
+  if (!game.debug) {
+    game.debug = true;
+    toast('Creative mode on: every resource is infinite. Press it again to switch it off (that starts a new map).');
+    updateCmdMenu();
+    return;
+  }
+  showModal('<div class="md-title">Are you sure?</div><div class="md-body">Turning creative mode off starts a <b>new map</b> with it off. This game will be deleted.</div>',
+    [{ label: 'Yes, new map', cls: 'danger', act: newGame }, { label: 'Keep playing', act: () => {} }]);
 }
 
 // ---------- saving ----------
@@ -4123,7 +4136,7 @@ function worldSave() {
     for (const r of game.raids) game.nations[r.n]._back += r.budget;
     const data = {
       v: SAVE_V, seed: SEED, savedAt: Date.now(), time: game.time, active: game.active, peakPop: game.peakPop,
-      sendPct: game.sendPct, troopPct: game.troopPct, recruit: game.recruit, warhead: game.warhead,
+      sendPct: game.sendPct, troopPct: game.troopPct, recruit: game.recruit, warhead: game.warhead, debug: !!game.debug,
       connects: game.connects.map(c => [c.a, c.b]), walls: game.walls.map(w => [w.a, w.b]),
       bridges: game.bridges.map(br => [br.s, br.b, br.len, br.tiles]),
       research: { done: [...game.research.done], cur: game.research.cur, pts: game.research.pts },
@@ -4221,7 +4234,7 @@ function loadGame(sv) {
   }
   game.active = sv.active;
   if (home) {
-    Object.assign(game, { time: sv.time, peakPop: sv.peakPop, sendPct: sv.sendPct || 25, troopPct: sv.troopPct || 50, recruit: sv.recruit !== false, warhead: sv.warhead || 'conventional' });
+    Object.assign(game, { debug: !!sv.debug, time: sv.time, peakPop: sv.peakPop, sendPct: sv.sendPct || 25, troopPct: sv.troopPct || 50, recruit: sv.recruit !== false, warhead: sv.warhead || 'conventional' });
     game.dip = { op: (sv.dip && sv.dip.op) || {}, wars: new Set((sv.dip && sv.dip.wars) || []) };
     game.alliances = sv.alliances || []; game.autoDefend = sv.autoDefend !== false;
     game.fleetTarget = sv.fleetTarget || { car: 0, boat: 0, plane: 0 };
@@ -8137,6 +8150,7 @@ function initUI() {
     else if (act === 'home') goHome();
     else if (act === 'drive') nextVehicle();
     else if (act === 'new') askNewGame();
+    else if (act === 'debug') toggleDebug();
     updateCmdMenu();
   });
   $('modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
@@ -8304,6 +8318,8 @@ function updateCmdMenu() {
     wb.dataset.key = wkey; wb.innerHTML = '';
     for (const P of ws) { const el = document.createElement('button'); el.className = 'pbtn wide' + (P.id === WORLD ? ' on' : ''); el.textContent = P.short; el.addEventListener('click', () => viewWorld(P.id)); wb.appendChild(el); }
   }
+  const dbg = document.querySelector('#cmdmenu [data-act="debug"]');
+  dbg.textContent = game.debug ? '⚠ Creative mode: ON' : '⚠ Do not touch'; dbg.classList.toggle('on', !!game.debug);
   const anyOut = game.expeditions.some(e => !e.auto && !e.done) || game.flights.some(f => !f.done);
   document.querySelector('#cmdmenu [data-act="drive"]').hidden = !(anyOut && !game.driving && !game.flying);
   document.querySelector('#cmdmenu [data-act="next"]').hidden = game.countries.filter(c => c.alive && c.tiles).length < 2;
@@ -8685,8 +8701,8 @@ function updateHud() {
   $('res-oil').hidden = !oilKnown();
   $('res-uranium').hidden = !uraniumKnown();
   for (const r of RESOURCES) {
-    const f = clamp(tot[r] / cap[r], 0, 1);
-    $('val-' + r).innerHTML = fmtNum(tot[r]) + `<span class="capn"> / ${fmtCap(cap[r])}</span>` +
+    const f = game.debug ? 1 : clamp(tot[r] / cap[r], 0, 1);
+    $('val-' + r).innerHTML = (game.debug ? '∞' : fmtNum(tot[r]) + `<span class="capn"> / ${fmtCap(cap[r])}</span>`) +
       (inc[r] >= 1 ? `<span class="incoming" title="on its way between your domains">+${fmtNum(inc[r])}</span>` : '') +
       `<div class="store"><div style="width:${(f * 100).toFixed(0)}%;background:${f >= 0.999 ? '#f2c14e' : { wood: '#56963f', stone: '#9aa1a8', iron: '#bd7b56', oil: '#59616b', wheat: '#e0bc4e', uranium: '#7ee05a' }[r]}"></div></div>`;
     const el = $('rate-' + r), v = rate[r];

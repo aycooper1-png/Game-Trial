@@ -363,3 +363,5 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
   #flight-hud .fh-t { font-size: 11px; }
   #flight-hud .fh-btn { margin-top: 5px; padding: 6px; }
 }
+#cmdmenu button.debug { border-color: rgba(255,122,107,0.55); color: #ff9a8a; }
+#cmdmenu button.debug.on { background: rgba(255,122,107,0.18); color: #ffb3a8; }
