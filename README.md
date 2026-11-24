@@ -25,21 +25,24 @@ The game works on phones as well as on desktops. It autosaves in your browser ev
 - **Roads matter:** off the road, cars, carts and troops crawl, and mountains slow them further unless they're on a road or a wall. Vehicles leave the road only to reach a building that isn't on one.
 - **Cars:** you buy them (at a settlement) and the game puts them where they're needed most. They drive on roads, turn off at the nearest point to a collector, crawl across to it, load up and crawl back. Construction deliveries come first, then the biggest loads waiting.
 - **Boats and planes** are bought at ports and airports and carry goods, people and troops between domains, and inside one big domain too (airports far apart). Planes are drawn as planes, with their shadow on the ground.
-- **Trains** come free with a rail line and carry huge loads, fast. They upgrade and downgrade by themselves: steam (burns wood), diesel (oil), electric (power). Trucks bring goods to the station, where they wait in its yard for the train; at the far end trucks take them on. A long haul inside a domain goes by train whenever a station is reasonably close.
+- **Trains** come free with a rail line and carry huge loads, fast. They upgrade and downgrade by themselves: steam (burns wood), diesel (oil), electric (power). Trucks bring goods to the station, where they wait in its yard for the train; at the far end trucks take them on. A long haul inside a domain goes by train whenever a station is reasonably close. Lines that share a station form a network: goods change trains and get off at the station closest to where they're needed, and wait in that station's inventory (shown on its card) until a hauler takes them on. Goods for your stock are dropped at a station by a settlement and go straight into stock there.
+- **Overland goods stay on land:** porters, carts, wagons and trucks go round water rather than across it, unless they're taking goods to a boat.
 - **Upgrades** happen only when you order them (from a settlement, port or airport card): each vehicle is refitted when it next calls at a hub, and you see the total price up front. Out of fuel, vehicles drop back a tier and refit by themselves when fuel returns.
 - **Bridges:** pick your coast, then the land across the water. Roads, cars, rail and troops cross them.
 - **Workers you can watch:** builders and scaffolding on construction sites (with a cloud of dust when they finish), lumberjacks, miners and farmers walking out to the tiles they work, and mining rigs hammering away.
 
 ### 4. Military
 - **Bases and fortresses** train and hold units; capacity grows with tech. Helmets beside troop counts change with your tech.
-- **Walls** between two fortresses you pick (paid in stone) make the land harder to take and speed up marching.
+- **Walls** between two fortresses you pick (paid in stone) make the land harder to take and speed up marching. Picking the second fortress is forgiving: click near it, and the ones in reach glow.
+- **Damage and repair:** each stretch of wall between two fortresses has its own health. Battered walls and forts show cracks, then a breach. A breached stretch or fort shelters no one, but it stays until the war ends. Only if the war ends with that land still lost is it gone for good. Soldiers mend them: in a lull in a war they fetch the stone themselves (more soldiers work faster and carry more, more with better tech); in peacetime haulers bring the stone and the garrison builds.
+- **Wall upgrades** (click anywhere on a wall): your techs make walls tougher by themselves. You can also buy fort turrets, air defenses and an iron wall for the whole wall at once. An iron wall stops planes and missiles that cross it, and makes troops on it far harder to beat.
 - **Defence:** with "Forts defend by themselves" on, troops march out of nearby forts to meet invaders and take back lost land, nearest or hardest-pressed front first, your own domain first. Outnumbered, they hold a fort or a wall instead; with enough men, they go back for any fort the enemy took.
 - **Walled forts share their troops:** in quiet times troops spread out along the wall until the forts are roughly even; when a threat comes near, they gather at the fort closest to it.
 - **Attacking** a nation draws on fortresses first. Troops follow roads, and cross the sea by boat from your ports. You can strike nations whose borders don't touch yours, within your reach.
 - **Cannons and machine guns** fire on any nation you're at war with.
 
 ### 5. Resources, fuel and gold
-- **Gold** isn't stored: what you mine speeds up research and training and toughens your troops.
+- **Gold** is stored and spent: at the market (click Gold in the top bar, or a settlement), to rush a building, to hire troops at a base or fortress, and in trades, treaties and surrender terms. The gold in your treasury also speeds research and training and toughens your troops.
 - **Oil** (with Petroleum) runs trucks, planes, ships, motorized troops and oil power plants. The counter shows the net rate. Without oil, things fall back to older tech.
 - **Uranium** (with Nuclear Fission) runs reactors and, with Nuclear Weapons, nuclear warheads.
 - **Wheat:** farms turn plain land (never mountains) into fields. Nobody goes hungry while there's wheat in store, even if you eat more than you grow; the people bar shows how long the stores will last.
@@ -48,13 +51,16 @@ The game works on phones as well as on desktops. It autosaves in your browser ev
 - **Click a nation** to see how it feels about you, who it's at war with and who it's allied to. Offer trades (resources, or whole settlements and their land), declare war, make peace, or propose, found or join an alliance.
 - **Allies** come to each other's aid. Attacking an ally is a betrayal: you're warned first, and every member (and every other nation) thinks far worse of you. Leaving or disbanding (Command menu) hurts less.
 - **The nations live their own lives:** opinions drift with borders, shared enemies, common threats and trade. They declare war on each other, fight along their borders or across the sea, make peace when the war costs too much, found alliances (sometimes against you), fall out, and settle overseas when they're boxed in.
-- **They come to you too:** trade offers, alliance invitations, peace offers from a losing enemy, calls for help from an ally, and the occasional threat ("pay, or else").
-- **Trade travels:** whatever is traded (by you or between nations) is carried by truck, boat or plane, and arrives when it gets there.
+- **They come to you too, now and then:** trade offers for what they actually need, treaties, alliance invitations, peace offers from a losing enemy, calls for help from an ally, and the occasional threat ("pay, or else").
+- **Treaties:** non-aggression (breaking it angers every nation), "don't expand toward my border", research pacts, open borders (strike nations beyond a friend's land), tribute, ceasefires, and asking a nation to join your war. Add gold to sweeten a proposal.
+- **Demand surrender** from a nation at war with you: goods, gold, people, soldiers, transport units, settlements, or total surrender. They weigh how badly the war is going for them against how harsh the terms are.
+- **Ask every nation at once** (Command menu, or any nation's panel): treaties, peace, trades and surrender terms go to all of them, and each answers for itself.
+- **Trade travels:** whatever is traded (by you or between nations) is carried by the sender's own tech: porters or carts early on, boats of their era over water, and planes only once they can fly.
 
 ### 7. Space
 - **Polar ice caps** at the north and south of the world. **Ice drills** there make rocket fuel; without them, launch pads burn oil.
-- **Launch pads** build and fuel a rocket. Fly it by hand like the original: coast out past the rim, climb, turn and burn. Once it's in orbit, make it a **space station**. Stations house scientists and grow with supplies.
-- **Reusable rockets** (bought at a launch pad) are big freighters between worlds. Trucks load them while they fuel; they drop station supplies on the way, land on another world's **landing pad**, trucks unload them, and a truck tows the rocket to that world's launch pad for the trip back.
+- **Launch pads** build and fuel a rocket. Fly it by hand like the original: coast out past the rim, climb, turn and burn. Once it's in orbit, make it a **space station**, or simply press **Build a space station** on the pad's card and the rocket flies itself up. When you get Spaceflight, the launch pad (and then your pad on the map) glows to show the next step. Stations house scientists and grow with supplies.
+- **Reusable rockets** (bought at a launch pad) are big freighters between worlds. Trucks load them while they fuel; they drop station supplies on the way, land on another world's **landing pad**, trucks unload them, and a truck tows the rocket to that world's launch pad for the trip back. While one loads and fuels on a pad, nothing else can use that pad. Set a pad to **reusable rockets only** and it turns teal and stops offering other rockets until you switch it back.
 - **The more advanced AI nations** put up stations of their own.
 
 ### 8. Other worlds
