@@ -11,7 +11,7 @@ The game works on phones as well as on desktops. It autosaves in your browser ev
 ### 1. Technology research
 - Every player (you and every AI nation) has a research bar that fills faster the more people they have. People on your space stations count double.
 - Each discovery shows a notification. The **Build** button shows what's being researched; the Build menu has the details.
-- 25 techs follow the general order of history: Warrior Code, the Wheel and Masonry through Steam Power, Petroleum, Flight and Nuclear Fission, up to Spaceflight, Reusable Rockets, Bubble Habitats and Terraforming. The next tech is picked from the earliest ones you can research, preferring those that use what you produce most.
+- 28 techs follow the general order of history: Warrior Code, the Wheel and Masonry through Steam Power, Petroleum, Flight and Nuclear Fission, up to Spaceflight, Reusable Rockets, Bubble Habitats, Terraforming, Strategic Bombers, Interplanetary Missiles and the Dyson Swarm. The next tech is picked from the earliest ones you can research, preferring those that use what you produce most.
 - Gold you mine goes straight into research.
 
 ### 2. Build and Command
@@ -21,9 +21,11 @@ The game works on phones as well as on desktops. It autosaves in your browser ev
 
 ### 3. Roads, vehicles and logistics
 - **One stock per domain.** Collectors keep what they harvest in their yard until a vehicle picks it up.
-- **Roads** link a domain's settlements by themselves and curve naturally. They share stretches with the roads out to your buildings, and re-route when new settlements appear.
+- **Roads** link a domain's settlements by themselves and curve naturally. Each road is laid out once and stays put: only an enemy who conquers the land tears it up (your crews relay it if you win it back).
+- **Roads matter:** off the road, cars, carts and troops crawl, and mountains slow them further unless they're on a road or a wall. Vehicles leave the road only to reach a building that isn't on one.
 - **Cars:** you buy them (at a settlement) and the game puts them where they're needed most. They drive on roads, turn off at the nearest point to a collector, crawl across to it, load up and crawl back. Construction deliveries come first, then the biggest loads waiting.
-- **Boats and planes** are bought at ports and airports and carry goods, people and troops between domains; rail lines come with a train. Cargo shows as resource icons.
+- **Boats and planes** are bought at ports and airports and carry goods, people and troops between domains, and inside one big domain too (airports far apart). Planes are drawn as planes, with their shadow on the ground.
+- **Trains** come free with a rail line and carry huge loads, fast. They upgrade and downgrade by themselves: steam (burns wood), diesel (oil), electric (power). Trucks bring goods to the station, where they wait in its yard for the train; at the far end trucks take them on. A long haul inside a domain goes by train whenever a station is reasonably close.
 - **Upgrades** happen only when you order them (from a settlement, port or airport card): each vehicle is refitted when it next calls at a hub, and you see the total price up front. Out of fuel, vehicles drop back a tier and refit by themselves when fuel returns.
 - **Bridges:** pick your coast, then the land across the water. Roads, cars, rail and troops cross them.
 - **Workers you can watch:** builders and scaffolding on construction sites (with a cloud of dust when they finish), lumberjacks, miners and farmers walking out to the tiles they work, and mining rigs hammering away.
@@ -31,7 +33,8 @@ The game works on phones as well as on desktops. It autosaves in your browser ev
 ### 4. Military
 - **Bases and fortresses** train and hold units; capacity grows with tech. Helmets beside troop counts change with your tech.
 - **Walls** between two fortresses you pick (paid in stone) make the land harder to take and speed up marching.
-- **Defence:** with "Forts defend by themselves" on, troops march out of nearby forts to meet invaders and take back lost land, nearest or hardest-pressed front first, your own domain first.
+- **Defence:** with "Forts defend by themselves" on, troops march out of nearby forts to meet invaders and take back lost land, nearest or hardest-pressed front first, your own domain first. Outnumbered, they hold a fort or a wall instead; with enough men, they go back for any fort the enemy took.
+- **Walled forts share their troops:** in quiet times troops spread out along the wall until the forts are roughly even; when a threat comes near, they gather at the fort closest to it.
 - **Attacking** a nation draws on fortresses first. Troops follow roads, and cross the sea by boat from your ports. You can strike nations whose borders don't touch yours, within your reach.
 - **Cannons and machine guns** fire on any nation you're at war with.
 
@@ -39,27 +42,34 @@ The game works on phones as well as on desktops. It autosaves in your browser ev
 - **Gold** isn't stored: what you mine speeds up research and training and toughens your troops.
 - **Oil** (with Petroleum) runs trucks, planes, ships, motorized troops and oil power plants. The counter shows the net rate. Without oil, things fall back to older tech.
 - **Uranium** (with Nuclear Fission) runs reactors and, with Nuclear Weapons, nuclear warheads.
-- **Wheat:** farms turn plain land into fields. No food, no growth.
+- **Wheat:** farms turn plain land (never mountains) into fields. Nobody goes hungry while there's wheat in store, even if you eat more than you grow; the people bar shows how long the stores will last.
 
 ### 6. Diplomacy
 - **Click a nation** to see how it feels about you, who it's at war with and who it's allied to. Offer trades (resources, or whole settlements and their land), declare war, make peace, or propose, found or join an alliance.
 - **Allies** come to each other's aid. Attacking an ally is a betrayal: you're warned first, and every member (and every other nation) thinks far worse of you. Leaving or disbanding (Command menu) hurts less.
 - **The nations live their own lives:** opinions drift with borders, shared enemies, common threats and trade. They declare war on each other, fight along their borders or across the sea, make peace when the war costs too much, found alliances (sometimes against you), fall out, and settle overseas when they're boxed in.
 - **They come to you too:** trade offers, alliance invitations, peace offers from a losing enemy, calls for help from an ally, and the occasional threat ("pay, or else").
+- **Trade travels:** whatever is traded (by you or between nations) is carried by truck, boat or plane, and arrives when it gets there.
 
 ### 7. Space
 - **Polar ice caps** at the north and south of the world. **Ice drills** there make rocket fuel; without them, launch pads burn oil.
 - **Launch pads** build and fuel a rocket. Fly it by hand like the original: coast out past the rim, climb, turn and burn. Once it's in orbit, make it a **space station**. Stations house scientists and grow with supplies.
-- **Reusable rockets** (bought at a launch pad) fly themselves: up to the station that needs supplies, down to a **landing pad**, and home.
+- **Reusable rockets** (bought at a launch pad) are big freighters between worlds. Trucks load them while they fuel; they drop station supplies on the way, land on another world's **landing pad**, trucks unload them, and a truck tows the rocket to that world's launch pad for the trip back.
 - **The more advanced AI nations** put up stations of their own.
 
 ### 8. Other worlds
 - **The Moon and Aries are full maps.** With Bubble Habitats, a launch pad can send a **colony ship**: you pick the landing spot on that world's map.
 - Colonies live under **domes**: the land outside holds few people. **Terraformers** slowly turn the dust green so it holds people like home does.
-- Switch worlds from **Command → Worlds**. Every world keeps running while you look at another. Reusable rockets also fly freight to landing pads on other worlds.
-- Advanced nations found outposts on the worlds you reach.
+- Switch worlds from **Command → Worlds**, or lock onto the Moon or Aries from home and double-click (double-tap) it. Every world keeps running while you look at another.
+- Off home, wheat grows only on land the terraformers have turned green (a landing colony brings a small greenhouse patch).
+- Advanced nations found outposts on the worlds you reach, and wars can be fought on any world.
 
-### 9. AI personalities
+### 9. The late game
+- **Nuclear bombers** (Command → Bomber) fly from an airport to anywhere on the map. Ruinously expensive, and air defenses, forts and enemy fighters shoot many of them down on the way.
+- **Interplanetary missiles:** look at another world and use Fire: a silo on any of your worlds strikes it.
+- **The Dyson swarm:** a launch pad at home builds one enormous rocket. Launched, it flies to the sun and builds the swarm; then every **Dyson receiver**, on any world, gives 250 MW.
+
+### 10. AI personalities
 Each nation is dealt a personality, varied a little on every map: **Warlord**, **Expansionist**, **Fortress-builder**, **Scholar**, **Opportunist** and **Raider**. It shapes how they build, research, fight, make friends and hold grudges.
 
 ## Controls
