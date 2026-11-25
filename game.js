@@ -175,6 +175,7 @@ const CFG = {
     { id: 'shipbuilding',name: 'Shipbuilding',      era: 2, uses: ['wood', 'iron'],  tags: ['trans'], req: ['sailing'] },
     { id: 'gunpowder',   name: 'Gunpowder',         era: 2, uses: ['iron', 'stone'], tags: ['mil'],   req: ['metallurgy'] },
     { id: 'firearms',    name: 'Firearms',          era: 3, uses: ['iron'],          tags: ['mil'],   req: ['gunpowder'] },
+    { id: 'caravans',    name: 'Trade Caravans',    era: 3, uses: ['wheat', 'wood'], tags: ['trans', 'econ'], req: ['carriages'] },
     { id: 'steam',       name: 'Steam Power',       era: 3, uses: ['wood', 'iron'],  tags: ['econ', 'trans'], req: ['metallurgy', 'carriages'] },
     { id: 'petroleum',   name: 'Petroleum',         era: 3, uses: ['iron'],          tags: ['econ'],  req: ['steam'] },
     { id: 'electricity', name: 'Electricity',       era: 4, uses: ['iron', 'stone'], tags: ['econ'],  req: ['steam'] },
@@ -207,6 +208,7 @@ const CFG = {
     metallurgy: { unit: { hp: 1.8 }, note: 'Iron armour: units are 80% tougher', veh: { car: { cargo: 1.1 }, boat: { cargo: 1.1 } }, vnote: 'Iron axles and fittings: carts and boats carry 10% more' },
     horses:       { unit: { speed: 1.6 }, note: 'Cavalry: troops move faster · pack horses for your cars' },
     carriages:    { note: 'Carriages for your cars' },
+    caravans:     { note: 'Caravans for your cars: big wagon trains that carry far more each trip' },
     shipbuilding: { note: 'Galleons for your fleet' },
     gunpowder:    { unit: { atk: 1.5 }, note: 'Muskets: units hit 50% harder' },
     firearms:     { unit: { atk: 1.6 }, note: 'Rifles: units hit 60% harder' },
@@ -267,6 +269,7 @@ const CFG = {
       { id: 'handcart', name: 'Handcarts',   tech: 'wheel',      cargo: 16, speed: 5,  cost: { wood: 12 } },
       { id: 'horse',    name: 'Pack horses', tech: 'horses',     cargo: 22, speed: 7,  cost: { wood: 10, wheat: 20 } },
       { id: 'carriage', name: 'Carriages',   tech: 'carriages',  cargo: 36, speed: 8,  cost: { wood: 25, iron: 5 } },
+      { id: 'caravan',  name: 'Caravans',    tech: 'caravans',   cargo: 50, speed: 8.5, cost: { wood: 30, iron: 8, wheat: 20 } },
       { id: 'truck',    name: 'Trucks',      tech: 'automobile', cargo: 60, speed: 15, cost: { iron: 25, oil: 5 }, fuel: 0.03 },
       // later tiers come by themselves (auto): a truck is refitted for free next time it calls in, once you know how
       { id: 'etruck',   name: 'Electric trucks', tech: 'batteries', cargo: 75, speed: 17, cost: {}, auto: true },
@@ -281,11 +284,12 @@ const CFG = {
       { id: 'plane', name: 'Propeller planes', tech: 'flight',   cargo: 40, speed: 30, cost: { iron: 30, oil: 10 }, fuel: 0.3 },
       { id: 'jet',   name: 'Jets',             tech: 'rocketry', cargo: 70, speed: 55, cost: { iron: 50, oil: 20 }, fuel: 0.5 },
       { id: 'cargojet', name: 'Wide-body freighters', tech: 'computing', cargo: 120, speed: 60, cost: {}, fuel: 0.6, auto: true } ] },
-    // trains come free with the line and change tier by themselves at each end: the best your tech and fuel allow
-    rail: { name: 'trains', tiers: [
+    // a train comes free with each rail line. You upgrade them at any station (steam, then diesel, then electric bullet
+    // trains): each is refitted, and paid for, when it next pulls in. Short of oil or power, a train runs on the tier below.
+    rail: { name: 'trains', hub: 'station', tiers: [
       { id: 'steamtrain', name: 'Steam trains',    tech: 'steam',       cargo: 220, people: 60,  speed: 20, cost: {}, wood: 0.12 },
-      { id: 'diesel',     name: 'Diesel trains',   tech: 'automobile',  cargo: 320, people: 90,  speed: 26, cost: {}, oil: 0.06 },
-      { id: 'electric',   name: 'Electric trains', tech: 'electricity', cargo: 450, people: 120, speed: 34, cost: {}, mw: 4 } ] },
+      { id: 'diesel',     name: 'Diesel trains',   tech: 'automobile',  cargo: 320, people: 90,  speed: 26, cost: { iron: 30, oil: 10 }, oil: 0.06 },
+      { id: 'electric',   name: 'Electric bullet trains', tech: 'electricity', cargo: 460, people: 140, speed: 42, cost: { iron: 50, stone: 30 }, mw: 4 } ] },
   },
   transport: { road: { cargo: 8, people: 6, speed: 5 }, sea: { cargo: 25, people: 10, speed: 6 },
                rail: { cargo: 60, people: 20, speed: 14 }, air: { cargo: 30, people: 15, speed: 30 } },
@@ -741,7 +745,7 @@ Object.assign(SHAPES, {
   helmDrone: pix([
     'KK..........KK', 'KWK........KWK', '.KKKKKKKKKKKK.', '...KDDDDDDK...', '..KDDLLLLDDK..', '..KDDLRRLDDK..',
     '...KDDDDDDK...', 'KWK.KKKKKK.KWK', 'KK..........KK'], { K, W: '#c9d3dd', D: '#3a4250', L: '#9fd0ff', R: '#c13b2f' }),
-  // haulers on the roads: on foot, then a handcart (the Wheel), a horse (Equestrianism), a carriage, a truck
+  // haulers on the roads: on foot, then a handcart (the Wheel), a horse (Equestrianism), a carriage, a caravan, a truck
   porter: pix([
     '.....SSS....', '....SSSSS...', '.....FF.....', '....FFF.....', '...TTTTT....', '...TTTTT....',
     '....TTT.....', '....P.P.....', '...P...P....'], { S: '#c9a66b', F: '#e0b48c', T: '#7a5a3a', P: '#3d2a1c' }),
@@ -754,6 +758,11 @@ Object.assign(SHAPES, {
   carriage: pix([
     '..WWWWWWW............', '.WWWWWWWWW.......HH..', '.WWWWWWWWW......HHHH.', '.BBBBBBBBBRRRRRHHHE..',
     '.BBBBBBBBB.....HHHH..', '..KWK..KWK.....H..H..', '..KKK..KKK.....H..H..'], { K, W: '#eee6d2', B: '#6b4222', R: '#3d2a1c', H: '#8a5532', E: '#141018' }),
+  // Trade Caravans: a big covered wagon, heaped with goods, behind a pair of horses
+  caravan: pix([
+    '...WWWWWWWWW..............', '..WWLWWLWWLWW.........HH..', '.WWWLWWLWWLWWW.......HHHH.', '.WWWLWWLWWLWWW...HH.HHHE..',
+    '.BBBBBBBBBBBBBRRRRHHHHHH..', '.BGGBOOBGGBOOB...HHHHHH...', '.BBBBBBBBBBBBB...H.HH.H...', '..KWK.....KWK....H.HH.H...', '..KKK.....KKK....K.KK.K...'],
+    { K, W: '#efe4c6', L: '#c9b78e', B: '#6b4222', G: '#b4613d', O: '#e0bc4e', R: '#3d2a1c', H: '#8a5532', E: '#141018' }),
   truck: pix([
     '..........CCCC..', '.BBBBBBBB.CGGCC.', '.BBBBBBBB.CGGCCC', '.BBBBBBBBCCCCCCC', '.BBBBBBBBCCCCCCC',
     '.KKKKKKKKKKKKKKK', '..KWK.....KWK...', '...K.......K....'], { K, B: '#c9a66b', C: '#b8432f', G: '#9fd0ff', W: '#8d969e' }),
@@ -2353,6 +2362,45 @@ const netCost = (side, follow) => i => {
   else if (building[i]) c *= 4;
   return c;
 };
+// a wall runs dead straight between its fortresses. It bends only where it must: to stay on your land, to keep out of
+// the water, and to go round resources (forests, fields, ore, oil) and other buildings. Each bend is a sharp corner.
+function wallLine(a, b, side) {
+  const ok = i => i === a || i === b || (isLand(i) && !(bridgeAt[i] && biome[i] === OCEAN) && sideOf(i) === side && depositOf[i] < 0 && !building[i]);
+  const C = t => [t % W + 0.5, ((t / W) | 0) + 0.5];
+  const clear = (p, q) => {                        // every tile the straight line touches is fine (no slipping between two corners)
+    const n = Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) * 4);
+    let px = Math.floor(p[0]), py = Math.floor(p[1]);
+    for (let k = 1; k <= n; k++) {
+      const x = Math.floor(p[0] + (q[0] - p[0]) * k / n), y = Math.floor(p[1] + (q[1] - p[1]) * k / n);
+      if (x === px && y === py) continue;
+      if (!ok(idx(x, y))) return false;
+      if (x !== px && y !== py && (!ok(idx(x, py)) || !ok(idx(px, y)))) return false;
+      px = x; py = y;
+    }
+    return true;
+  };
+  let key;
+  if (clear(C(a), C(b))) key = [C(a), C(b)];
+  else {
+    const path = tilePath(a, b, i => (ok(i) ? 1 : Infinity), 30000);
+    if (!path) return null;
+    const P = path.map(C);
+    key = [P[0]];
+    for (let i = 0; i < P.length - 1;) {            // from each corner, straight to the farthest point it can see
+      let j = P.length - 1;
+      while (j > i + 1 && !clear(P[i], P[j])) j--;
+      key.push(P[j]); i = j;
+    }
+  }
+  const out = [key[0]], cum = [0];
+  for (let k = 1; k < key.length; k++) {           // a point every half tile
+    const [x0, y0] = key[k - 1], [x1, y1] = key[k], d = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(d * 2));
+    for (let s = 1; s <= n; s++) { out.push([x0 + (x1 - x0) * s / n, y0 + (y1 - y0) * s / n]); cum.push(cum[cum.length - 1] + d / n); }
+  }
+  const tl = [];
+  for (const p of out) { const t = idx(Math.floor(p[0]), Math.floor(p[1])); if (tl[tl.length - 1] !== t) tl.push(t); }
+  return { pts: out, cum, len: cum[cum.length - 1], tiles: tl, bends: key.length - 2 };
+}
 // tiles -> a smooth line: straighten wherever the way ahead is clear, round the bends, then space the points evenly
 function smoothLine(tiles, ok) {
   const P = tiles.map(t => [t % W + 0.5, ((t / W) | 0) + 0.5]);
@@ -2641,7 +2689,7 @@ function findRoute0(ax, ay, bx, by, prof) {
   return { pts, spd, len: bt };
 }
 // what each kind of vehicle is right now, by tech (and, for the ones that burn oil, fuel)
-const roadTier = R => R.has('cais') ? 'autohauler' : R.has('batteries') && R.has('automobile') ? 'etruck' : R.has('automobile') ? 'truck' : R.has('carriages') ? 'carriage' : R.has('horses') ? 'horse' : R.has('wheel') ? 'handcart' : 'porter';
+const roadTier = R => R.has('cais') ? 'autohauler' : R.has('batteries') && R.has('automobile') ? 'etruck' : R.has('automobile') ? 'truck' : R.has('caravans') ? 'caravan' : R.has('carriages') ? 'carriage' : R.has('horses') ? 'horse' : R.has('wheel') ? 'handcart' : 'porter';
 const boatTier = R => R.has('computing') ? 'container' : R.has('petroleum') ? 'freighter' : R.has('steam') ? 'steamship' : R.has('shipbuilding') ? 'galleon' : R.has('sailing') ? 'sailboat' : 'rowboat';
 // a hauler in domain C: how fast it goes on and off the road, and what it carries
 function haulProf(C) {
@@ -3503,7 +3551,7 @@ function afterBuilt(i, type, plan) {
     for (const r of (p && p.routes) || []) {
       if (!owner[r.to] || !buildingAt(r.to)) continue;
       game.links.push({ kind, a: i, b: r.to, path: r.path, req: { a: [], b: [] },
-        ships: kind === 'rail' ? [{ kind: 'rail', tier: trainTier(countryAt(i)), t: 0, dir: 1, cargo: undefined, to: -1 }] : [] });   // a rail line comes with its train
+        ships: kind === 'rail' ? [{ kind: 'rail', tier: trainTier(countryAt(i), -1, fleetTarget('rail')), paid: Math.max(0, fleetTarget('rail')), t: 0, dir: 1, cargo: undefined, to: -1 }] : [] });   // a rail line comes with its train
       if (kind !== 'rail') toast(`${LINK_NAME[kind][0].toUpperCase() + LINK_NAME[kind].slice(1)} open. Buy ${kind === 'sea' ? 'boats' : 'planes'} for it: tap any ${kind === 'sea' ? 'port' : 'airport'}.`);
     }
     if (p && p.routes && p.routes.length) floatText(i % W + 0.5, (i / W) | 0, `${LINK_NAME[kind][0].toUpperCase() + LINK_NAME[kind].slice(1)}: ${p.tiles} tiles`, '#7bd389');
@@ -3887,7 +3935,13 @@ let carId = 0;
 const tierOpen = kind => { let t = -1; FLEET[kind].tiers.forEach((x, k) => { if (!x.tech || game.research.done.has(x.tech)) t = k; }); return t; };
 const fleetTarget = kind => Math.min(game.fleetTarget[kind] ?? 0, tierOpen(kind));
 // a vehicle's working tier: out of fuel it drops one below (it re-upgrades by itself where there's fuel again)
-const workTier = v => (v.kind === 'rail' ? Math.max(0, v.tier) : v.down ? Math.max(0, v.tier - 1) : v.tier);
+const workTier = v => {
+  if (v.kind === 'rail') return Math.max(0, v.tier);
+  if (!v.down) return v.tier;
+  const T = FLEET[v.kind].tiers;                   // out of fuel: the best tier below that burns none (a truck works as a caravan or carriage)
+  for (let k = v.tier - 1; k > 0; k--) if (!T[k].fuel && (!T[k].tech || game.research.done.has(T[k].tech))) return k;
+  return 0;
+};
 // what each kind of vehicle can do now: its tier, made better by everything you know (free and automatic)
 let vehKey = '', vehCache = new Map();
 function scaledTier(kind, t) {
@@ -4151,9 +4205,9 @@ function carArrive(v, C) {
 }
 // a vehicle calling in at a settlement, port or airport: refuel, and take the upgrade you've ordered if it's paid for
 // the best train a domain can run right now: electric with spare power, diesel with oil, steam with wood (-1: none)
-function trainTier(C, cur = -1) {
+function trainTier(C, cur = -1, cap = 99) {
   const R = game.research.done, T = FLEET.rail.tiers;
-  for (let k = T.length - 1; k >= 0; k--) {
+  for (let k = Math.min(T.length - 1, cap); k >= 0; k--) {
     if (T[k].tech && !R.has(T[k].tech)) continue;
     if (!C) return k;
     if (T[k].mw && C.mw && C.mw.max - C.mw.need + (cur === k ? T[k].mw : 0) >= T[k].mw * 0.8) return k;
@@ -4163,8 +4217,13 @@ function trainTier(C, cur = -1) {
   return -1;
 }
 function atHub(v, C) {
-  if (v.kind === 'rail') {                         // free, automatic: up when it can, down when it must
-    const t = trainTier(C, v.tier);
+  if (v.kind === 'rail') {                         // the upgrade you ordered, paid as it pulls in; then the best its fuel allows
+    const tgt = fleetTarget('rail');
+    if ((v.paid ?? 0) < tgt && !missingFor(FLEET.rail.tiers[tgt].cost, C)) {
+      for (const [r, n] of Object.entries(FLEET.rail.tiers[tgt].cost)) C.res[r] -= n;
+      v.paid = tgt;
+    }
+    const t = trainTier(C, v.tier, v.paid ?? 0);
     if (t !== v.tier && t >= 0) { const up = t > v.tier; v.tier = t; floatText(v.x ?? (C.lx), v.y ?? (C.ly), `${up ? '▲' : '▼'} ${FLEET.rail.tiers[t].name.replace(/s$/, '')}`, up ? '#9fd0ff' : '#f0a64a'); }
     v.stalled = t < 0;
     return;
@@ -4329,16 +4388,17 @@ function buyVehicle(kind, from) {
 function fleetSummary(kind) {
   const list = kind === 'car' ? game.cars : game.links.flatMap(L => L.ships.filter(v => v.kind === kind));
   const open = tierOpen(kind), tgt = fleetTarget(kind);
-  const behind = open >= 0 ? list.filter(v => v.tier < open).length : 0;
+  const lvl = v => (kind === 'rail' ? v.paid ?? 0 : v.tier);   // a train's tier is the one paid for (it may run lower, short of fuel)
+  const behind = open >= 0 ? list.filter(v => lvl(v) < open).length : 0;
   const up = open > tgt || behind ? FLEET[kind].tiers[open] : null;
-  return { list, count: list.length, open, tgt, up, upCost: up ? multCost(up.cost, list.filter(v => v.tier < open).length) : null };
+  return { list, count: list.length, open, tgt, up, upCost: up ? multCost(up.cost, list.filter(v => lvl(v) < open).length) : null };
 }
 const costText = cost => Object.entries(cost).map(([r, n]) => `${Math.ceil(n)} ${r}`).join(', ') || 'free';
 const multCost = (cost, k) => Object.fromEntries(Object.entries(cost).map(([r, n]) => [r, n * k]));
 function orderUpgrade(kind) {
   const open = tierOpen(kind);
   game.fleetTarget[kind] = open;
-  toast(`Upgrading your ${FLEET[kind].name} to ${FLEET[kind].tiers[open].name.toLowerCase()}: each one is refitted when it next calls in at a ${FLEET[kind].hub}, paid as it goes`);
+  toast(`Upgrading your ${FLEET[kind].name} to ${FLEET[kind].tiers[open].name.toLowerCase()}: each one is refitted when it next ${kind === 'rail' ? 'pulls in at a station' : 'calls in at a ' + FLEET[kind].hub}, paid as it goes`);
 }
 // anything that follows a route (troops, convoys): move along its legs at each leg's speed
 function moveAlong(a, dt) {
@@ -5012,12 +5072,12 @@ function tick(dt, global = true) {
       const from = V.dir > 0 ? A : B, T = FLEET[V.kind].tiers[V.tier];
       if (V.kind === 'rail') {                     // a train burns wood, oil or power from the domain it's leaving
         if (!from) { V.stalled = true; continue; }
-        if (V.tier < 0 || V.stalled) { const t = trainTier(from, V.tier); if (t < 0) { V.stalled = true; continue; } V.tier = t; V.stalled = false; }   // fuel back: it runs again
+        if (V.tier < 0 || V.stalled) { const t = trainTier(from, V.tier, V.paid ?? 0); if (t < 0) { V.stalled = true; continue; } V.tier = t; V.stalled = false; }   // fuel back: it runs again
         const TT = FLEET.rail.tiers[V.tier], heavy = 1 + linkLoad(V);   // a full train burns twice what an empty one does
         if (TT.wood) { if (from.res.wood < TT.wood * heavy * dt) V.stalled = true; else from.res.wood -= TT.wood * heavy * dt; }
         if (TT.oil) { if (from.res.oil < TT.oil * heavy * dt) V.stalled = true; else { from.res.oil -= TT.oil * heavy * dt; from.fuel += TT.oil * heavy; } }
         if (TT.mw) from.trainMW += TT.mw * heavy;
-        if (V.stalled && from) { V.tier = trainTier(from, V.tier); V.stalled = V.tier < 0; }
+        if (V.stalled && from) { V.tier = trainTier(from, V.tier, V.paid ?? 0); V.stalled = V.tier < 0; }
         if (V.stalled) continue;
       } else if (T.fuel && from && (V.kind === 'boat' && !game.research.done.has('petroleum') ? from.noWood : from.noOil)) V.down = true;
       V.grounded = V.kind === 'plane' && V.down && V.tier === 0;   // a propeller plane with no oil can't fly at all
@@ -5134,8 +5194,8 @@ function worldSave() {
       shipments: game.shipments.map(S => ({ res: S.res, to: S.to })),
       hubJobs: game.hubJobs.filter(H => !H.done).map(H => ({ c: H.c, at: H.at, res: H.res, then: H.then })),
       links: game.links.map(L => ({ kind: L.kind, a: L.a, b: L.b, path: L.path, out: L.out || null, req: L.req || null, owe: L.owe || null,
-        ships: (L.ships || []).map(V => ({ kind: V.kind, tier: V.tier, t: V.t, dir: V.dir, cargo: V.cargo || null, to: V.to ?? -1 })) })),
-      cars: game.cars.map(v => ({ c: v.country, tier: v.tier, x: v.x, y: v.y })), fleetTarget: game.fleetTarget,
+        ships: (L.ships || []).map(V => ({ kind: V.kind, tier: V.tier, paid: V.paid, t: V.t, dir: V.dir, cargo: V.cargo || null, to: V.to ?? -1 })) })),
+      cars: game.cars.map(v => ({ c: v.country, tier: v.tier, x: v.x, y: v.y })), fleetTarget: game.fleetTarget, tv: 2,
       space: {                                     // what's in orbit stays there; anything mid-flight comes home
         counts: [rocketCount, stationCount, shuttleId],
         flights: game.flights.filter(f => !f.done && f.orbit).map(f => ({ ...f, trail: f.trail.slice(-60) })),
@@ -5223,7 +5283,8 @@ function loadGame(sv) {
     const kind = linkKind(sb.t);
     if (kind && !underway(b)) game.hubs[kind].push(sb.i);
   }
-  game.links = sv.links.map(L => ({ ...L, req: L.req || { a: [], b: [] }, ships: L.ships || [] }));
+  const oldTiers = !sv.tv;                         // saves from before Caravans and station upgrades
+  game.links = sv.links.map(L => ({ ...L, req: L.req || { a: [], b: [] }, ships: (L.ships || []).map(V => (V.kind === 'rail' && V.paid == null ? { ...V, paid: oldTiers ? 9 : 0 } : V)) }));
   game.hubJobs = (sv.hubJobs || []).map(H => ({ ...H, car: null, since: 0 }));
   if (home) { game.shipments = []; for (const S of sv.shipments || []) { S.legs = [{ kind: 'land', spr: 'porter', pts: [[0, 0], [0, 0]], cum: [0, 0], len: 0, speed: 1 }]; S.li = 0; S.d = 1; game.shipments.push(S); } }   // goods on the road arrive next step
   for (let t = 0; t < N; t++) {
@@ -5240,10 +5301,11 @@ function loadGame(sv) {
     Object.assign(game, { debugSnap: sv.debugSnap || null, murderSet: true, gmode: MODES[sv.gmode] ? sv.gmode : 'normal', debug: !!sv.debug, time: sv.time, peakPop: sv.peakPop, sendPct: sv.sendPct || 25, troopPct: sv.troopPct || 50, recruit: sv.recruit !== false, warhead: sv.warhead || 'conventional' });
     game.dip = { op: (sv.dip && sv.dip.op) || {}, wars: new Set((sv.dip && sv.dip.wars) || []) }; game.treaties = sv.treaties || [];
     game.alliances = sv.alliances || []; game.autoDefend = sv.autoDefend !== false;
-    game.fleetTarget = sv.fleetTarget || { car: 0, boat: 0, plane: 0 };
+    game.fleetTarget = { car: 0, boat: 0, plane: 0, rail: 0, ...(sv.fleetTarget || {}) };
+    if (!sv.tv) { if (game.fleetTarget.car >= 4) game.fleetTarget.car++; game.fleetTarget.rail = 9; }   // Caravans slot in before Trucks; old trains keep running as they did
   }
   game.armies = []; game.attacks = []; game.lost = new Map(); game.lostForts = new Map();
-  game.cars = (sv.cars || []).map(c => ({ id: carId++, kind: 'car', country: c.c, tier: c.tier, x: c.x, y: c.y, cargo: {}, plan: [], pts: null, idle: 0 }));
+  game.cars = (sv.cars || []).map(c => ({ id: carId++, kind: 'car', country: c.c, tier: oldTiers && c.tier >= 4 ? c.tier + 1 : c.tier, x: c.x, y: c.y, cargo: {}, plan: [], pts: null, idle: 0 }));
   game.bridges = []; bridgeAt.fill(0); bridgeEnd.fill(0);
   for (const [s0, b, len, tiles] of sv.bridges || []) addBridge({ s: s0, b, len, tiles, t0: -99 });
   if (home) {
@@ -5269,7 +5331,7 @@ function loadGame(sv) {
   roads = (sv.roads || []).map(r => ({ ...unpackLine(r.p), key: r.k, side: r.s, kind: 'road', a: r.a, b: r.b, ...(r.c != null ? { cut: r.c } : {}) }));
   buildRoads();
   for (const [a, b, P] of sv.connects || []) { const L = P ? unpackLine(P) : building[a] && makeLine(a, b, sideOf(a), true, 20000); if (L && building[a]) game.connects.push({ a, b, ...L }); }
-  for (const [a, b, P, X] of sv.walls || []) { const L = P ? unpackLine(P) : building[a] && building[b] && makeLine(a, b, sideOf(a), false, 20000); if (L && building[a] && building[b]) game.walls.push({ a, b, ...L, dmg: (X && X.dmg) || 0, up: (X && X.up) || {}, stock: (X && X.stock) || 0 }); }
+  for (const [a, b, P, X] of sv.walls || []) { const L = P ? unpackLine(P) : building[a] && building[b] && wallLine(a, b, sideOf(a)); if (L && building[a] && building[b]) game.walls.push({ a, b, ...L, dmg: (X && X.dmg) || 0, up: (X && X.up) || {}, stock: (X && X.stock) || 0 }); }
   markNet();
   for (const b of game.buildings) if (b.site) { b.site.car = null; b.site.ready = boxSum(b.site.need) < 0.01; }
   for (const b of game.buildings) { b.claim = 0; b.supplying = false; }
@@ -6907,13 +6969,23 @@ function drawTrain(L, V, z) {
     if (sx < -60 || sy < -60 || sx > cw + 60 || sy > ch + 60) continue;
     ctx.save(); ctx.translate(sx, sy); ctx.rotate(ang);
     ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(-len / 2 + 1, -wid / 2 + 2, len, wid);        // shadow
-    if (k === 0) {                                 // the locomotive
+    if (id === 'electric') {                       // a bullet train: a long pointed nose, sleek white cars with a blue stripe
+      const hx = len / 2, hw = wid / 2, nose = k === 0;
+      ctx.fillStyle = '#eef2f6'; ctx.strokeStyle = '#7d8a97'; ctx.lineWidth = Math.max(0.8, z * 0.04);
+      ctx.beginPath(); ctx.moveTo(-hx + len * 0.03, -hw);
+      if (nose) { ctx.lineTo(hx * 0.15, -hw); ctx.bezierCurveTo(hx * 0.75, -hw, hx * 1.08, -hw * 0.35, hx * 1.1, 0); ctx.bezierCurveTo(hx * 1.08, hw * 0.35, hx * 0.75, hw, hx * 0.15, hw); }
+      else { ctx.lineTo(hx - len * 0.03, -hw); ctx.lineTo(hx - len * 0.03, hw); }
+      ctx.lineTo(-hx + len * 0.03, hw); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#2a6f96'; ctx.fillRect(-hx + len * 0.03, -wid * 0.1, len * (nose ? 0.62 : 0.94), wid * 0.2);   // the stripe
+      if (nose) { ctx.fillStyle = '#1d2a38'; ctx.beginPath(); ctx.ellipse(hx * 0.62, 0, len * 0.11, wid * 0.3, 0, 0, Math.PI * 2); ctx.fill(); }   // the cab window
+      else { const r = loads[(k - 1) % Math.max(1, loads.length)]; if (r) { ctx.fillStyle = RES_COLOR[r] || '#c9ced6'; ctx.fillRect(-len * 0.3, -wid * 0.38, len * 0.6, wid * 0.2); } }
+      if (nose || k === 2) { ctx.strokeStyle = '#2b3038'; ctx.lineWidth = Math.max(1, wid * 0.08); ctx.beginPath(); ctx.moveTo(-len * 0.25, -hw * 0.6); ctx.lineTo(-len * 0.05, hw * 0.2); ctx.lineTo(len * 0.1, -hw * 0.6); ctx.stroke(); }   // pantograph
+    } else if (k === 0) {                          // the locomotive
       ctx.fillStyle = look.body; ctx.fillRect(-len / 2, -wid / 2, len, wid);
       ctx.fillStyle = look.top; ctx.fillRect(-len / 2 + len * 0.08, -wid / 2 + wid * 0.18, len * 0.55, wid * 0.64);
       ctx.fillStyle = look.stripe; ctx.fillRect(-len / 2, -wid * 0.08, len, wid * 0.16);
       ctx.fillStyle = '#ffe9a0'; ctx.fillRect(len / 2 - len * 0.08, -wid * 0.22, len * 0.08, wid * 0.44);   // headlamp
       if (id === 'steamtrain') { ctx.fillStyle = '#1c2028'; ctx.beginPath(); ctx.arc(len * 0.25, 0, wid * 0.22, 0, Math.PI * 2); ctx.fill(); }
-      if (id === 'electric') { ctx.strokeStyle = '#2b3038'; ctx.lineWidth = Math.max(1, wid * 0.1); ctx.beginPath(); ctx.moveTo(-len * 0.2, -wid * 0.35); ctx.lineTo(0, wid * 0.2); ctx.lineTo(len * 0.15, -wid * 0.35); ctx.stroke(); }
     } else {                                       // a wagon, with its load showing
       ctx.fillStyle = '#6b4a2e'; ctx.fillRect(-len / 2 + len * 0.05, -wid / 2, len * 0.9, wid);
       ctx.strokeStyle = '#3d2a1c'; ctx.lineWidth = Math.max(0.8, z * 0.05); ctx.strokeRect(-len / 2 + len * 0.05, -wid / 2, len * 0.9, wid);
@@ -9363,19 +9435,22 @@ window.addEventListener('mouseup', e => {
   mouse.down = -1; mouse.dragged = false; mouse.ghost = false; canvas.classList.remove('dragging');
   if (btn < 0) return;
   mouse.x = e.clientX; mouse.y = e.clientY;
-  if (wasDrag || e.target !== canvas) return;
+  if (e.target !== canvas) return;
+  if (wasDrag && !(game.wallFrom >= 0 && Math.hypot(e.clientX - mouse.sx, e.clientY - mouse.sy) < 18)) return;
   clickAt(btn, e.clientX, e.clientY);
 });
 // a click (or a tap: btn 0; a long press: btn 2) at a screen point
 function clickAt(btn, x, y) {
   mouse.x = x; mouse.y = y;
   if (game.wallFrom >= 0) {                        // picking the second fortress for a wall: before anything else, and generously
-    if (btn !== 0) { game.wallFrom = -1; toast('Wall cancelled'); return; }
-    const b = fortPick(x, y), a = buildingAt(game.wallFrom);
-    if (!a) { game.wallFrom = -1; return; }
-    if (b === a) { game.wallFrom = -1; toast('Wall cancelled'); return; }
+    const a = buildingAt(game.wallFrom);
+    if (!a || a.type !== 'fort') { game.wallFrom = -1; wallHint(); return; }
+    // only a deliberate right-click cancels (a finger held a moment too long is still a tap)
+    if (btn !== 0 && performance.now() - lastTouch > 1500) { cancelWall(); return; }
+    const b = fortPick(x, y);
+    if (b === a) { cancelWall(); return; }
     if (b) return pickWallEnd(b);
-    return toast(say('Click near one of the glowing fortresses (click the first one again, or Esc, to cancel)', 'Tap near one of the glowing fortresses (tap the first one again to cancel)'));
+    return toast(say('Click on or near one of the glowing fortresses', 'Tap on or near one of the glowing fortresses'));
   }
   if (game.colonyPick) { const t = tileAtScreen(x, y); if (btn === 0) pickColonySite(t); else { game.colonyPick = false; viewWorld(game.colonyFrom ? game.colonyFrom.home : 0); game.colonyFrom = null; } return; }
   if (btn === 0 && game.aiming) { const t = hoverTile(); if (t) fireMissile(t.x, t.y); return; }
@@ -9514,12 +9589,12 @@ window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
 
 // Esc: let go of whatever you're doing
 function cancelAll() {
-  if (game.wallFrom >= 0) { game.wallFrom = -1; toast('Wall cancelled'); return; }
+  if (game.wallFrom >= 0) { cancelWall(); return; }
   if (bombing) { setBombing(false); toast('Bomber cancelled'); return; }
   if (game.colonyPick) { game.colonyPick = false; viewWorld(game.colonyFrom ? game.colonyFrom.home : 0); game.colonyFrom = null; toast('Colony ship cancelled'); return; }
   if (game.flying && !game.tool && !buildOpen) { game.flying = null; toast(say('Let go of the rocket: it flies on. Press X or click it to take it back.', 'Let go of the rocket: it flies on. Tap it to take it back.')); return; }
   if (game.driving && !game.tool && !buildOpen && !game.aiming) { game.driving = null; toast(say('Parked. Press X to take the wheel again.', 'Parked. Tap Drive to take the wheel again.')); }
-  setTool(null); stopFollow(); setAiming(false); toggleBuildMenu(false); showBuildingCard(null); closeDiplomacy(); game.wallFrom = -1;
+  setTool(null); stopFollow(); setAiming(false); toggleBuildMenu(false); showBuildingCard(null); closeDiplomacy(); game.wallFrom = -1; wallHint();
   if (game.cmd !== 'expand') setCmd('expand');
 }
 function goHome() { game.driving = null; stopFollow(); cam.anim = null; cam.x = spawn.x + 0.5; cam.y = spawn.y + 0.5; }
@@ -9553,7 +9628,7 @@ canvas.addEventListener('pointerdown', e => {
     tch.drag = false; tch.long = false; tch.sx = e.clientX; tch.sy = e.clientY;
     tch.ghost = !!(game.ghost && onGhost(e.clientX, e.clientY));
     tch.timer = setTimeout(() => {               // held still: a right-click (an expedition from there)
-      if (fingers.size !== 1 || tch.drag || tch.ghost || game.ghost || game.aiming) return;
+      if (fingers.size !== 1 || tch.drag || tch.ghost || game.ghost || game.aiming || game.wallFrom >= 0) return;
       tch.long = true;
       if (navigator.vibrate) navigator.vibrate(12);
       clickAt(2, tch.sx, tch.sy);
@@ -9575,7 +9650,7 @@ canvas.addEventListener('pointermove', e => {
     nudgeScreen(-(mx1 - mx0) / cam.zoom, -(my1 - my0) / cam.zoom);
     return;
   }
-  if (!tch.drag && Math.hypot(e.clientX - tch.sx, e.clientY - tch.sy) > 10) { tch.drag = true; clearTimeout(tch.timer); }
+  if (!tch.drag && Math.hypot(e.clientX - tch.sx, e.clientY - tch.sy) > (game.wallFrom >= 0 ? 24 : 10)) { tch.drag = true; clearTimeout(tch.timer); }
   if (tch.drag && tch.ghost) moveGhost(e.clientX, e.clientY);
   else if (tch.drag && !tch.long) nudgeScreen(-(e.clientX - f.x) / cam.zoom, -(e.clientY - f.y) / cam.zoom);
   f.x = e.clientX; f.y = e.clientY;
@@ -10021,6 +10096,13 @@ function connectToRoad(b) {
   showBuildingCard(b);
 }
 // walls: pick a fort, then another one within range in the same domain
+const wallPlanMemo = { from: -1, t: 0, n: 0, map: new Map() };
+function wallPlanCached(a, b) {
+  const M = wallPlanMemo;
+  if (M.from !== a.i || game.time - M.t > 2 || M.n !== game.walls.length) Object.assign(M, { from: a.i, t: game.time, n: game.walls.length, map: new Map() });
+  if (!M.map.has(b.i)) M.map.set(b.i, wallPlan(a, b));
+  return M.map.get(b.i);
+}
 function wallPlan(a, b) {
   const WC = CFG.walls, A = countryAt(a.i);
   if (a.i === b.i) return { why: 'Pick a different fortress' };
@@ -10028,16 +10110,16 @@ function wallPlan(a, b) {
   const d = Math.hypot(a.i % W - b.i % W, ((a.i / W) | 0) - ((b.i / W) | 0));
   if (d > WC.range) return { why: `Too far apart: ${Math.round(d)} tiles (a wall can run up to ${WC.range})` };
   if (game.walls.some(w => (w.a === a.i && w.b === b.i) || (w.a === b.i && w.b === a.i))) return { why: 'They already have a wall between them' };
-  const line = makeLine(a.i, b.i, sideOf(a.i), false, 20000);
-  if (!line) return { why: 'No way for a wall over your own land between them' };
+  const line = wallLine(a.i, b.i, sideOf(a.i));
+  if (!line) return { why: 'No way between them for a wall: it has to stay on your land, out of the water, and clear of resources and buildings' };
   return { line, cost: { stone: Math.ceil(line.len * WC.stonePerTile) } };
 }
 function pickWallEnd(b) {
   const a = buildingAt(game.wallFrom);
-  game.wallFrom = -1;
-  if (!a || a.type !== 'fort') return;
+  if (!a || a.type !== 'fort') { game.wallFrom = -1; wallHint(); return; }
   const P = wallPlan(a, b), C = countryAt(a.i);
-  if (P.why) return toast(P.why);
+  if (P.why) return toast(P.why + say('. Pick another fortress, or Esc to cancel.', '. Pick another fortress, or Cancel.'));   // the first fortress stays picked
+  game.wallFrom = -1; wallHint();
   showModal(`<div class="md-title">Build a wall?</div><div class="md-body">${Math.round(P.line.len)} tiles of wall between your fortresses, for <b>${P.cost.stone} stone</b> from ${C.short} (it has ${fmtNum(C.res.stone)}).
     Raiders struggle to cross it, the land beside it is ${CFG.walls.defense}x harder to take, and your troops march along it.</div>`,
     [{ label: 'Build the wall', cls: 'go', act: () => buildWall(a.i, b.i) }, { label: 'Cancel', act: () => {} }]);
@@ -10895,14 +10977,23 @@ function drawWallLine(wl, z) {
 }
 // on top of the fortresses: cracks, rubble, turrets; and the soldiers' tools where they're mending
 function drawWallFx(z) {
+  if ((game.wallFrom >= 0) !== !!$('wall-hint')) wallHint();   // the banner shows exactly while you're picking
   if (game.wallFrom >= 0) {                        // picking the second fortress: the ones in reach glow
     const a = buildingAt(game.wallFrom), pulse = 0.55 + 0.45 * Math.sin(game.time * 5);
     if (a) for (const b of game.buildings) {
       if (b.type !== 'fort' || !owner[b.i] || underway(b)) continue;
-      const [sx, sy] = toScreen(...tileCenter(b.i)), me = b === a, P = me ? null : wallPlan(a, b);
+      const [sx, sy] = toScreen(...tileCenter(b.i)), me = b === a, P = me ? null : wallPlanCached(a, b);
       if (!me && P.why) continue;
       ctx.beginPath(); ctx.arc(sx, sy, Math.max(22, z * 1.6) + pulse * 5, 0, Math.PI * 2);
       ctx.strokeStyle = me ? 'rgba(242,193,78,0.95)' : `rgba(123,211,137,${0.5 + 0.5 * pulse})`; ctx.lineWidth = 3; ctx.stroke();
+    }
+    const h = a && !TOUCH && mouse.in ? fortPick(mouse.x, mouse.y) : null;   // where the wall would run, for the fort under the pointer
+    if (h && h !== a) {
+      const P = wallPlanCached(a, h);
+      if (P.line) {
+        ctx.save(); ctx.setLineDash([Math.max(4, z * 0.6), Math.max(3, z * 0.4)]); ctx.lineWidth = Math.max(2, z * 0.35); ctx.strokeStyle = 'rgba(242,193,78,0.9)';
+        ctx.beginPath(); P.line.pts.forEach((p, k) => { const [x, y] = toScreen(p[0], p[1]); if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y); }); ctx.stroke(); ctx.restore();
+      }
     }
   }
   if (z < 1.2) return;
@@ -10978,18 +11069,36 @@ function wallNear(wx, wy) {
 }
 // the fortress a click is meant for while picking a wall's far end: the nearest one on screen within a big radius
 // (bigger still on a touch screen), preferring forts the wall can actually reach
+// The first fortress only counts when the click is right on it and nearer than any other: a click meant for the
+// second fortress never cancels the wall.
 function fortPick(x, y) {
-  const a = buildingAt(game.wallFrom), R = Math.max(TOUCH ? 80 : 56, cam.zoom * 2.6);
-  let best = null, bd = Infinity;
+  const a = buildingAt(game.wallFrom);
+  if (!a) return null;
+  const R = Math.max(TOUCH ? 130 : 110, cam.zoom * 4), onA = Math.max(TOUCH ? 22 : 14, cam.zoom * 0.7);
+  const [ax, ay] = toScreen(...tileCenter(a.i)), dA = Math.hypot(ax - x, ay - y);
+  let good = null, gd = Infinity, other = null, od = Infinity;
   for (const b of game.buildings) {
-    if (b.type !== 'fort' || !owner[b.i] || underway(b)) continue;
+    if (b === a || b.type !== 'fort' || !owner[b.i] || underway(b)) continue;
     const [sx, sy] = toScreen(...tileCenter(b.i)), d = Math.hypot(sx - x, sy - y);
     if (d > R) continue;
-    const ok = b === a || !wallPlan(a, b).why, score = d - (ok ? R : 0);   // a reachable fort wins over a nearer one that isn't
-    if (score < bd) { bd = score; best = b; }
+    if (!wallPlanCached(a, b).why) { if (d < gd) { gd = d; good = b; } }
+    else if (d < od) { od = d; other = b; }
   }
-  return best;
+  if (dA <= onA && dA < Math.min(gd, od)) return a;
+  return good || other;
 }
+// building a wall: a banner says what to do, with a way out
+function wallHint() {
+  let el = $('wall-hint');
+  if (game.wallFrom < 0) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div'); el.id = 'wall-hint';
+    el.innerHTML = `<span>${say('Building a wall: click another fortress (the glowing ones are in reach)', 'Building a wall: tap another fortress (the glowing ones are in reach)')}</span><button>Cancel</button>`;
+    el.querySelector('button').onclick = () => cancelWall();
+    document.body.appendChild(el);
+  }
+}
+function cancelWall() { game.wallFrom = -1; wallHint(); toast('Wall cancelled'); }
 // the fortress nearest a click, generously (the second fort of a new wall is easy to miss)
 function fortNear(wx, wy) {
   const r = Math.max(2.5, 34 / cam.zoom);
@@ -11117,7 +11226,7 @@ function showBuildingCard(b) {
       if (!P.why) btns.push({ label: `Connect to road · ${P.cost.stone} stone`, cls: 'go', act: () => connectToRoad(b), off: C && C.res.stone < P.cost.stone });
     }
   }
-  if (b.type === 'fort' && !underway(b) && isUnlocked('fort')) btns.push({ label: 'Build a wall…', act: () => { game.wallFrom = b.i; showBuildingCard(null); toast(say('Now click another fortress (within ', 'Now tap another fortress (within ') + CFG.walls.range + ' tiles) to wall them together'); } });
+  if (b.type === 'fort' && !underway(b) && isUnlocked('fort')) btns.push({ label: 'Build a wall…', act: () => { game.wallFrom = b.i; showBuildingCard(null); wallHint(); } });
   // a settlement, port or airport: your cars, boats or planes. Buy more; order the whole fleet upgraded.
   const fk = { settlement: 'car', port: 'boat', airport: 'plane' }[b.type];
   if (fk && !underway(b) && tierOpen(fk) >= 0) {
@@ -11131,6 +11240,22 @@ function showBuildingCard(b) {
       btns.push({ label: pending ? `Upgrading to ${F.up.name.toLowerCase()}… (${costText(F.upCost)} left)` : `Upgrade all to ${F.up.name.toLowerCase()} · ${costText(F.upCost)}`,
         act: () => { orderUpgrade(fk); showBuildingCard(b); }, off: pending });
     }
+  }
+  // a rail station: upgrade every train (steam, diesel, electric bullet trains)
+  if (b.type === 'station' && !underway(b) && tierOpen('rail') >= 0) {
+    const F = fleetSummary('rail'), T = FLEET.rail.tiers, tiers = {};
+    for (const v of F.list) { const n = T[Math.max(0, v.tier)].name; tiers[n] = (tiers[n] || 0) + 1; }
+    lines.push(`<b>${F.count} train${F.count === 1 ? '' : 's'}</b>${F.count ? ` (${Object.entries(tiers).map(([n, k]) => `${k} ${n.toLowerCase()}`).join(', ')})` : ': each rail line comes with one'}`);
+    if (F.up) {
+      const pending = game.fleetTarget.rail >= F.open;
+      btns.push({ label: pending ? `Upgrading to ${F.up.name.toLowerCase()}… (${costText(F.upCost)} left)` : `Upgrade all trains to ${F.up.name.toLowerCase()} · ${costText(F.upCost)}`,
+        cls: pending ? '' : 'go', act: () => { orderUpgrade('rail'); showBuildingCard(b); }, off: pending });
+    } else {
+      const nx = T.find(t => t.tech && !game.research.done.has(t.tech));
+      lines.push(`<span class="d">Your trains are the best you can build${nx ? `. Next: ${nx.name.toLowerCase()} (${TECH[nx.tech].name})` : ''}.</span>`);
+    }
+    const run = F.list.filter(v => v.tier >= 0 && v.tier < (v.paid ?? 0)).length;
+    if (run) lines.push(`<span class="a">${run} running a tier lower for want of ${T[2].mw && F.list.some(v => (v.paid ?? 0) >= 2) ? 'power or oil' : 'oil'}.</span>`);
   }
   // a station, port or airport: what's in its inventory (goods off the trains waiting for a hauler, or waiting to board)
   if (linkKind(b.type) && !underway(b)) {
@@ -12531,5 +12656,5 @@ window.__game = { TOUCH, mouse, game, cam, CFG, SEED, tick: tickAll, tickOne: ti
   render, followBody, stopFollow, sunPos, wallGarrisons, buildDysonRocket, launchDyson, sendBomber, fireIPBM, setBombing, dysonPower, buildBridge, bridgePlan, POLAR, claim, isLand, launchRocket, makeStation, buyShuttle, toggleEngine, orbitOf, DISK, keys, showBuildingCard, refreshCard, openDiplomacy, aiConsider, doTrade, aiPeace, aiAlly, allianceOf, getOp, addOp, atWar, setWar, settlementLand, guardedAttack, autoDefend, buyVehicle, orderUpgrade, fleetSummary, tierOpen, addCar, seaCrossing, settleExpedition, takeWheel, completeTech, setPct, setTroopPct, roadsList: () => roads, buildRoads, netGraph, findRoute, connectPlan, connectToRoad, wallPlan, pickWallEnd, strikePlan, strikeReach, techIn, goldBoost, haulProf, NET, defenseMult, nextVehicle, driveStep: (e, dt) => driveStep(e, dt), removeBuilding, TECH, unitStats, garrisons, totalUnits, launchAttack, frontWith, setTool, confirmGhost, setCmd, clickAt, commandClick,
   routesTo, dispatchSupplies, linkStats, techCost, pickTech, playerTechScore, resourceProfile, research: () => game.research, hasDep, oilKnown, W, frontier, tileCenter,
   stopSaving: () => { noSave = true; }, scanAiBorders, dbgAI: () => ({ borders: [...aiBorders.keys()], gaps: [...aiGap.entries()].map(([k, v]) => k + ':' + Math.round(v.d)), dipTimer, borderTimer, offerTimer }), aiOffers, aiRelations, driftOpinions, SVG, RAS, SPR, debugOff, terraOf, planetTerra, poweredTerraformers, terraNeed, stepPlanetTerraform, compFx, compOf, bestComputer, upgradeComputer, researchPeople, SHUTTLE_MK, upgradeShuttle, shRange, canReachWorld, craft, CRAFTS, aiCompute, aiState, showAIPanel, stepAIs, aiDoRoads, aiDoGambit, aiDoWar, aiDoBuild, aiDoTrade, roadsList2: () => roads, invPull, invOf, lootSettlement, lootNation, sourceSettlement, stepInventories, skyWorldPos, foreignSkyClick, setGameMode, MODE, modePicker, aiUnitCap, aiTreaty, signTreaty, treaty, aiSurrender, doSurrender, warLosing, nationWorth, termsValue, askAll, openDiplomacyAll, aiNeeds, surrenderDialog, fearOf, showMarket, marketTrade, rushSite, rushCost, hireTroops, mercCost, treasury, orderStation, padBusy, myStations, wallState, fortState, damageWall, damageFort, wallMax, fortMax, showWallCard, wallNear, fortNear, buyWallUpgrade, upgradeCost, wallGroupOf, wallsAfterWar, stepRepairs, ironWallCross, viaLink, landWay, keepOnLand, shipGoods, crossesWater, tradePath, shoreOf, landGroup, overland, wet, tradeEnd, tilePath, intraArrive, stationNearSettlement, carProf };
-Object.assign(window.__game, { owner, aiOf, countryOf, building, MP, mpSnapshot, toGuestView, mpApply, mpRunRival, buildWall, sowFields, stepSowing });
+Object.assign(window.__game, { worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, mpSnapshot, toGuestView, mpApply, mpRunRival, buildWall, sowFields, stepSowing });
 init();
