@@ -6,12 +6,20 @@ A remake of the [Map Factory prototype](https://yclen.github.io/map-factory/prot
 
 The game works on phones as well as on desktops. It autosaves in your browser every 10 seconds. Add `?seed=123` to the address to play a specific map.
 
+## Game modes
+Pick one when you start a new map, and change it any time from the Command menu (Mode):
+- **Peaceful:** no wars at all, for anyone. The nations still race you for land, trade and tech.
+- **Easy:** slow, mostly peaceful nations. They leave diplomacy to you, and seldom side against you in your wars.
+- **Normal:** sensible nations that plan, trade and make some diplomacy of their own.
+- **Hard:** sharp nations. They pick their moments, strike where you're weakest, deal shrewdly, and invest heavily in armies and fortresses. Advanced ones run their own central computers.
+- **Murder mode:** as sharp as Hard, but every nation dislikes you, they seldom fight each other, and they readily ally against you.
+
 ## What's new compared with the original prototype
 
 ### 1. Technology research
 - Every player (you and every AI nation) has a research bar that fills faster the more people they have. People on your space stations count double.
 - Each discovery shows a notification. The **Build** button shows what's being researched; the Build menu has the details.
-- 28 techs follow the general order of history: Warrior Code, the Wheel and Masonry through Steam Power, Petroleum, Flight and Nuclear Fission, up to Spaceflight, Reusable Rockets, Bubble Habitats, Terraforming, Strategic Bombers, Interplanetary Missiles and the Dyson Swarm. The next tech is picked from the earliest ones you can research, preferring those that use what you produce most.
+- 34 techs follow the general order of history: Warrior Code, the Wheel and Masonry through Steam Power, Petroleum, Flight, Nuclear Fission, Electronics and Computing, up to Spaceflight, Reusable Rockets, Bubble Habitats, Terraforming, Strategic Bombers, Interplanetary Missiles, the Dyson Swarm and Artificial Intelligence. The next tech is picked from the earliest ones you can research, preferring those that use what you produce most.
 - Gold you mine goes straight into research.
 
 ### 2. Build and Command
@@ -26,6 +34,8 @@ The game works on phones as well as on desktops. It autosaves in your browser ev
 - **Cars:** you buy them (at a settlement) and the game puts them where they're needed most. They drive on roads, turn off at the nearest point to a collector, crawl across to it, load up and crawl back. Construction deliveries come first, then the biggest loads waiting.
 - **Boats and planes** are bought at ports and airports and carry goods, people and troops between domains, and inside one big domain too (airports far apart). Planes are drawn as planes, with their shadow on the ground.
 - **Trains** come free with a rail line and carry huge loads, fast. They upgrade and downgrade by themselves: steam (burns wood), diesel (oil), electric (power). Trucks bring goods to the station, where they wait in its yard for the train; at the far end trucks take them on. A long haul inside a domain goes by train whenever a station is reasonably close. Lines that share a station form a network: goods change trains and get off at the station closest to where they're needed, and wait in that station's inventory (shown on its card) until a hauler takes them on. Goods for your stock are dropped at a station by a settlement and go straight into stock there.
+- **Heavy loads:** a full car, cart or boat is 30% slower than an empty one. A full train burns twice the fuel (or power), and full planes and rockets burn more too.
+- **Where the goods are:** each settlement holds part of its domain's stock (shown on its card). The total is spendable anywhere: haulers fetch from whichever town holds it. Goods drift toward safe, well-defended towns, busy crossroads (stations, ports, roads), and towns near the mines and farms that make them. Capture a settlement and you take what's stored there; lose one and so do they.
 - **Overland goods stay on land:** porters, carts, wagons and trucks go round water rather than across it, unless they're taking goods to a boat.
 - **Upgrades** happen only when you order them (from a settlement, port or airport card): each vehicle is refitted when it next calls at a hub, and you see the total price up front. Out of fuel, vehicles drop back a tier and refit by themselves when fuel returns.
 - **Bridges:** pick your coast, then the land across the water. Roads, cars, rail and troops cross them.
@@ -33,7 +43,7 @@ The game works on phones as well as on desktops. It autosaves in your browser ev
 
 ### 4. Military
 - **Bases and fortresses** train and hold units; capacity grows with tech. Helmets beside troop counts change with your tech.
-- **Walls** between two fortresses you pick (paid in stone) make the land harder to take and speed up marching. Picking the second fortress is forgiving: click near it, and the ones in reach glow.
+- **Walls** between two fortresses you pick (paid in stone) make the land harder to take and speed up marching. Picking the second fortress is forgiving: anywhere near a glowing fortress counts (a bigger area on phones), and a miss no longer cancels the wall. Click the first fortress again, or press Esc, to cancel.
 - **Damage and repair:** each stretch of wall between two fortresses has its own health. Battered walls and forts show cracks, then a breach. A breached stretch or fort shelters no one, but it stays until the war ends. Only if the war ends with that land still lost is it gone for good. Soldiers mend them: in a lull in a war they fetch the stone themselves (more soldiers work faster and carry more, more with better tech); in peacetime haulers bring the stone and the garrison builds.
 - **Wall upgrades** (click anywhere on a wall): your techs make walls tougher by themselves. You can also buy fort turrets, air defenses and an iron wall for the whole wall at once. An iron wall stops planes and missiles that cross it, and makes troops on it far harder to beat.
 - **Defence:** with "Forts defend by themselves" on, troops march out of nearby forts to meet invaders and take back lost land, nearest or hardest-pressed front first, your own domain first. Outnumbered, they hold a fort or a wall instead; with enough men, they go back for any fort the enemy took.
@@ -46,6 +56,19 @@ The game works on phones as well as on desktops. It autosaves in your browser ev
 - **Oil** (with Petroleum) runs trucks, planes, ships, motorized troops and oil power plants. The counter shows the net rate. Without oil, things fall back to older tech.
 - **Uranium** (with Nuclear Fission) runs reactors and, with Nuclear Weapons, nuclear warheads.
 - **Wheat:** farms turn plain land (never mountains) into fields. Nobody goes hungry while there's wheat in store, even if you eat more than you grow; the people bar shows how long the stores will last.
+
+### 5b. Silicon, cobalt and computing
+- **Silicon and cobalt** appear with Electronics. They're rare at home (a few small deposits, if any) and common on the Moon and Aries. Silicon refineries dig and refine silicon; miner's camps dig cobalt. You can also buy them at the market.
+- **Chip factories** turn silicon and a little gold into computer chips. Solar panels, launch pads, reusable rockets, the Dyson swarm and more now need silicon, cobalt or chips.
+- **Batteries** (Build menu, Crafting) store spare power and cover shortfalls. Electric trains draw on them too.
+- **Central computer** (one per domain, 30 MW): everything else in the domain uses 25% less power, wheat +10%, troops train 30% faster, research 25% faster. Every rocket that flies itself (freighters, supply rockets, colony ships, the Dyson swarm, interplanetary missiles) needs one somewhere in your empire. The first space station's rocket doesn't. **Data centers** add 1% each.
+- **Upgrades:** the M.C.C.S. (stronger bonuses, research +40%, rocket range x6), then the Q.C.A. (research +50% more), then **C.A.I.S.**, an AI.
+- **The AI (C.A.I.S.):** open the computer to give it work. Its compute comes from data centers and the share of spare power you give it (Energy tab). More compute unlocks more commands, and from 25 compute it makes big moves without asking first. You set what share of the domain's resources and troops it may use: that share of what's there now, and of everything made later. Its commands:
+  - Building strategy, Grid manager (batteries), Trade manager, and Logistics (buys haulers when goods pile up).
+  - Road restructuring: it bends your existing roads past buildings that aren't on one. It never adds roads.
+  - Early warning, Hadrian's Gambit (fortresses and walls around the domain's edge, upgraded over time), a Research director, and Diplomacy.
+  - War command, with four strategies: defensive, guerrilla, pillage and conquest.
+- **Reusable rocket marks:** Mk I reaches only the Moon. Refits (Mk II to IV) carry more, fly faster and go further. An M.C.C.S. multiplies range by six.
 
 ### 6. Diplomacy
 - **Click a nation** to see how it feels about you, who it's at war with and who it's allied to. Offer trades (resources, or whole settlements and their land), declare war, make peace, or propose, found or join an alliance.
@@ -64,6 +87,7 @@ The game works on phones as well as on desktops. It autosaves in your browser ev
 - **The more advanced AI nations** put up stations of their own.
 
 ### 8. Other worlds
+- **The sky from other worlds:** zoom out on the Moon or Aries and you see the Sun, your home world and the other planets where they really are. Click one of your worlds to go there.
 - **The Moon and Aries are full maps.** With Bubble Habitats, a launch pad can send a **colony ship**: you pick the landing spot on that world's map.
 - Colonies live under **domes**: the land outside holds few people. **Terraformers** slowly turn the dust green so it holds people like home does.
 - Switch worlds from **Command → Worlds**, or lock onto the Moon or Aries from home and double-click (double-tap) it. Every world keeps running while you look at another.

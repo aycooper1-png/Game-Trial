@@ -399,3 +399,33 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
 .tm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px 10px; margin-top: 6px; }
 .tm-f { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; }
 .tm-f input { width: 60px; background: #11161f; border: 1px solid #3a4560; color: var(--text); border-radius: 6px; padding: 3px 5px; font-size: 12px; font-family: inherit; }
+/* game modes */
+.mode-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.mode-btn { text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 8px 11px; border-radius: 9px; border: 1px solid #3a4658; background: #1d2633; color: #eef2f8; cursor: pointer; font-family: inherit; }
+.mode-btn b { font-size: 14px; }
+.mode-btn span { font-size: 12px; color: #a9b3c0; }
+.mode-btn:hover { border-color: #f2c14e; }
+.mode-btn.sel { border-color: #7bd389; box-shadow: 0 0 0 1px #7bd389; }
+/* silicon, cobalt and chips in one top-bar box */
+.tech-vals { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.tech-vals span { display: inline-flex; align-items: center; gap: 2px; }
+/* crafting buttons in the build menu */
+.bm-status .craft { font-size: 11px; font-weight: 700; padding: 3px 8px; margin-left: 4px; border-radius: 7px; border: 1px solid #3a4658; background: #1d2633; color: #eef2f8; cursor: pointer; }
+.bm-status .craft:hover { border-color: #7bd389; }
+/* the AI panel */
+.ai-tabs { display: flex; gap: 4px; margin: 6px 0 8px; flex-wrap: wrap; }
+.ai-tab { padding: 5px 11px; border-radius: 8px; border: 1px solid #3a4658; background: #1d2633; color: #eef2f8; cursor: pointer; font-family: inherit; font-weight: 700; font-size: 12px; }
+.ai-tab.on { border-color: #9fd0ff; background: #24344a; }
+.ai-compute { font-size: 12px; color: #9fd0ff; margin-bottom: 6px; }
+.ai-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; font-size: 13px; }
+.ai-row input[type=range] { flex: 1; min-width: 120px; }
+.ai-cmd { display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; padding: 6px 8px; margin: 4px 0; border-radius: 8px; background: rgba(255,255,255,0.03); font-size: 13px; cursor: pointer; }
+.ai-cmd input { grid-row: span 2; margin-top: 3px; }
+.ai-cmd span { grid-column: 2; font-size: 11.5px; color: #a9b3c0; }
+.ai-cmd.locked { opacity: 0.5; cursor: default; }
+.tech-vals { font-size: 12.5px !important; gap: 4px; }
+.tech-vals svg { vertical-align: -2px; }
+/* tall dialogs (the AI, surrender terms, the market) scroll inside the screen */
+.md-box { max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+#md-text { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+@media (max-width: 640px) { .tech-vals { flex-wrap: wrap; font-size: 11px !important; row-gap: 0; } .tech-vals svg { width: 10px; height: 10px; } }

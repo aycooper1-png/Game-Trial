@@ -65,10 +65,10 @@ const CFG = {
   // Every resource can only be stockpiled so far: a country stores `base` plus `perCap` for each person its settlements
   // can house. Collectors set how fast a store fills; settlements set how much it holds. Wood and stone are generous
   // (enough for a long building spree); iron is tighter, because it is what war runs on.
-  storage: { wood: { base: 200, perCap: 5 }, stone: { base: 200, perCap: 5 }, iron: { base: 50, perCap: 1 }, oil: { base: 60, perCap: 1 }, wheat: { base: 150, perCap: 2 }, uranium: { base: 40, perCap: 0.2 }, gold: { base: 300, perCap: 2 } },
+  storage: { wood: { base: 200, perCap: 5 }, stone: { base: 200, perCap: 5 }, iron: { base: 50, perCap: 1 }, oil: { base: 60, perCap: 1 }, wheat: { base: 150, perCap: 2 }, uranium: { base: 40, perCap: 0.2 }, gold: { base: 300, perCap: 2 }, silicon: { base: 80, perCap: 0.5 }, cobalt: { base: 60, perCap: 0.4 }, chips: { base: 60, perCap: 0.4 }, batteries: { base: 40, perCap: 0.3 } },
   // AI nations keep iron under the same rule: they mine the iron in their land, plus a small trickle so none is ever unarmed.
   iron: { aiStart: 30, aiTrickle: 0.15 },
-  prodPerTile: { forest: 0.1, stone: 0.12, iron: 0.1, oil: 0.1, gold: 0.05, wheat: 0.065, uranium: 0.02 },   // stone a bit richer: it's in almost everything   // per owned, connected deposit tile, per second
+  prodPerTile: { forest: 0.1, stone: 0.12, iron: 0.1, oil: 0.1, gold: 0.05, wheat: 0.065, uranium: 0.02, silicon: 0.04, cobalt: 0.03 },   // stone a bit richer: it's in almost everything   // per owned, connected deposit tile, per second
 
   // tech = the research that unlocks it (none: known from the start). See CFG.techs.
   buildings: {
@@ -84,8 +84,10 @@ const CFG = {
     // collectors: a deposit only produces once something works it. Early on that's people.
     cabin:   { cat: 'Resources', name: "Logger's cabin", cost: { wood: 5, stone: 10 }, workers: 5, on: ['forest'],
                desc: 'Cuts the forest within 4 tiles of it. Employs 5 of the domain\'s people. Two close together share the same trees.' },
-    camp:    { cat: 'Resources', name: "Miner's camp", cost: { wood: 15, stone: 5 }, workers: 5, on: ['stone', 'iron', 'gold', 'uranium'],
+    camp:    { cat: 'Resources', name: "Miner's camp", cost: { wood: 15, stone: 5 }, workers: 5, on: ['stone', 'iron', 'gold', 'uranium', 'cobalt'],
                desc: 'Mines the stone, iron, gold (and later uranium) within 4 tiles. Carts haul what it digs to the nearest settlement. Gold is spent at the market, on rushing buildings and hiring troops, and in diplomacy; your treasury also speeds research. Employs 5 people.' },
+    refinery: { cat: 'Resources', name: 'Silicon refinery', tech: 'electronics', cost: { stone: 30, iron: 25 }, workers: 4, use: 4, on: ['silicon'],
+               desc: 'Digs the quartz sand within 4 tiles and refines it into pure silicon, for solar panels and computer chips. Silicon is rare at home and common on other worlds. Uses 4 MW.' },
     derrick: { cat: 'Resources', name: 'Oil derrick', tech: 'petroleum', cost: { stone: 15, iron: 20 }, workers: 3, on: ['oil'],
                desc: 'Pumps the oil within 4 tiles of it. Oil is only found once you research Petroleum.' },
     rig:     { cat: 'Resources', name: 'Mining rig', tech: 'electricity', cost: { wood: 20, stone: 10, iron: 10 }, use: 4,
@@ -108,19 +110,26 @@ const CFG = {
                desc: 'Burns oil for 14 MW, up to 0.3 oil/s. Only burns what the domain needs. No oil, no power.' },
     reactor: { cat: 'Energy', name: 'Nuclear reactor', tech: 'fission', cost: { stone: 80, iron: 60 }, gen: 45,
                desc: '45 MW from a trickle of uranium (up to 0.03/s). No uranium, no power.' },
-    solar:   { cat: 'Energy', name: 'Solar panel', tech: 'electricity', cost: { stone: 10, iron: 5 }, gen: 1.5,
+    solar:   { cat: 'Energy', name: 'Solar panel', tech: 'electronics', cost: { stone: 10, iron: 5, silicon: 4 }, gen: 1.5,
                desc: '1.5 MW, free, forever. Each panel takes a tile you can\'t use for anything else.' },
     // space: rockets fly from launch pads; ice drills on the polar caps make their fuel (oil does too, slower and dearer)
-    pad:     { cat: 'Space', name: 'Launch pad', tech: 'spaceflight', cost: { stone: 80, iron: 60 },
+    pad:     { cat: 'Space', name: 'Launch pad', tech: 'spaceflight', cost: { stone: 80, iron: 60, chips: 4 },
                desc: 'At home it builds a rocket for 100 iron whenever it has none, then fuels it (from ice drills, or by burning oil): tap it to fly. On any world, reusable rockets load and fuel here.' },
     drill:   { cat: 'Space', name: 'Ice drill', tech: 'spaceflight', cost: { stone: 20, iron: 25 }, use: 6,
                desc: 'Only on polar ice. Splits ice into rocket fuel, 0.5 a second on full power, straight into the rockets on your launch pads. Uses 6 MW.' },
-    receiver: { cat: 'Energy', name: 'Dyson receiver', tech: 'dyson', cost: { stone: 200, iron: 300 }, gen: 250,
+    receiver: { cat: 'Energy', name: 'Dyson receiver', tech: 'dyson', cost: { stone: 200, iron: 300, silicon: 60, chips: 30 }, gen: 250,
                desc: 'Catches the power the Dyson swarm beams down: 250 MW, on any world, once the swarm is complete (half while it is still being built). Nothing at all before.' },
-    terraformer: { cat: 'Space', name: 'Terraformer', tech: 'terraform', cost: { stone: 80, iron: 120, uranium: 10 }, use: 20, reach: 16, rate: 3,
+    terraformer: { cat: 'Space', name: 'Terraformer', tech: 'terraform', cost: { stone: 80, iron: 120, uranium: 10, chips: 10 }, use: 20, reach: 16, rate: 3,
                desc: 'Turns the dust within 16 tiles green, a few tiles a second on full power (20 MW): green land holds as many people as at home. Works on deserts anywhere.' },
-    lpad:    { cat: 'Space', name: 'Landing pad', tech: 'reusable', cost: { stone: 50, iron: 30 },
+    lpad:    { cat: 'Space', name: 'Landing pad', tech: 'reusable', cost: { stone: 50, iron: 30, chips: 3 },
                desc: 'Reusable rockets land here, on any world. Trucks take the cargo away, then tow the rocket to a launch pad to load and fuel for its next run.' },
+    // computing: chips from silicon, the central computer that runs a domain, and the data centres that feed it
+    chipfab: { cat: 'Computing', name: 'Chip factory', tech: 'electronics', cost: { stone: 40, iron: 40, silicon: 10 }, use: 6, fab: true,
+               desc: 'Turns silicon (2 each) and a little gold (0.5 each) into computer chips, about one every 12 seconds on full power. Uses 6 MW.' },
+    datacenter: { cat: 'Computing', name: 'Data center', tech: 'computing', cost: { stone: 30, iron: 30, chips: 15 }, use: 8, dc: true,
+               desc: "Feeds the domain's central computer: each one makes it 1% more effective. Once it is an AI, data centers are its brain: more of them (and more power) make it smarter. Uses 8 MW." },
+    computer: { cat: 'Computing', name: 'Central computer', tech: 'computing', cost: { stone: 120, iron: 100, chips: 40, silicon: 30, gold: 40 }, comp: true,
+               desc: 'One per domain, and power-hungry (30 MW). In its domain: everything else uses 25% less power, wheat +10%, troops train 30% faster, research 25% faster. Rockets need one to fly themselves. Upgrades: M.C.C.S., Q.C.A., and finally an AI (C.A.I.S.).' },
     // military
     base:    { cat: 'Military', name: 'Military base', tech: 'warrior', cost: { wood: 30, stone: 20 }, base: true,
                desc: 'Trains people into military units. Units wait here until you build a fortress, then march to it. Stops when everything is full.' },
@@ -151,7 +160,7 @@ const CFG = {
   // Reusable rockets: bought at a launch pad. Each run: up to a station that needs supplies, down to a landing pad
   // (or straight back), then a hop home. Each leg burns fuel; they refuel on their launch pad.
   // Reusable rockets: big freighters between worlds (and station supply on the way). Each leg burns fuel from the tank.
-  shuttle: { cost: { iron: 150, stone: 30, oil: 30 }, tank: 300, cargo: 400, people: 30, legs: { up: 110, down: 40, orbit: 20, trip: 140 },
+  shuttle: { cost: { iron: 150, stone: 30, oil: 30, cobalt: 15, chips: 12 }, tank: 300, cargo: 400, people: 30, legs: { up: 110, down: 40, orbit: 20, trip: 140 },
     time: { up: 12, down: 9, orbit: 6, trip: 0.6 }, turn: 3 },   // trip: to another world's landing pad (time: x that world's distance)
   research: { perPerson: 0.006, base: 60, growth: 1.2, goldPts: 4, aiMult: 0.5 },
   techs: [
@@ -174,10 +183,16 @@ const CFG = {
     { id: 'flight',      name: 'Flight',            era: 5, uses: ['oil', 'iron'],   tags: ['trans', 'mil'], req: ['automobile', 'electricity'] },
     { id: 'armor',       name: 'Armored Warfare',   era: 5, uses: ['oil', 'iron'],   tags: ['mil'],   req: ['automobile', 'firearms'] },
     { id: 'rocketry',    name: 'Rocketry',          era: 5, uses: ['oil', 'iron'],   tags: ['mil'],   req: ['flight'] },
+    { id: 'electronics', name: 'Electronics',       era: 5, uses: ['silicon', 'iron'], tags: ['econ'], req: ['electricity'] },
+    { id: 'batteries',   name: 'Batteries',         era: 5, uses: ['cobalt', 'iron'], tags: ['econ'], req: ['electronics'] },
+    { id: 'computing',   name: 'Computing',         era: 6, uses: ['chips', 'silicon'], tags: ['econ'], req: ['electronics'] },
+    { id: 'mccs',        name: 'Mass Central Computation', era: 7, uses: ['chips'], tags: ['econ'], req: ['computing', 'spaceflight'] },
+    { id: 'qca',         name: 'Quantum Computation', era: 8, uses: ['chips', 'cobalt'], tags: ['econ'], req: ['mccs'] },
+    { id: 'cais',        name: 'Artificial Intelligence', era: 9, uses: ['chips', 'silicon'], tags: ['econ', 'mil'], req: ['qca'] },
     { id: 'fission',     name: 'Nuclear Fission',   era: 5, uses: ['iron', 'stone'], tags: ['econ'],  req: ['electricity'] },
     { id: 'nukes',       name: 'Nuclear Weapons',   era: 6, uses: ['uranium', 'oil'], tags: ['mil'],  req: ['fission', 'rocketry'] },
     { id: 'spaceflight', name: 'Spaceflight',       era: 6, uses: ['iron', 'oil'],   tags: ['trans'], req: ['rocketry', 'electricity'] },
-    { id: 'reusable',    name: 'Reusable Rockets',  era: 7, uses: ['iron', 'oil'],   tags: ['trans'], req: ['spaceflight'] },
+    { id: 'reusable',    name: 'Reusable Rockets',  era: 7, uses: ['iron', 'cobalt'], tags: ['trans'], req: ['spaceflight', 'computing'] },
     { id: 'domes',       name: 'Bubble Habitats',   era: 7, uses: ['stone', 'iron'], tags: ['econ'],  req: ['spaceflight'] },
     { id: 'terraform',   name: 'Terraforming',      era: 8, uses: ['uranium', 'iron'], tags: ['econ'], req: ['domes', 'fission', 'reusable'] },
     { id: 'bombers',     name: 'Strategic Bombers', era: 7, uses: ['oil', 'iron'],   tags: ['mil'],   req: ['nukes', 'flight'] },
@@ -198,6 +213,12 @@ const CFG = {
     steam:        { note: 'Steamships for your fleet · trains on your rail' },
     petroleum:    { note: 'Oil deposits appear on the map' },
     electricity:  { capMult: 0.25, note: 'Bases and fortresses hold more' },
+    electronics:  { note: 'Silicon and cobalt deposits appear on the map · silicon refineries, chip factories, solar panels' },
+    batteries:    { note: 'Craft batteries in the Build menu: they store spare power and cover shortfalls' },
+    computing:    { note: 'Central computers and data centers · rockets that fly themselves' },
+    mccs:         { note: 'Upgrade a central computer to the M.C.C.S.: stronger bonuses, research +40%, rocket range x6' },
+    qca:          { note: 'Upgrade an M.C.C.S. to the Q.C.A.: research +50% more' },
+    cais:         { note: 'Upgrade a Q.C.A. to C.A.I.S.: an AI that can run parts of the domain for you' },
     automobile:   { unit: { speed: 1.8 }, fuel: true, note: 'Trucks for your cars, motorized infantry: much faster, but they burn oil' },
     flight:       { note: 'Planes to buy: they fly between your airports' },
     armor:        { unit: { hp: 2, atk: 1.5 }, capMult: 0.25, fuel: true, note: 'Tanks: far tougher and stronger, but they burn oil' },
@@ -264,7 +285,8 @@ const CFG = {
   // speeds research and training and makes your troops a little stronger: as if `perRate` gold were mined each second.
   gold: { count: 1 / 3000, train: 0.35, trainMax: 0.8, power: 0.07, powerMax: 0.2, perRate: 400 },
   oil: { count: 1 / 2600 },            // oil fields per land tile (deserts, grassland), hidden until Petroleum
-  uranium: { count: 1 / 6000 },        // uranium per land tile (mountains, deserts), hidden until Nuclear Fission
+  uranium: { count: 1 / 6000 },
+  rare: { home: 1 / 110000, away: 1 / 2600 },   // silicon and cobalt deposits per land tile: scarce at home, common elsewhere        // uranium per land tile (mountains, deserts), hidden until Nuclear Fission
   // Roads join the settlements of each domain by themselves, for free. Everything moves faster on them.
   // Other buildings join when you connect them (stone per tile). Walls join two fortresses you pick.
   // links inside one domain: worth having only between hubs at least this far apart (tiles)
@@ -732,6 +754,40 @@ Object.assign(SHAPES, {
     '.....R..........', '.....R....R.....', '....KKK..KKK....', '....RRR..RRR....', '..WWWWWWWWWWW...',
     '..WGWGWGWGWGW...', 'BBBBBBBBBBBBBBBB', '.BBBBBBBBBBBBBB.', '..RRRRRRRRRRRR..', 'wwwwwwwwwwwwwwww'],
     { K, R: '#b8432f', W: '#eef1f3', G: '#5b8fbf', B: '#2b3038', w: '#9fd0ff' }),
+  siliconI: pix(['....W....', '...WLW...', '..WLHLW..', '.WLLHLLW.', 'WLLLHLLLW', '.WLLLLLW.', '..WWWWW..'], { W: '#7d8594', L: '#d8dde6', H: '#ffffff' }),
+  cobaltI: pix(['..DDDDD..', '.DBBLBBD.', 'DBBLHLBBD', 'DBBBLBBBD', 'DBBBBBBBD', '.DBBBBBD.', '..DDDDD..'], { D: '#1d3570', B: '#3b62c4', L: '#7ea0f0', H: '#d6e2ff' }),
+  chipI: `<rect x="-9" y="-9" width="18" height="18" rx="2" fill="#1f6b43" stroke="#0e3a22" stroke-width="1.2"/>
+    <rect x="-5" y="-5" width="10" height="10" fill="#2b2f36" stroke="#c9d3dd" stroke-width="0.8"/>
+    <path d="M-12 -5 H-9 M-12 0 H-9 M-12 5 H-9 M9 -5 H12 M9 0 H12 M9 5 H12 M-5 -12 V-9 M0 -12 V-9 M5 -12 V-9 M-5 9 V12 M0 9 V12 M5 9 V12" stroke="#e0c070" stroke-width="1.4"/>`,
+  batteryI: `<rect x="-7" y="-10" width="14" height="22" rx="2" fill="#2b2f36" stroke="#0f1216" stroke-width="1.2"/>
+    <rect x="-3" y="-13" width="6" height="3" fill="#9aa1a8"/><rect x="-5" y="-2" width="10" height="12" fill="#e0e36a"/>
+    <path d="M1 -8 L-2 -2 H1 L-1 4" stroke="#e0e36a" stroke-width="1.4" fill="none"/>`,
+  refinery: `<rect x="-11" y="-6" width="24" height="20" fill="#000" opacity="0.22"/>
+    <rect x="-12" y="-2" width="16" height="13" fill="#b9c0ca" stroke="#2b3038" stroke-width="1"/>
+    <path d="M4 11 V-6 H10 V11 Z" fill="#8f97a3" stroke="#2b3038" stroke-width="1"/>
+    <path d="M5 -6 V-12 H9 V-6" fill="#6f7782" stroke="#2b3038" stroke-width="0.9"/>
+    <path d="M-12 -2 L-8 -8 H0 L4 -2 Z" fill="#9aa1a8" stroke="#2b3038" stroke-width="1"/>
+    <circle cx="-4" cy="5" r="3" fill="#eef2f8" stroke="#7d8594" stroke-width="0.8"/><path d="M-6 5 H-2 M-4 3 V7" stroke="#9fd0ff" stroke-width="0.8"/>`,
+  chipfab: `<rect x="-11" y="-5" width="24" height="19" fill="#000" opacity="0.22"/>
+    <rect x="-12" y="-4" width="24" height="15" rx="1.5" fill="#e6e9ec" stroke="#2b3038" stroke-width="1"/>
+    <path d="M-12 -4 L-6 -10 H6 L12 -4" fill="#c8ccd0" stroke="#2b3038" stroke-width="1"/>
+    <rect x="-6" y="0" width="12" height="8" fill="#1f6b43" stroke="#0e3a22" stroke-width="0.8"/>
+    <rect x="-3" y="2" width="6" height="4" fill="#2b2f36"/><path d="M-8 2 H-6 M-8 6 H-6 M6 2 H8 M6 6 H8" stroke="#e0c070" stroke-width="0.9"/>`,
+  datacenter: `<rect x="-11" y="-8" width="24" height="22" fill="#000" opacity="0.22"/>
+    <rect x="-12" y="-10" width="24" height="21" rx="1.5" fill="#3a4250" stroke="#1a1e24" stroke-width="1"/>
+    <path d="M-10 -6 H10 M-10 -1 H10 M-10 4 H10 M-10 9 H10" stroke="#1a1e24" stroke-width="1.2"/>
+    <path d="M-8 -8 H-6 M-8 -3 H-6 M-8 2 H-6 M-8 7 H-6" stroke="#7bd389" stroke-width="1.4"/>
+    <path d="M-3 -8 H-1 M-3 2 H-1" stroke="#9fd0ff" stroke-width="1.4"/><path d="M2 -3 H4 M2 7 H4" stroke="#f2c14e" stroke-width="1.4"/>`,
+  computer: `<rect x="-11" y="-9" width="24" height="23" fill="#000" opacity="0.22"/>
+    <path d="M-13 11 V-4 L0 -12 L13 -4 V11 Z" fill="#d8dde6" stroke="#1a1e24" stroke-width="1.1" stroke-linejoin="round"/>
+    <rect x="-8" y="-3" width="16" height="11" rx="1" fill="#1d2633" stroke="#1a1e24" stroke-width="0.9"/>
+    <path d="M-6 0 H-1 M-6 3 H3 M-6 6 H1" stroke="#7bd389" stroke-width="1.1"/>
+    <circle cx="0" cy="-7" r="2.2" fill="#9fd0ff" stroke="#1a1e24" stroke-width="0.7"/>`,
+  computerAI: `<rect x="-11" y="-9" width="24" height="23" fill="#000" opacity="0.22"/>
+    <path d="M-13 11 V-4 L0 -12 L13 -4 V11 Z" fill="#c9d3df" stroke="#1a1e24" stroke-width="1.1" stroke-linejoin="round"/>
+    <circle cx="0" cy="2" r="7" fill="#1d2633" stroke="#1a1e24" stroke-width="0.9"/>
+    <circle cx="0" cy="2" r="4.2" fill="#c13b2f"/><circle cx="0" cy="2" r="1.8" fill="#ffd0c8"/>
+    <circle cx="0" cy="-7" r="2.2" fill="#f2c14e" stroke="#1a1e24" stroke-width="0.7"/>`,
   uranI: pix(['...GGG...', '..GLLLG..', '.GLHHLLG.', 'GLLHLLLLG', 'GLLLLLLLG', '.GLLLLLG.', '..GGGGG..'], { G: '#2e6b1f', L: '#7ee05a', H: '#d6ffb0' }),
   reactor: `<rect x="-12" y="-10" width="27" height="24" fill="#000" opacity="0.2"/>
     <path d="M-12 12 C-9 4 -9 -2 -11 -10 H1 C-1 -2 -1 4 2 12 Z" fill="#dfe4e8" stroke="#59616b" stroke-width="1"/>
@@ -833,15 +889,15 @@ for (const [name, inner] of Object.entries(SHAPES)) {
   img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(SVG[name]);
   SPR[name] = img;
 }
-const DEP_SPRITE = { forest: 'tree', stone: 'rock', iron: 'ore', gold: 'goldI', oil: 'oilI', wheat: 'wheat', uranium: 'uranI' };
-const DEP_RES = { forest: 'wood', stone: 'stone', iron: 'iron', gold: 'gold', oil: 'oil', wheat: 'wheat', uranium: 'uranium' };
-const DEP_KINDS = ['forest', 'stone', 'iron', 'gold', 'oil', 'wheat', 'uranium'];
-const DEP_COLOR = { forest: '#3f7a35', stone: '#a7adb3', iron: '#a8654a', gold: '#e8c040', oil: '#23262b', wheat: '#e0bc4e', uranium: '#7ee05a' };
+const DEP_SPRITE = { forest: 'tree', stone: 'rock', iron: 'ore', gold: 'goldI', oil: 'oilI', wheat: 'wheat', uranium: 'uranI', silicon: 'siliconI', cobalt: 'cobaltI' };
+const DEP_RES = { forest: 'wood', stone: 'stone', iron: 'iron', gold: 'gold', oil: 'oil', wheat: 'wheat', uranium: 'uranium', silicon: 'silicon', cobalt: 'cobalt' };
+const DEP_KINDS = ['forest', 'stone', 'iron', 'gold', 'oil', 'wheat', 'uranium', 'silicon', 'cobalt'];
+const DEP_COLOR = { forest: '#3f7a35', stone: '#a7adb3', iron: '#a8654a', gold: '#e8c040', oil: '#23262b', wheat: '#e0bc4e', uranium: '#7ee05a', silicon: '#d8dde6', cobalt: '#3b62c4' };
 const BLD_CODE = { settlement: 1, station: 3, port: 4, burner: 6, rig: 7, solar: 8, cabin: 9, camp: 10, silo: 11, mortar: 12, airdef: 13, turret: 14,
-  farm: 15, farm2: 16, farm3: 17, derrick: 18, oilplant: 19, airport: 20, base: 21, fort: 22, reactor: 23, pad: 24, drill: 25, lpad: 26, terraformer: 27, receiver: 28 };
+  farm: 15, farm2: 16, farm3: 17, derrick: 18, oilplant: 19, airport: 20, base: 21, fort: 22, reactor: 23, pad: 24, drill: 25, lpad: 26, terraformer: 27, receiver: 28, refinery: 29, chipfab: 30, datacenter: 31, computer: 32 };
 const BLD_COLOR = { settlement: '#de6d4c', station: '#8f979f', port: '#a67c52',
   burner: '#8a5a44', rig: '#e0a93a', solar: '#1d3e78', cabin: '#a0683e', camp: '#c9a66b', silo: '#6c7480', mortar: '#8f7a52', airdef: '#4f7f8c', turret: '#6f7a4a',
-  farm: '#d9b24a', farm2: '#e0bc4e', farm3: '#e8c652', derrick: '#2b2f36', oilplant: '#4a4f57', airport: '#59616b', base: '#6f7a4a', fort: '#9aa1a8', reactor: '#cfd6dc', pad: '#b3b9be', drill: '#dfe8ef', lpad: '#8f979f', terraformer: '#5aa05a', receiver: '#e8d27a' };
+  farm: '#d9b24a', farm2: '#e0bc4e', farm3: '#e8c652', derrick: '#2b2f36', oilplant: '#4a4f57', airport: '#59616b', base: '#6f7a4a', fort: '#9aa1a8', reactor: '#cfd6dc', pad: '#b3b9be', drill: '#dfe8ef', lpad: '#8f979f', terraformer: '#5aa05a', receiver: '#e8d27a', refinery: '#b9c0ca', chipfab: '#2f8f5a', datacenter: '#3a4250', computer: '#9fd0ff' };
 // which building stands on tile i (an index kept beside the list; rebuilt when anything is removed)
 let bldVer = 0, bldMapVer = -1;
 const bldMap = new Map();
@@ -864,8 +920,8 @@ function ladderSteps(type, have) {
   }
   return have ? null : steps;
 }
-const RES_ICON = { wood: 'tree', stone: 'rock', iron: 'ore', oil: 'oilI', wheat: 'wheat', gold: 'goldI', uranium: 'uranI' };
-const RESOURCES = ['wood', 'stone', 'iron', 'oil', 'wheat', 'uranium', 'gold'];   // what a domain stores
+const RES_ICON = { wood: 'tree', stone: 'rock', iron: 'ore', oil: 'oilI', wheat: 'wheat', gold: 'goldI', uranium: 'uranI', silicon: 'siliconI', cobalt: 'cobaltI', chips: 'chipI', batteries: 'batteryI' };
+const RESOURCES = ['wood', 'stone', 'iron', 'oil', 'wheat', 'uranium', 'gold', 'silicon', 'cobalt', 'chips', 'batteries'];   // what a domain stores
 
 // ======================================================================
 // world state
@@ -905,6 +961,7 @@ let spawn = { x: 0, y: 0 };
 let capitalTile = 0;
 
 const game = {
+  gmode: params.get('mode') && ['peaceful', 'easy', 'normal', 'hard', 'murder'].includes(params.get('mode')) ? params.get('mode') : 'normal',   // the game mode (how the nations play)
   countries: [],          // every domain you have founded (merged ones stay, marked not alive)
   active: 0,              // the domain the HUD is showing
   population: 0, peakPop: 0,
@@ -1094,7 +1151,9 @@ function addDeposit(type, tiles) {
 // hidden oil (before Petroleum) is just plain land to the player
 const oilKnown = () => game.research.done.has('petroleum');
 const uraniumKnown = () => game.research.done.has('fission');
-const depVisible = d => d >= 0 && (deposits[d].type !== 'oil' || oilKnown()) && (deposits[d].type !== 'uranium' || uraniumKnown());
+const techKnown = () => game.research.done.has('electronics');   // silicon and cobalt: recognised once you know electronics
+const resKnown = r => (r !== 'oil' || oilKnown()) && (r !== 'uranium' || uraniumKnown()) && (!['silicon', 'cobalt', 'chips', 'batteries'].includes(r) || techKnown());
+const depVisible = d => d >= 0 && (deposits[d].type !== 'oil' || oilKnown()) && (deposits[d].type !== 'uranium' || uraniumKnown()) && (!['silicon', 'cobalt'].includes(deposits[d].type) || techKnown());
 const hasDep = i => depVisible(depositOf[i]);
 const isField = i => depositOf[i] >= 0 && deposits[depositOf[i]].type === 'wheat';
 
@@ -1149,8 +1208,14 @@ function generateWorld() {
     { type: 'gold', ok: b => b === MOUNTAIN || b === DESERT, count: game.landTiles * CFG.gold.count, min: 5, max: 10, minDist: 30 },
     { type: 'oil', ok: b => b === DESERT || b === GRASS, count: game.landTiles * CFG.oil.count, min: 8, max: 18, minDist: 45 },
     { type: 'uranium', ok: b => b === MOUNTAIN || b === DESERT, count: game.landTiles * CFG.uranium.count, min: 4, max: 9, minDist: 60 },
+    // silicon (quartz sand) and cobalt are rare at home: a few small deposits, if any. Other worlds have far more.
+    { type: 'silicon', ok: b => b === DESERT || b === GRASS, count: game.landTiles * CFG.rare.home * (0.4 + hash2(SEED, 3, 71) * 1.2), min: 2, max: 6, minDist: 50, rare: true },
+    { type: 'cobalt', ok: b => b === MOUNTAIN, count: game.landTiles * CFG.rare.home * (0.3 + hash2(SEED, 5, 73) * 1.1), min: 2, max: 5, minDist: 50, rare: true },
   ];
+  // the rare ones come last, on a dice of their own, so older maps (and saves) come out exactly as before
+  const mainRng = rng;
   for (const sp of specs) {
+    if (sp.rare && rng === mainRng) rng = mulberry32((SEED * 977 + 31) >>> 0);
     let made = 0, tries = 0;
     while (made < sp.count && tries++ < sp.count * 30) {
       const i = (rng() * N) | 0;
@@ -1162,6 +1227,7 @@ function generateWorld() {
       if (deposits.length > before) made++;
     }
   }
+  rng = mainRng;
 
   // your home country: claim the start circle, place the first settlement
   const home = newCountry({ res: { ...CFG.startResources } });
@@ -1189,6 +1255,7 @@ function generateWorld() {
   recomputeNetwork();
   home.people = Math.min(CFG.startPeople, home.cap);
   game.started = true;
+  murderStart();
   game.population = game.peakPop = home.people;
 }
 
@@ -1255,6 +1322,7 @@ function claim(i, cid, conquer = false) {
   if (aiOf[i]) {
     if (!conquer) return false;
     const n = game.nations[aiOf[i] - 1];
+    if (building[i] === BLD_CODE.settlement && liveCountry(cid)) lootNation(buildingAt(i), n, liveCountry(cid));   // their stores in it are yours
     n.tiles--; n.sx -= x; n.sy -= y;
     if (n.tiles) { n.lx = n.sx / n.tiles + 0.5; n.ly = n.sy / n.tiles + 0.5; }
     aiOf[i] = 0;                                   // their buildings on this tile are now yours
@@ -1457,6 +1525,7 @@ function aiTake(n, i) {
   if (c) game.lost.set(i, game.time);              // yours until a moment ago: your troops may take it back
   if (c && building[i] === BLD_CODE.fort) game.lostForts.set(i, game.time);   // a fortress lost: worth fighting to get back
   if (NET[i] & 2) { const w = wallAtTile(i); if (w) damageWall(w, wallMax(w)); }   // over the wall: that stretch is breached
+  if (c && building[i] === BLD_CODE.settlement) lootSettlement(buildingAt(i), c, n);   // and what was stored there
   loseSettlement(i);                               // a captured settlement's people are theirs now
   const lost = buildingAt(i);
   if (lost && underway(lost)) removeBuilding(i);   // a half-built site is simply lost
@@ -1501,8 +1570,43 @@ function aiSpot(n, px, py, rad, rnd = Math.random) {
   return -1;
 }
 // attacking a nation (taking its land, shelling it) puts it at war with you: from then on its silos fire too
+// ---------- game modes: how the other nations play ----------
+// expand/research/think: how fast they grow; aggr: how readily they go to war (with you and each other); army: troops
+// and defences they keep; talk: how much diplomacy they start; hate: how they feel about you; gang: how readily they
+// band together against you; aiWars: wars between nations
+const MODES = {
+  peaceful: { name: 'Peaceful', desc: 'No wars at all, for anyone. The nations still race you for land, trade and tech.', expand: 1, research: 1, think: 1, aggr: 0, army: 0.6, talk: 1, hate: 0, gang: 0, aiWars: 0, war: false },
+  easy:     { name: 'Easy', desc: 'Slow, mostly peaceful nations. They leave diplomacy to you, and seldom side against you in your wars.', expand: 0.55, research: 0.6, think: 0.5, aggr: 0.2, army: 0.7, talk: 0, hate: 0, gang: 0.3, aiWars: 0.5, war: true },
+  normal:   { name: 'Normal', desc: 'Sensible nations that plan, trade and make some diplomacy of their own.', expand: 1, research: 1, think: 1, aggr: 1, army: 1, talk: 1, hate: 0, gang: 1, aiWars: 1, war: true },
+  hard:     { name: 'Hard', desc: 'Sharp nations: they pick their moments, strike where you are weakest, deal shrewdly, and invest heavily in armies and fortresses.', expand: 1.2, research: 1.25, think: 1.4, aggr: 1.2, army: 1.5, talk: 1.5, hate: 0, gang: 1.3, aiWars: 1, war: true, smart: true },
+  murder:   { name: 'Murder mode', desc: 'As sharp as Hard, but every nation dislikes you, they seldom fight each other, and they readily ally against you.', expand: 1.2, research: 1.25, think: 1.4, aggr: 1.6, army: 1.5, talk: 1, hate: 45, gang: 2.5, aiWars: 0.2, war: true, smart: true },
+};
+const MODE = () => MODES[game.gmode] || MODES.normal;
+const modeName = () => MODE().name;
+// a nation you've dealt with: on Easy, the nations only talk to those who talk to them
+const engage = n => { if (n) n.engaged = true; };
+function murderStart() { if (game.gmode === 'murder' && !game.murderSet) { game.murderSet = true; for (const n of game.nations) addOp('P', n.id, -30); } }
+function setGameMode(m) {
+  if (!MODES[m] || m === game.gmode) return;
+  game.gmode = m;
+  murderStart();
+  if (!MODE().war) {                               // peace breaks out everywhere
+    for (const n of game.nations) if (n.hostile) setWar('P', n.id, false);
+    for (const A of game.nations) for (const B of game.nations) if (A.id < B.id && atWar(A.id, B.id)) setWar(A.id, B.id, false);
+    game.raids = []; game.attacks = [];
+  }
+  toast(`Mode: ${MODES[m].name}. ${MODES[m].desc}`);
+  updateCmdMenu && updateCmdMenu();
+}
+function modePicker(title, body, then) {
+  showModal(`<div class="md-title">${title}</div><div class="md-body">${body}<div class="mode-list">${Object.entries(MODES).map(([k, M]) =>
+    `<button class="mode-btn${k === (game.gmode || 'normal') ? ' sel' : ''}" data-mode="${k}"><b>${M.name}</b><span>${M.desc}</span></button>`).join('')}</div></div>`,
+    [{ label: 'Cancel', act: () => {} }]);
+  for (const el of document.querySelectorAll('#md-text [data-mode]')) el.addEventListener('click', () => { closeModal(); then(el.dataset.mode); });
+}
 function provoke(n) {
   if (!n || n.hostile || !n.alive) return;
+  if (!MODE().war) return;
   breakTreaty(n);                                  // a treaty you break: everyone hears of it
   n.hostile = true; warBegins(n);
   addOp('P', n.id, -35);
@@ -1525,6 +1629,7 @@ function atWar(a, b) {
   return game.dip.wars.has(opKey(a, b));
 }
 function setWar(a, b, on) {
+  if (on && !MODE().war) return;                   // peaceful: nobody goes to war
   if (a === 'P' || b === 'P') { const n = game.nations[a === 'P' ? b : a], was = n.hostile; n.hostile = on; if (on && !was) warBegins(n); if (!on) { game.raids = game.raids.filter(r => r.n !== n.id); if (was) forWorlds(() => wallsAfterWar(n)); } return; }
   if (on) game.dip.wars.add(opKey(a, b)); else game.dip.wars.delete(opKey(a, b));
 }
@@ -1561,7 +1666,7 @@ function callAllies(victim, attacker) {
     if (attacker === 'P' && m !== 'P' && treaty('nonagg', m)) continue;   // bound by a treaty with you
     if (m === 'P') { notify(`🛡 ${nameOf(victim)} is under attack`, `${nameOf(attacker)[0].toUpperCase() + nameOf(attacker).slice(1)} attacked your ally. Declare war on them from the diplomacy menu if you want to help.`); continue; }
     const n = game.nations[m];
-    if (Math.random() < 0.4 + getOp(m, victim) / 200 + (n.pers.aggression > 0.06 ? 0.2 : 0)) {
+    if (Math.random() < (0.4 + getOp(m, victim) / 200 + (n.pers.aggression > 0.06 ? 0.2 : 0)) * (attacker === 'P' || victim === 'P' ? (attacker === 'P' ? MODE().gang : 1) : 1)) {
       setWar(m, attacker, true); addOp(m, attacker, -30);
       if (attacker === 'P') toast(`${n.full} joins its ally ${shortOf(victim)} and declares war on you!`);
       else if (victim === 'P') toast(`Your ally ${n.full} comes to your aid and declares war on ${shortOf(attacker)}.`);
@@ -1569,7 +1674,7 @@ function callAllies(victim, attacker) {
   }
 }
 // ---------- trade: what things are worth to a nation ----------
-const PRICE = { wood: 1, stone: 1, iron: 2.5, oil: 4, wheat: 0.6, uranium: 12, gold: 6 };
+const PRICE = { wood: 1, stone: 1, iron: 2.5, oil: 4, wheat: 0.6, uranium: 12, gold: 6, silicon: 9, cobalt: 11, chips: 28, batteries: 24 };
 // the land a settlement serves: tiles of its owner within its reach, nearer to it than to any other settlement of theirs
 function settlementLand(b) {
   const side = sideOf(b.i), R = CFG.settlement.reach, bx = b.i % W, by = (b.i / W) | 0, others = game.buildings.filter(q => q !== b && q.type === 'settlement' && sideOf(q.i) === side);
@@ -1796,10 +1901,12 @@ function aiAlly(n, mode) {
 }
 
 // a nation's own research: it leans toward the kind of tech its personality likes
+const aiCompBoost = n => 1 + (n.comp || 0) * 0.25;   // a nation's central computer (Hard and Murder): see the computer section
 function aiResearch(n, dt) {
   if (!n.rcur) n.rcur = pickTech(n.R, t => (t.tags.includes(n.pers.prefer) ? 0.6 : 0.2) + Math.random() * 0.15);
   if (!n.rcur) return;
-  n.rpts += n.people * CFG.research.perPerson * CFG.research.aiMult * n.pers.research * (treaty('research', n.id) ? 1.1 : 1) * dt;
+  // paced by the same things as yours: its people (scientists), its treasury of gold, its research pacts, its computers
+  n.rpts += (n.people * CFG.research.perPerson * CFG.research.aiMult * n.pers.research * (treaty('research', n.id) ? 1.1 : 1) * aiCompBoost(n) + goldBoost(((n.stock && n.stock.gold) || 0) / CFG.gold.perRate).research) * MODE().research * dt;
   const cost = techCost(n.R);
   if (n.rpts >= cost) {
     n.rpts -= cost; n.R.add(n.rcur);
@@ -1808,11 +1915,11 @@ function aiResearch(n, dt) {
   }
 }
 // most troops a nation keeps under arms, and how fast it trains them
-const aiUnitCap = n => (20 + n.cap * n.pers.military * 0.25) * techFactor(n.R);
+const aiUnitCap = n => (20 + n.cap * n.pers.military * 0.25) * techFactor(n.R) * MODE().army;
 function aiTrain(n, dt) {
   const u = unitStats(n.R), cap = aiUnitCap(n);
   if (n.units >= cap || n.people < n.cap * 0.45) return;
-  const k = Math.min(cap - n.units, 0.18 * techFactor(n.R) * dt * (0.5 + n.pers.military * 2));
+  const k = Math.min(cap - n.units, 0.18 * techFactor(n.R) * dt * (0.5 + n.pers.military * 2) * Math.sqrt(MODE().army) * (n.comp ? 1.3 : 1));
   n.units += k; n.people -= k * u.type.people;
 }
 // your troops near a nation: all your garrisoned units, for an opportunist sizing you up
@@ -1826,10 +1933,11 @@ function aiThink(n) {
   const base = towns.length ? towns[(Math.random() * towns.length) | 0].i : idx(Math.floor(n.lx), Math.floor(n.ly));
   const has = t => n.R.has(CFG.buildings[t].tech);
   const wants = [];
-  if (has('base') && count('base') < 1 + Math.floor(n.tiles / 2500)) wants.push('base');
-  if (has('fort') && count('fort') < Math.min(3, Math.floor(n.tiles / 900 * P.defense))) wants.push('fort');
+  const arm = MODE().army;                         // hard nations invest more in armies and fortresses
+  if (has('base') && count('base') < 1 + Math.floor(n.tiles / 2500 * arm)) wants.push('base');
+  if (has('fort') && count('fort') < Math.min(3 * arm, Math.floor(n.tiles / 900 * P.defense * arm))) wants.push('fort');
   if (has('mortar') && count('mortar') < Math.min(A.maxMortars, 1 + Math.floor(n.tiles / A.tilesPerMortar))) wants.push('mortar');
-  if (has('turret') && count('turret') < Math.min(A.maxTurrets, Math.floor(n.tiles / A.tilesPerTurret * P.defense))) wants.push('turret');
+  if (has('turret') && count('turret') < Math.min(A.maxTurrets * arm, Math.floor(n.tiles / A.tilesPerTurret * P.defense * arm))) wants.push('turret');
   if (has('airdef') && count('airdef') < Math.min(A.maxAirDefs, Math.floor(n.tiles / A.tilesPerAirDef * P.defense))) wants.push('airdef');
   if (has('silo') && count('silo') < Math.min(A.maxSilos, 1 + Math.floor(n.tiles / A.tilesPerSilo))) wants.push('silo');
   if (P.id === 'turtle') wants.sort((a, b) => (CFG.buildings[b].gun || CFG.buildings[b].defense || b === 'fort' ? 1 : 0) - (CFG.buildings[a].gun || CFG.buildings[a].defense || a === 'fort' ? 1 : 0));
@@ -1853,7 +1961,7 @@ function aiThink(n) {
   }
   // 3) expand: spend people on the free land nearest its centre, like a slow, steady push
   if (n.people >= n.cap * (P.id === 'expander' ? 0.6 : A.expandAt) && n.tiles < A.maxTiles && front.length) {
-    let budget = n.people * P.expand, spent = 0;
+    let budget = n.people * P.expand * MODE().expand, spent = 0;
     const border = !!treaty('border', n.id);
     const cands = [];
     for (let k = 0; k < 50; k++) {
@@ -1873,22 +1981,26 @@ function aiThink(n) {
   } else if (!front.length) n.stuck = (n.stuck || 0) + 1;
   // 4) war. Every personality has its own reasons: boxed in, plain aggression, a weak neighbour, a tech lead.
   const touching = touchesYou(n);
-  if (!n.hostile && touching && !treaty('nonagg', n.id)) {
+  const M = MODE();
+  if (!n.hostile && touching && !treaty('nonagg', n.id) && M.war && M.aggr > 0) {
     let why = null;
-    if ((n.stuck || 0) >= A.boxedThinks) why = 'has run out of room and declared war on you!';
-    else if (Math.random() < P.aggression * 0.5 * (getOp('P', n.id) > 40 ? 0.1 : getOp('P', n.id) > 10 ? 0.4 : getOp('P', n.id) < -40 ? 1.6 : 1)) why = P.id === 'raider' ? 'is raiding your border!' : 'has turned on you: its troops are massing at your border.';
-    else if (P.strikesWeak && n.units * unitStats(n.R).power > yourStrength() * 1.6 + 10 && Math.random() < 0.15) why = 'smells weakness and has declared war on you!';
+    // a sharp nation picks its moment: you're already fighting someone else
+    const busy = M.smart && game.nations.some(m => m !== n && m.alive && m.hostile) ? 1.8 : 1;
+    if ((n.stuck || 0) >= A.boxedThinks / Math.min(1, M.aggr + 0.3)) why = 'has run out of room and declared war on you!';
+    else if (Math.random() < P.aggression * 0.5 * M.aggr * busy * (getOp('P', n.id) > 40 ? 0.1 : getOp('P', n.id) > 10 ? 0.4 : getOp('P', n.id) < -40 ? 1.6 : 1)) why = P.id === 'raider' ? 'is raiding your border!' : busy > 1 ? 'sees you busy elsewhere and has declared war on you!' : 'has turned on you: its troops are massing at your border.';
+    else if ((P.strikesWeak || M.smart) && M.aggr >= 1 && n.units * unitStats(n.R).power > yourStrength() * (M.smart ? 1.3 : 1.6) + 10 && Math.random() < 0.15) why = 'smells weakness and has declared war on you!';
     else if (P.id === 'scholar' && n.R.size >= game.research.done.size + 3 && Math.random() < 0.1) why = 'is sure its science gives it the edge, and has declared war!';
     if (why) { setWar('P', n.id, true); n.warSince = game.time; addOp('P', n.id, -25); toast(`${n.full} (${P.name}) ${why}`); callAllies('P', n.id); }
   }
   // at war: send a wave of troops into your land, aimed at your nearest settlement
   const ready = n.units >= Math.max(8, aiUnitCap(n) * 0.35);
-  if (n.hostile && ready && !treaty('truce', n.id) && game.time - (n.lastRaid ?? -99) >= P.raidEvery &&
+  if (n.hostile && ready && !treaty('truce', n.id) && game.time - (n.lastRaid ?? -99) >= P.raidEvery / Math.max(0.3, Math.min(1.3, M.aggr)) &&
       !game.raids.some(r => r.n === n.id) && touching) {
     let tgt = n.warFront.values().next().value, bd = Infinity;
     for (const b of game.buildings) {
       if (!owner[b.i]) continue;
-      const d = tileDist(b.i, n.lx, n.ly) - (b.type === 'settlement' ? 15 : 0);
+      // a sharp nation goes for your weakest spot: lightly defended, worth taking, not too far
+      const d = tileDist(b.i, n.lx, n.ly) - (b.type === 'settlement' ? 15 : 0) + (M.smart ? DEFM[b.i] * 0.6 - (b.type === 'settlement' ? 10 : 0) : 0);
       if (d < bd) { bd = d; tgt = b.i; }
     }
     const budget = Math.floor(n.units * P.raidShare);
@@ -1998,9 +2110,9 @@ const defenseAt = i => {
   return n ? Math.round(n.units || 0) : 0;
 };
 
-const depBox = () => ({ forest: 0, stone: 0, iron: 0, gold: 0, oil: 0, wheat: 0, uranium: 0 });
-const resBox = () => ({ wood: 0, stone: 0, iron: 0, oil: 0, wheat: 0, uranium: 0, gold: 0 });
-const newPower = () => ({ burners: 0, solar: 0, receivers: 0, oilplants: 0, reactors: 0, need: 0, capPow: 0, workers: 0, fields: 0,
+const depBox = () => ({ forest: 0, stone: 0, iron: 0, gold: 0, oil: 0, wheat: 0, uranium: 0, silicon: 0, cobalt: 0 });
+const resBox = () => ({ wood: 0, stone: 0, iron: 0, oil: 0, wheat: 0, uranium: 0, gold: 0, silicon: 0, cobalt: 0, chips: 0, batteries: 0 });
+const newPower = () => ({ compMW: 0, burners: 0, solar: 0, receivers: 0, oilplants: 0, reactors: 0, need: 0, capPow: 0, workers: 0, fields: 0,
   rigDep: depBox(), colDep: depBox() });
 // people not working a collector: only they can be sent on pushes and expeditions
 const freePeople = c => Math.max(0, c.people - c.pw.workers);
@@ -2653,6 +2765,7 @@ function recomputeBuildings() {
       b.peak = Math.max(b.peak ?? lvl, lvl);
     }
     if (def.use) c.pw.need += def.use;
+    if (b.type === 'computer') c.pw.compMW += COMP[b.lvl || 0].mw;   // the computer itself is exempt from its own saving
     if (b.type === 'burner') c.pw.burners++;
     if (b.type === 'solar') c.pw.solar++;
     if (b.type === 'receiver') c.pw.receivers++;
@@ -2751,6 +2864,17 @@ function outputShare(from, to) {
   const m = CFG.minShare, pop = from.people + to.people;
   return clamp(pop > 0 ? to.people / pop : 0.5, m, 1 - m) / Math.max(1, from.nLinks);
 }
+// how full a vehicle is (0 empty .. 1 full): a heavy load slows cars, carts and boats, and costs trains, planes and rockets more fuel
+const LOAD_DRAG = 0.3;
+function linkLoad(V) {
+  const c = V.cargo;
+  if (!c) return 0;
+  let t = (c.people || 0) * 2;
+  for (const r of CARGO_RES) t += c[r] || 0;
+  for (const q of c.req || []) t += boxSum(q.res || {});
+  return clamp(t / Math.max(1, tierOf(V).cargo), 0, 1);
+}
+const carFull = v => clamp(boxSum(v.cargo || {}) / Math.max(1, carProf(v).cargo), 0, 1);
 function loadAt(L, V, src, dst, end) {
   V.cargo = null; V.to = -1;
   if (!src || !dst) return;
@@ -3005,7 +3129,7 @@ const garrisonCap = b => Math.round((b.type === 'fort' ? CFG.military.fortCap : 
 function researchTick(dt, gold) {
   const RS = game.research;
   if (!RS.cur) { RS.cur = pickTech(RS.done, playerTechScore()); if (!RS.cur) { RS.rate = 0; return; } }
-  RS.rate = (totalPop() + stationPeople() * CFG.station.research) * CFG.research.perPerson * pactBoost();   // people in space are all scientists; research pacts help
+  RS.rate = (researchPeople() + stationPeople() * CFG.station.research) * CFG.research.perPerson * pactBoost();   // people in space are all scientists; research pacts help
   RS.gold = goldBoost(gold).research;
   RS.pts += (RS.rate + RS.gold) * dt;
   const cost = techCost(RS.done);
@@ -3017,6 +3141,7 @@ function completeTech(id, quiet = false) {
   graphVer++;
   if (id === 'petroleum') { revealOil('oil'); game.bldDirty = true; }
   if (id === 'fission') { revealOil('uranium'); game.bldDirty = true; }
+  if (id === 'electronics') { revealOil('silicon'); revealOil('cobalt'); game.bldDirty = true; }
   if (quiet) return;
   notify(`🔬 ${t.name} discovered`, techSummary(id));
   if (id === 'spaceflight' && !myStations().length) setTimeout(() => notify('★ Next step: a space station', game.buildings.some(b => b.type === 'pad' && owner[b.i]) ? 'Open your launch pad (it is glowing) and press “Build a space station”. Its rocket flies itself into orbit.' : 'Build a launch pad (Build menu, Space). Once its rocket is fuelled, press “Build a space station” on the pad. It flies itself into orbit.'), 600);
@@ -3245,6 +3370,7 @@ function canBuild(i, type) {
   } else if (hasDep(i) && !isField(i) && (!def.on || def.farm)) return "Can't build on a resource deposit (collectors can go beside it)";
   if (type === 'port' && !isCoastal(i)) return 'Ports must be on the coast';
   if (type === 'drill' && biome[i] !== POLAR) return 'Ice drills go on the polar ice caps';
+  if (type === 'computer' && game.buildings.some(q => q.type === 'computer' && countryAt(q.i) === countryAt(i))) return 'A domain has only one central computer (upgrade it instead)';
   return null;
 }
 function planFor(i, type) {
@@ -3721,10 +3847,11 @@ function carGo(v, x, y, act) {
 const carLoad = v => boxSum(v.cargo);
 // the next job for an idle car: a construction site whose goods are ready, an oil run to a base, the best pickup
 function carNextJob(v, C) {
-  // 1) construction: its materials are taken from the domain's stock at the settlement nearest the site
+  // 1) construction: its materials are fetched from the settlement that holds the most of them (not too far off)
   for (const b of game.buildings) {
     if (!b.site || b.site.car != null || !b.site.ready || countryAt(b.i) !== C || boxSum(b.site.need) >= 0.01) continue;
-    const S = nearestSettlement(C, ...tileCenter(b.i));
+    const main = Object.entries(b.site.cost || {}).sort((p, q) => q[1] - p[1])[0];
+    const S = main ? sourceSettlement(C, main[0], ...tileCenter(b.i), nearestSettlement(C, ...tileCenter(b.i))) : nearestSettlement(C, ...tileCenter(b.i));
     if (!S) { finishSite(b); continue; }
     b.site.car = v.id;
     v.job = { type: 'site', site: b.i, from: S.i };
@@ -4035,7 +4162,7 @@ function stepCars(dt) {
     const T = FLEET.car.tiers[v.tier];
     if (T.fuel && C.noOil) v.down = true;
     if (v.pts) {
-      moveAlong(v, dt);
+      moveAlong(v, dt * (1 - LOAD_DRAG * carFull(v)));   // a full load: 30% slower
       v.moving = true;
       if (v.done) carArrive(v, C);
       continue;
@@ -4163,7 +4290,7 @@ function militaryTick(dt) {
     if (!C || b.units >= cap || C.people < C.cap * M.keep + us.type.people) continue;
     // late units need oil: it's carted out to the base from the nearest settlement
     b.wantOil = !!us.type.oil && (b.oil || 0) < 4;     // a car brings oil out from the nearest settlement
-    let n = Math.min(M.train * tf * (1 + goldBoost().train) * dt, cap - b.units);
+    let n = Math.min(M.train * tf * (1 + goldBoost().train) * (1 + ((C.fx && C.fx.train) || 0)) * dt, cap - b.units);
     if (us.type.oil) n = Math.min(n, Math.max(0, b.oil || 0) / us.type.oil);
     if (n <= 0) continue;
     C.people -= n * us.type.people;
@@ -4281,6 +4408,7 @@ function seaCrossing(beach) {
 // (a base only goes first when it's nearer than any fortress with troops, or the fortresses run dry).
 // If your land doesn't touch theirs, the troops march across the gap (if it's within reach) and take a foothold.
 function launchAttack(n, tx, ty) {
+  if (!MODE().war) { toast('Peaceful mode: no wars. Change the mode from the Command menu.'); return false; }
   if (treaty('truce', n.id)) { toast(`You have a ceasefire with ${n.short} for ${fmtLeft(treaty('truce', n.id))}.`); return false; }
   const plan = strikePlan(n, tx, ty);
   if (!plan) { toast(`${n.full} is out of reach there: your troops can strike up to ${strikeReach()} tiles past your border (more with Equestrianism, Automobiles and Flight).`); return false; }
@@ -4562,7 +4690,7 @@ function tick(dt, global = true) {
   let pop = 0, gold = 0;
   const WH = CFG.wheat, F = CFG.fuel, B = CFG.buildings;
   // what burns oil (and wood, for early steamships) in each domain this second
-  for (const c of game.countries) { c.fuel = 0; c.fuelWood = 0; c.prod = resBox(); c.goldRate = 0; }
+  for (const c of game.countries) { c.fuel = 0; c.fuelWood = 0; c.prod = resBox(); c.goldRate = 0; c.fx = c.alive ? compFx(c) : null; }
   const R0 = game.research.done;
   for (const v of game.cars) { const T = tierOf(v); if (T.fuel && v.moving) { const C = liveCountry(v.country); if (C) C.fuel += T.fuel; } }
   for (const L of game.links) {                   // boats and planes burn fuel at both ends of their route, half each
@@ -4571,8 +4699,9 @@ function tick(dt, global = true) {
     for (const V of L.ships || []) {
       const T = tierOf(V);
       if (!T.fuel || V.grounded) continue;
+      const heavy = V.kind === 'plane' ? 1 + 0.6 * linkLoad(V) : 1;   // a laden plane burns more
       if (V.kind === 'boat' && !R0.has('petroleum')) { A.fuelWood += T.woodFuel / 2; Bc.fuelWood += T.woodFuel / 2; }
-      else { A.fuel += T.fuel / 2; Bc.fuel += T.fuel / 2; }
+      else { A.fuel += T.fuel * heavy / 2; Bc.fuel += T.fuel * heavy / 2; }
     }
   }
   const ut = unitStats(R0).type, perUnit = ut.tech === 'armor' ? F.tank : ut.tech === 'automobile' ? F.motor : 0;
@@ -4594,7 +4723,7 @@ function tick(dt, global = true) {
     for (const k of DEP_KINDS) {
       const n = b.work[k];
       if (!n) continue;
-      const rate = k === 'wheat' ? n * WH.perTile * farm * C.staff * worldFarm() : n * CFG.prodPerTile[k] * (rig ? CFG.power.rigMult * (C.sat ?? 1) : C.staff);
+      const rate = k === 'wheat' ? n * WH.perTile * farm * C.staff * worldFarm() * (1 + ((C.fx && C.fx.wheat) || 0)) : n * CFG.prodPerTile[k] * (rig ? CFG.power.rigMult * (C.sat ?? 1) : b.type === 'refinery' ? C.staff * (C.sat ?? 1) : C.staff);
       if (k === 'gold') { gold += rate; C.goldRate += rate; }
       const r = DEP_RES[k];
       b.buf[r] = (b.buf[r] || 0) + rate * dt; C.prod[r] += rate;
@@ -4609,7 +4738,14 @@ function tick(dt, global = true) {
     // Short of power, every machine in the domain slows down evenly.
     const P = c.pw;
     const beamed = P.receivers * B.receiver.gen * dysonPower();   // free power from the Dyson swarm
-    let need = P.need + (c.trainMW || 0), made = Math.min(need, P.solar * B.solar.gen + beamed);
+    // the computer cuts what everything else uses; the AI draws its share of the spare power; batteries soak up the rest
+    const fx = c.fx || compFx(c), ai = aiOfDomain(c);
+    const base = (P.need + (c.trainMW || 0)) * (1 - fx.power) + P.compMW;
+    c.aiMW = ai ? aiState(ai).energy * Math.max(0, ((c.mw && c.mw.max) || 0) - base) : 0;
+    const batCap = (c.res.batteries || 0) * BATTERY.store, batRate = (c.res.batteries || 0) * BATTERY.rate;
+    c.charge = Math.min(c.charge || 0, batCap);
+    const charging = batCap - c.charge > 0.5 ? Math.min(batRate, (batCap - c.charge) / Math.max(dt, 1e-3)) : 0;
+    let need = base + c.aiMW + charging, made = Math.min(need, P.solar * B.solar.gen + beamed);
     const burnFrom = (count, gen, perMax, stock) => {
       const max = count * gen;
       let out = Math.min(Math.max(0, need - made), max), use = max ? out / gen * (perMax) : 0;
@@ -4621,6 +4757,10 @@ function tick(dt, global = true) {
     const op = burnFrom(P.oilplants, B.oilplant.gen, F.oilplant, c.res.oil - c.fuel * dt);
     const bn = burnFrom(P.burners, B.burner.gen, CFG.power.burnerWood, c.res.wood);
     c.res.uranium -= rx.use * dt; c.fuel += op.use; c.res.wood -= bn.use * dt;
+    need -= charging;                              // the batteries take what's left over, or cover a shortfall
+    if (made >= need) c.charge = Math.min(batCap, c.charge + (made - need) * dt);
+    else { const take = Math.min(need - made, batRate, c.charge / Math.max(dt, 1e-3)); made += take; c.charge -= take * dt; }
+    made = Math.min(made, need);
     c.sat = need > 0 ? Math.min(1, made / need) : 1;
     c.mw = { gen: made, max: P.solar * B.solar.gen + beamed + rx.max + op.max + bn.max, need, burn: bn.use };
     c.housing = c.capBase + P.capPow * c.sat;
@@ -4677,6 +4817,9 @@ function tick(dt, global = true) {
   for (const a of game.armies) stepArmy(a, dt);
   game.armies = game.armies.filter(a => !a.done);
   stepRepairs(dt);
+  stepInventories(dt);
+  stepChipFabs(dt);
+  stepAIs(dt);
   stepCars(dt);
   if (global) { stepSpace(dt); stepColonyShips(dt); stepShipments(dt); stepDyson(dt); stepIPBMs(dt); }
   stepBombers(dt);
@@ -4705,7 +4848,7 @@ function tick(dt, global = true) {
       if (b.type === 'settlement') game.landDirty = true;
     }
   }
-  if (aiTimer > CFG.ai.think) { aiTimer = 0; if (global) for (const n of game.nations) aiThink(n); }
+  if (aiTimer > CFG.ai.think / Math.max(1, MODE().think)) { aiTimer = 0; if (global) for (const n of game.nations) if (Math.random() < MODE().think) aiThink(n); }   // easy nations think half as often; hard ones more often
   if (global) stepNationsWorld(dt);
   if (global) for (const n of game.nations) {
     if (!n.alive) continue;
@@ -4722,6 +4865,9 @@ function tick(dt, global = true) {
     if (n.R.has("petroleum")) S.oil = Math.min(scap * 0.5, S.oil + n.tiles * 0.0003 * dt);
     if (n.R.has('fission')) S.uranium = Math.min(60, S.uranium + n.tiles * 0.00004 * dt);
     S.gold = Math.min(scap * 0.6, (S.gold || 0) + n.tiles * 0.0002 * dt);   // their treasury
+    if (n.R.has('electronics')) { S.silicon = Math.min(60, (S.silicon || 0) + n.tiles * 0.00002 * dt); S.cobalt = Math.min(50, (S.cobalt || 0) + n.tiles * 0.000015 * dt); }
+    // on Hard and Murder, an advanced nation runs its own central computer (and in time an AI)
+    n.comp = MODE().smart ? ['computing', 'mccs', 'qca', 'cais'].filter(t => n.R.has(t)).length : 0;
     // and regrow toward their capacity
     if (!(n.people > 0)) n.people = 0;               // never below zero (a nuked or emptied nation)
     if (n.people >= n.cap || n.cap <= 0) { n.growth = 0; n.people = Math.min(n.people, Math.max(0, n.cap)); continue; }
@@ -4763,15 +4909,15 @@ function tick(dt, global = true) {
       if (V.kind === 'rail') {                     // a train burns wood, oil or power from the domain it's leaving
         if (!from) { V.stalled = true; continue; }
         if (V.tier < 0 || V.stalled) { const t = trainTier(from, V.tier); if (t < 0) { V.stalled = true; continue; } V.tier = t; V.stalled = false; }   // fuel back: it runs again
-        const TT = FLEET.rail.tiers[V.tier];
-        if (TT.wood) { if (from.res.wood < TT.wood * dt) V.stalled = true; else from.res.wood -= TT.wood * dt; }
-        if (TT.oil) { if (from.res.oil < TT.oil * dt) V.stalled = true; else { from.res.oil -= TT.oil * dt; from.fuel += TT.oil; } }
-        if (TT.mw) from.trainMW += TT.mw;
+        const TT = FLEET.rail.tiers[V.tier], heavy = 1 + linkLoad(V);   // a full train burns twice what an empty one does
+        if (TT.wood) { if (from.res.wood < TT.wood * heavy * dt) V.stalled = true; else from.res.wood -= TT.wood * heavy * dt; }
+        if (TT.oil) { if (from.res.oil < TT.oil * heavy * dt) V.stalled = true; else { from.res.oil -= TT.oil * heavy * dt; from.fuel += TT.oil * heavy; } }
+        if (TT.mw) from.trainMW += TT.mw * heavy;
         if (V.stalled && from) { V.tier = trainTier(from, V.tier); V.stalled = V.tier < 0; }
         if (V.stalled) continue;
       } else if (T.fuel && from && (V.kind === 'boat' && !game.research.done.has('petroleum') ? from.noWood : from.noOil)) V.down = true;
       V.grounded = V.kind === 'plane' && V.down && V.tier === 0;   // a propeller plane with no oil can't fly at all
-      const speed = V.grounded ? 0 : tierOf(V).speed * (L.kind === 'air' ? 1 : 1);
+      const speed = V.grounded ? 0 : tierOf(V).speed * (V.kind === 'boat' ? 1 - LOAD_DRAG * linkLoad(V) : 1);   // a laden boat is slower
       if (V.cargo === undefined) loadAt(L, V, V.dir > 0 ? A : B, V.dir > 0 ? B : A, V.dir > 0 ? 'a' : 'b');   // a new one loads at its first stop
       V.t += speed * dt * V.dir;
       if (V.t >= end) { V.t = end; V.dir = -1; unloadAt(V, B, L.b); if (B) atHub(V, B); loadAt(L, V, B, A, 'b'); }
@@ -4841,7 +4987,7 @@ function worldSave() {
     for (const n of game.nations) n._back = 0;
     for (const r of game.raids) game.nations[r.n]._back += r.budget;
     const data = {
-      v: SAVE_V, seed: SEED, savedAt: Date.now(), time: game.time, active: game.active, peakPop: game.peakPop,
+      v: SAVE_V, seed: SEED, savedAt: Date.now(), gmode: game.gmode, time: game.time, active: game.active, peakPop: game.peakPop,
       sendPct: game.sendPct, troopPct: game.troopPct, recruit: game.recruit, warhead: game.warhead, debug: !!game.debug,
       connects: game.connects.map(c => [c.a, c.b, packLine(c)]), walls: game.walls.map(w => [w.a, w.b, packLine(w), { dmg: w.dmg || 0, up: w.up || null, stock: w.stock || 0 }]),
       roads: roads.map(r => ({ k: r.key, s: r.side, a: r.a, b: r.b, c: r.cut ?? null, p: packLine(r) })),
@@ -4854,9 +5000,9 @@ function worldSave() {
       }),
       dip: { op: game.dip.op, wars: [...game.dip.wars] }, treaties: game.treaties, alliances: game.alliances, autoDefend: game.autoDefend,
       nations: game.nations.map(n => ({ people: n.people, alive: n.alive, hostile: !!n.hostile, iron: n.iron ?? CFG.iron.aiStart, stock: n.stock,
-        units: n.units + n._back, R: [...n.R], rpts: n.rpts, pers: n.pers, lastRaid: n.lastRaid ?? null, outposts: n.outposts || null, trades: n.trades || null, war0: n.war0 || null })),
+        units: n.units + n._back, R: [...n.R], rpts: n.rpts, pers: n.pers, lastRaid: n.lastRaid ?? null, outposts: n.outposts || null, trades: n.trades || null, war0: n.war0 || null, engaged: !!n.engaged })),
       buildings: game.buildings.map(b => ({ i: b.i, t: b.type, ready: b.ready || 0, units: (b.units || 0) + (homeUnits.get(b.i) || 0), oil: b.oil || 0,
-        buf: b.buf && boxSum(b.buf) >= 0.5 ? b.buf : null,
+        buf: b.buf && boxSum(b.buf) >= 0.5 ? b.buf : null, lvl: b.lvl || undefined, ai: b.ai ? { ...b.ai, asked: 0 } : undefined, inv: b.type === 'settlement' && b.inv ? Object.fromEntries(Object.entries(b.inv).map(([r, v]) => [r, Math.round(v * 10) / 10])) : undefined,
         sp: b.type === 'pad' ? { rocket: b.rocket ? b.rocket.fuel : null, supply: b.supply || null, paused: !!b.paused, only: !!b.shuttleOnly } : undefined,
         site: b.site ? { type: b.site.type, need: b.site.need, country: b.site.country, cost: b.site.cost } : null,
         field: b.field != null && deposits[b.field] ? deposits[b.field].tiles : null })),
@@ -4903,6 +5049,7 @@ function loadGame(sv) {
     if (sn.outposts) n.outposts = sn.outposts;
     if (sn.trades) n.trades = sn.trades;
     if (sn.war0) n.war0 = sn.war0;
+    n.engaged = !!sn.engaged;
   });
   const RS = sv.research || {};
   if (home) { game.research.done = new Set(RS.done || []); game.research.cur = RS.cur || null; game.research.pts = RS.pts || 0; }
@@ -4920,6 +5067,9 @@ function loadGame(sv) {
     if (sb.units) b.units = sb.units;
     if (sb.oil) b.oil = sb.oil;
     if (sb.buf) b.buf = sb.buf;
+    if (sb.inv) b.inv = sb.inv;
+    if (sb.lvl) b.lvl = sb.lvl;
+    if (sb.ai) b.ai = sb.ai;
     if (sb.sp) { if (sb.sp.rocket != null) b.rocket = { fuel: sb.sp.rocket, told: true }; b.supply = sb.sp.supply; b.paused = sb.sp.paused; b.shuttleOnly = sb.sp.only; }
     if (sb.site) b.site = { ...sb.site, cost: sb.site.cost || {} };   // its delivery (if one was on the way) sets out again
     if (sb.field) {
@@ -4946,7 +5096,7 @@ function loadGame(sv) {
   }
   game.active = sv.active;
   if (home) {
-    Object.assign(game, { debug: !!sv.debug, time: sv.time, peakPop: sv.peakPop, sendPct: sv.sendPct || 25, troopPct: sv.troopPct || 50, recruit: sv.recruit !== false, warhead: sv.warhead || 'conventional' });
+    Object.assign(game, { murderSet: true, gmode: MODES[sv.gmode] ? sv.gmode : 'normal', debug: !!sv.debug, time: sv.time, peakPop: sv.peakPop, sendPct: sv.sendPct || 25, troopPct: sv.troopPct || 50, recruit: sv.recruit !== false, warhead: sv.warhead || 'conventional' });
     game.dip = { op: (sv.dip && sv.dip.op) || {}, wars: new Set((sv.dip && sv.dip.wars) || []) }; game.treaties = sv.treaties || [];
     game.alliances = sv.alliances || []; game.autoDefend = sv.autoDefend !== false;
     game.fleetTarget = sv.fleetTarget || { car: 0, boat: 0, plane: 0 };
@@ -4986,10 +5136,10 @@ function loadGame(sv) {
   game.savedAt = game.time;
   if (home) (sv.worlds || []).forEach((sw, w) => { if (sw && WORLDS[w]) { genWorld(w); onWorld(w, () => loadGame(sw)); } });
 }
-function newGame() {
+function newGame(mode) {
   noSave = true;                                   // don't let the unload autosave bring the old game back
   try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* storage blocked: nothing to clear */ }
-  location.search = '';
+  location.search = mode && mode !== 'normal' ? '?mode=' + mode : '';
 }
 
 // ---------- weapons: mortars (short range, quick) and missile silos (long range, slow, powered) ----------
@@ -5254,6 +5404,8 @@ function tileColor(i) {
     else if (t === 'gold') c = mix([226, 190, 70], [176, 140, 40], hash2(x, y, SEED + 4) * 0.6);
     else if (t === 'oil') c = mix([48, 44, 40], [24, 22, 22], hash2(x, y, SEED + 5) * 0.6);
     else if (t === 'uranium') c = mix([96, 150, 70], [60, 96, 50], hash2(x, y, SEED + 6) * 0.6);
+    else if (t === 'silicon') c = mix([226, 230, 238], [176, 182, 196], hash2(x, y, SEED + 7) * 0.6);   // pale quartz sand
+    else if (t === 'cobalt') c = mix([70, 104, 190], [40, 62, 128], hash2(x, y, SEED + 8) * 0.6);     // blue-veined rock
     else c = (x + y) % 2 ? [226, 192, 92] : [212, 176, 76];          // wheat, in rows
   }
   const j = (hash2(x, y, SEED + 9) - 0.5) * (b === OCEAN ? 4 : 10);
@@ -6440,7 +6592,7 @@ function drawBodyGeneric(b, z) {
   ctx.imageSmoothingEnabled = true;
   if (showLabel && rr < 160) pill(sx, sy + rr * (b.rings ? b.rings.outer : 1) + 22, b.name, { fg: b.label, size: 12 });
 }
-function drawOuterBodies(z) { for (const id of DRAW_ORDER) drawBodyGeneric(BODY[id], z); }
+function drawOuterBodies(z) { for (const id of DRAW_ORDER) if (id !== skyHide) drawBodyGeneric(BODY[id], z); }
 
 // ======================================================================
 // everything you can lock onto, in hit-test order (small moons first, the sun last)
@@ -6639,7 +6791,7 @@ function drawTrain(L, V, z) {
     }
   }
 }
-const RES_COLOR = { wood: '#8a5a34', stone: '#9aa1a8', iron: '#b4613d', oil: '#2b2f36', wheat: '#e0bc4e', uranium: '#7ee05a', gold: '#f2c14e' };
+const RES_COLOR = { wood: '#8a5a34', stone: '#9aa1a8', iron: '#b4613d', oil: '#2b2f36', wheat: '#e0bc4e', uranium: '#7ee05a', gold: '#f2c14e', silicon: '#d8dde6', cobalt: '#3b62c4', chips: '#2f8f5a', batteries: '#e0e36a' };
 // yards: goods waiting at a station, port or airport, shown as crates and a badge of what's there
 function drawYards(z) {
   if (z < 2) return;
@@ -6760,9 +6912,10 @@ function drawTroops(z) {
 // The Dyson swarm: a launch pad at home builds one enormous rocket (slowly, and at a huge price). Launched, it flies
 // itself to the sun and spends a while building the swarm. From then on every Dyson receiver, on any world, pours
 // out power. game.dyson: { stage: 'none'|'building'|'ready'|'flying'|'swarming'|'done', pad, t, T, x, y }
-const DYSON = { cost: { iron: 4000, stone: 2500, uranium: 400, oil: 1200 }, build: 90, fly: 40, swarm: 120 };
+const DYSON = { cost: { iron: 4000, stone: 2500, uranium: 400, oil: 1200, silicon: 400, chips: 150, cobalt: 120 }, build: 90, fly: 40, swarm: 120 };
 function dysonStage() { return (game.dyson && game.dyson.stage) || 'none'; }
 function buildDysonRocket(b) {
+  if (needsComputer('The Dyson swarm rocket')) return;
   const C = countryAt(b.i), miss = missingFor(DYSON.cost, C);
   if (dysonStage() !== 'none') return toast('There is already a Dyson swarm rocket');
   if (miss) return toast(`The Dyson swarm rocket needs ${costText(DYSON.cost)}: ${C.short} is short of ${miss}`);
@@ -6774,6 +6927,7 @@ function buildDysonRocket(b) {
 function launchDyson() {
   const D = game.dyson;
   if (!D || D.stage !== 'ready') return;
+  if (needsComputer('The Dyson swarm rocket')) return;
   const [x, y] = tileCenter(D.pad);
   Object.assign(D, { stage: 'flying', t: 0, T: DYSON.fly, x0: x, y0: y });
   toast('The Dyson swarm rocket is away, flying itself to the sun.');
@@ -6822,7 +6976,7 @@ function drawDyson(z) {
 }
 
 // ---------- nuclear bombers: from an airport, anywhere on this world; terribly expensive, and easy to shoot down ----------
-const BOMBER = { cost: { iron: 300, oil: 250, uranium: 40 }, speed: 20, range: 700, airdef: 0.45, fort: 0.12, fighters: 0.06 };
+const BOMBER = { cost: { iron: 300, oil: 250, uranium: 40, cobalt: 15, chips: 8 }, speed: 20, range: 700, airdef: 0.45, fort: 0.12, fighters: 0.06 };
 function bomberAirports() { return game.buildings.filter(b => b.type === 'airport' && owner[b.i] && !underway(b)); }
 function sendBomber(tx, ty) {
   const A = bomberAirports().sort((p, q) => tileDist(p.i, tx, ty) - tileDist(q.i, tx, ty))[0];
@@ -6905,13 +7059,14 @@ function setBombing(on) {
 }
 
 // ---------- interplanetary missiles: a silo on any world can strike any other world ----------
-const IPBM = { trip: 0.35, extra: { uranium: 20, oil: 60 } };   // flight time: x that world's distance
+const IPBM = { trip: 0.35, extra: { uranium: 20, oil: 60, chips: 10 } };   // flight time: x that world's distance
 function ipbmSilos() {
   const out = [];
   for (const P of WORLDS) if (P.id !== WORLD && worldGenerated(P.id)) for (const { b } of worldBuildings(P.id, 'silo')) out.push({ w: P.id, b });
   return out;
 }
 function fireIPBM(tx, ty) {
+  if (needsComputer('An interplanetary missile')) return;
   const S = ipbmSilos().find(o => (o.b.ready || 0) <= game.time);
   if (!S) return toast(ipbmSilos().length ? 'Every silo on your other worlds is reloading' : 'No missile silo on your other worlds');
   const nuke = game.warhead === 'nuke' && game.research.done.has('nukes');
@@ -7077,6 +7232,10 @@ function opTarget(a, b) {
   }
   if (n.pers.id === 'warlord') t -= 10;
   if (n.pers.id === 'scholar' || n.pers.id === 'turtle') t += 5;
+  if (isP) {
+    t -= MODE().hate;                              // Murder mode: they simply don't like you
+    if (MODE().smart && yourStrength() > Math.max(...game.nations.filter(m => m.alive).map(m => m.units * unitStats(m.R).power), 1) * 1.3) t -= 10;   // sharp nations distrust the strongest player
+  }
   return t;
 }
 function driftOpinions() {
@@ -7099,7 +7258,7 @@ function aiRelations() {
       for (const [X, Y, sx, sy] of [[A, B, sa, sb], [B, A, sb, sa]]) {
         const cool = game.time - ((X.peaceAt || {})[Y.id] ?? -999) < 150;
         if (cool || !canReach(X, Y)) continue;
-        const p = X.pers.aggression * 0.45 * (op < -40 ? 2.2 : op < -10 ? 1.2 : op < 20 ? 0.5 : 0.08) * (sx > sy * 1.3 ? 1.6 : sx < sy * 0.7 ? 0.3 : 1) * ((X.stuck || 0) >= 4 ? 2 : 1);
+        const p = MODE().aiWars * X.pers.aggression * 0.45 * (op < -40 ? 2.2 : op < -10 ? 1.2 : op < 20 ? 0.5 : 0.08) * (sx > sy * 1.3 ? 1.6 : sx < sy * 0.7 ? 0.3 : 1) * ((X.stuck || 0) >= 4 ? 2 : 1);
         if (Math.random() < p) {
           setWar(X.id, Y.id, true); addOp(X.id, Y.id, -25);
           callAllies(Y.id, X.id);
@@ -7118,8 +7277,9 @@ function aiRelations() {
       }
     }
     // alliances: friends band together, especially against a shared enemy (you, perhaps)
-    if (!war && op > 30 && Math.random() < 0.12) {
-      const alA = allianceOf(A.id), alB = allianceOf(B.id), both = getOp('P', A.id) < -35 && getOp('P', B.id) < -35;
+    const both = getOp('P', A.id) < -35 && getOp('P', B.id) < -35;   // a shared dislike of you draws them together (more so in Murder mode)
+    if (!war && op > (both ? 30 / MODE().gang : MODE().smart ? 22 : 30) && Math.random() < 0.12 * Math.min(2, MODE().talk || 0.5)) {
+      const alA = allianceOf(A.id), alB = allianceOf(B.id);
       if (!alA && !alB) {
         const al = makeAlliance(A.id, B.id);
         news(`🤝 ${al.name[4].toUpperCase() + al.name.slice(5)} founded`, `${A.full} and ${B.full} have formed ${al.name}${both ? ', and neither of them likes you' : ''}.`, both || cares(A) || cares(B));
@@ -7176,10 +7336,11 @@ function aiOffers() {
   const C0 = activeCountry();
   if (!C0 || document.querySelectorAll('#notes .nbtns').length >= 2) return;   // don't pile offers up
   const near = n => game.countries.some(c => c.alive && c.tiles && Math.hypot(c.lx - n.lx, c.ly - n.ly) < 260);
-  const live = game.nations.filter(n => n.alive && n.tiles && (touchesYou(n) || near(n) || Math.abs(getOp('P', n.id)) > 20 || allied('P', n.id)));
+  // on Easy only the nations you've dealt with come to you; on Hard they take the initiative more
+  const live = game.nations.filter(n => n.alive && n.tiles && (MODE().talk > 0 || n.engaged) && (touchesYou(n) || near(n) || Math.abs(getOp('P', n.id)) > 20 || allied('P', n.id)));
   if (!live.length) return;
   const n = live[(Math.random() * live.length) | 0], op = getOp('P', n.id), C = nearestDomain(n.lx, n.ly) || C0;
-  if (game.time - (n.offerAt ?? -999) < 420) return;   // each nation proposes something only every 7 minutes or so
+  if (game.time - (n.offerAt ?? -999) < 420 / Math.max(0.7, MODE().talk || 1)) return;   // each nation proposes something only every 7 minutes or so
   const mine = allianceOf('P'), theirs = allianceOf(n.id);
   const ideas = [];
   // peace, with something to sweeten it, from a nation that's losing
@@ -7279,10 +7440,10 @@ function stepNationsWorld(dt) {
 // worldData[w] while another world is swapped in. Research, diplomacy, nations and space are shared.
 const WORLDS = [
   { id: 0, key: 'home', name: 'Home', short: 'Home' },
-  { id: 1, key: 'moon', name: 'the Moon', short: 'Moon', body: 'moon', trip: 30, cap: 0.22, farm: 0.45, dome: 45, deps: ['stone', 'iron', 'gold', 'uranium'],
+  { id: 1, key: 'moon', name: 'the Moon', short: 'Moon', body: 'moon', trip: 30, cap: 0.22, farm: 0.45, dome: 45, deps: ['stone', 'iron', 'gold', 'uranium', 'silicon', 'cobalt'],
     gen: { waterFraction: 0, desertShare: 1, mountainShare: 0.08, continentScale: 150, poles: { start: 0.86, wobble: 0.04, strait: 0.0 } }, craters: 260,
     blurb: 'Grey dust and craters, ice at the poles. Nothing grows outside the domes.' },
-  { id: 2, key: 'aries', name: 'Aries', short: 'Aries', body: 'aries', trip: 80, cap: 0.3, farm: 0.6, dome: 55, deps: ['stone', 'iron', 'gold', 'uranium', 'oil'],
+  { id: 2, key: 'aries', name: 'Aries', short: 'Aries', body: 'aries', trip: 80, cap: 0.3, farm: 0.6, dome: 55, deps: ['stone', 'iron', 'gold', 'uranium', 'oil', 'silicon', 'cobalt'],
     gen: { waterFraction: 0.1, desertShare: 1, mountainShare: 0.16, continentScale: 190, poles: { start: 0.8, wobble: 0.06, strait: 0.02 } }, craters: 70,
     blurb: 'The red planet: rust deserts, old canyons and frozen poles. Terraform it green.' },
 ];
@@ -7371,8 +7532,12 @@ function scatterDeposits(kinds) {
     { type: 'gold', ok: b => b === MOUNTAIN || b === DESERT, count: game.landTiles * CFG.gold.count, min: 5, max: 10 },
     { type: 'oil', ok: b => b === DESERT, count: game.landTiles * CFG.oil.count, min: 8, max: 18 },
     { type: 'uranium', ok: b => b === MOUNTAIN || b === DESERT, count: game.landTiles * CFG.uranium.count * 1.6, min: 4, max: 9 },
+    { type: 'silicon', ok: b => b === DESERT, count: game.landTiles * CFG.rare.away, min: 8, max: 16 },
+    { type: 'cobalt', ok: b => b === MOUNTAIN || b === DESERT, count: game.landTiles * CFG.rare.away * 0.8, min: 7, max: 14 },
   ].filter(sp => kinds.includes(sp.type));
+  const mainRng = rng;
   for (const sp of specs) {
+    if ((sp.type === 'silicon' || sp.type === 'cobalt') && rng === mainRng) rng = mulberry32((SEED * 911 + kinds.length * 17) >>> 0);   // own dice: older worlds come out as before
     let made = 0, tries = 0;
     while (made < sp.count && tries++ < sp.count * 30) {
       const i = (rng() * N) | 0;
@@ -7381,7 +7546,7 @@ function scatterDeposits(kinds) {
       addDeposit(sp.type, growBlob(i % W, (i / W) | 0, sp.min + ((rng() * (sp.max - sp.min)) | 0), j => sp.ok(biome[j]) && depositOf[j] < 0));
       if (deposits.length > before) made++;
     }
-  }
+  }  rng = mainRng;
 }
 // the colours of another world: grey regolith, or rust
 const PAL = {
@@ -7420,6 +7585,7 @@ function colonyReady(b) {
 }
 // pick where they land: you look at that world and tap a spot (or it picks one near the middle)
 function startColony(b, w) {
+  if (needsComputer('A colony ship')) return;
   const why = colonyReady(b);
   if (why) return toast(why);
   game.colonyFrom = { pad: b.i, w, home: WORLD };
@@ -7568,7 +7734,9 @@ function stepPads(dt) {
       if (T.o === T.pad.rocket && T.o.fuel >= T.cap - 1e-6 && !T.o.told) { T.o.told = true; floatText(T.pad.i % W + 0.5, ((T.pad.i / W) | 0) - 1.5, T.pad.supply ? 'Supply rocket ready' : 'Rocket ready', '#f2c14e'); }
     }
     C.res.oil -= oilUse; C.rates.oil -= dt > 0 ? oilUse / dt : 0;
-    for (const b of pads) if (b.supply && b.rocket && b.rocket.fuel >= R.tank - 1e-6 && !padBusy(b)) {   // supplying a station: up it goes, by itself
+    const steer = bestComputer() >= 0;              // supply rockets fly themselves: a computer must steer them
+    for (const b of pads) if (b.supply && b.rocket && b.rocket.fuel >= R.tank - 1e-6 && !padBusy(b)) {
+      if (!steer) { if (!b.toldComp) { b.toldComp = true; needsComputer('A supply rocket'); } continue; }   // supplying a station: up it goes, by itself
       const st = stationByN(b.supply);
       if (!st) b.supply = null; else launchSupply(b, C, st);
     }
@@ -7844,6 +8012,7 @@ const shuttlesOf = C => game.shuttles.filter(sh => sh.w === WORLD && sh.c === C.
 function buyShuttle(b) {
   const C = countryAt(b.i), cost = CFG.shuttle.cost;
   if (!C) return;
+  if (needsComputer('A reusable rocket')) return;
   const miss = missingFor(cost, C);
   if (miss) return toast(`A reusable rocket needs ${costText(cost)}: short of ${miss}`);
   for (const r in cost) C.res[r] -= cost[r];
@@ -7870,7 +8039,7 @@ function shortages(C) {
 }
 // decide a docked rocket's next run, and what it should be loaded with
 function planShuttle(sh) {
-  const C = worldCountry(sh.w, sh.c), L = CFG.shuttle.legs, cap = CFG.shuttle.cargo;
+  const C = worldCountry(sh.w, sh.c), L = CFG.shuttle.legs, cap = shCargo(sh);
   if (!C || !C.alive) return null;
   const plan = [], load = {};
   let people = 0, st = null, room = cap;
@@ -7885,6 +8054,7 @@ function planShuttle(sh) {
     // a colony that needs goods: the one shortest of things home has plenty of
     let col = null, cs = 0;
     for (const P of WORLDS.slice(1)) for (const { b, c } of [...worldBuildings(P.id, 'lpad'), ...worldBuildings(P.id, 'pad')]) {
+      if (!canReachWorld(sh, P.id)) continue;      // out of this rocket's range: upgrade it (or the computer steering it)
       const D = worldCountry(P.id, c);
       if (!D || !D.alive) continue;
       const sc = shortages(D).reduce((t, [r, n]) => t + Math.min(n, Math.max(0, C.res[r] - 80)), 0);
@@ -7955,7 +8125,11 @@ function stepShuttlesGround(dt) {
       }
     }
     const loaded = shuttleLoadLeft(sh) < 1 && !(sh.claimed > 0.5), waited = game.time - sh.since > 60;
-    if (sh.fuel >= Math.min(CFG.shuttle.tank, sh.needFuel) - 0.5 && (loaded || waited)) {
+    const heavy = 1 + 0.5 * clamp((boxSum(sh.cargo || {}) + (sh.wantPeople || 0) * 2) / shCargo(sh), 0, 1);   // a full hold burns half as much fuel again
+    if (bestComputer() < 0) { if (!sh.toldComp) { sh.toldComp = true; needsComputer('A reusable rocket'); } continue; }   // nothing to steer it
+    sh.toldComp = false;
+    if (sh.fuel >= Math.min(CFG.shuttle.tank, sh.needFuel * heavy) - 0.5 && (loaded || waited)) {
+      sh.needFuel = Math.min(sh.fuel, sh.needFuel * heavy);
       sh.people = Math.floor(Math.max(0, Math.min(sh.wantPeople || 0, C.people - 30))); C.people -= sh.people;
       sh.want = {}; sh.claimed = 0;
       sh.fuel -= sh.needFuel; sh.state = 'fly';
@@ -8003,7 +8177,7 @@ function startLeg(sh, from) {
   const next = sh.plan[0];
   if (!next) { sh.state = 'docked'; return; }
   sh.from = from; sh.t = 0; sh.leg = next.leg;
-  sh.T = next.leg === 'trip' ? WORLDS[next.w || next.from || sh.w || 1].trip * CFG.shuttle.time.trip : CFG.shuttle.time[next.leg];
+  sh.T = (next.leg === 'trip' ? WORLDS[next.w || next.from || sh.w || 1].trip * CFG.shuttle.time.trip : CFG.shuttle.time[next.leg]) / shMk(sh).speed;   // later marks fly faster
 }
 // where a reusable rocket is, seen from home: up curves bow out from the world, landings drop in from above
 function shuttlePos(sh, lead = 0) {
@@ -8336,7 +8510,7 @@ const DRILL_ANIM = {
   rig:   { top: 6, bot: 18, base: 24, lamp: [14, 2, 4, 3], on: '#ffe066', off: '#9a7414', stack: [4, 15, 9], period: 0.85 },
   drill: { top: 5, bot: 15, base: 19, lamp: [14, 1, 4, 3], on: '#8fe0ff', off: '#2a6f96', stack: [25, 9, 10], period: 1.0 },
 };
-const CHIP = { forest: ['#a0683e', '#d9a066'], stone: ['#9aa1a8', '#d6dade'], iron: ['#b4613d', '#ef9a6a'], gold: ['#c9a030', '#ffe080'], oil: ['#2b2f36', '#59616b'], uranium: ['#2e6b1f', '#7ee05a'], ice: ['#d8eef8', '#ffffff'] };
+const CHIP = { forest: ['#a0683e', '#d9a066'], stone: ['#9aa1a8', '#d6dade'], iron: ['#b4613d', '#ef9a6a'], gold: ['#c9a030', '#ffe080'], oil: ['#2b2f36', '#59616b'], uranium: ['#2e6b1f', '#7ee05a'], silicon: ['#9aa3b2', '#eef2f8'], cobalt: ['#23407e', '#6f95ef'], ice: ['#d8eef8', '#ffffff'] };
 function drillEffort(b) {
   const c = owner[b.i] ? countryAt(b.i) : null;
   if (b.type === 'drill') return c ? (b.pumping ? c.sat ?? 1 : 0) : 1;
@@ -8457,6 +8631,66 @@ function drawSites(z) {
   }
 }
 
+// ---------- the sky from another world: on the Moon or Aries, zoom out and the Sun, your home world and the other
+// planets are where they really are (seen from here). Click one of your worlds to go there. ----------
+let skyHide = null;                                // the body you're standing on: drawn as the map, not in the sky
+function skyShift() {
+  const me = WORLD && LOCK[WORLDS[WORLD].body];
+  if (!me) return null;
+  const [bx, by] = me.pos();
+  return [DISK.cx - bx, DISK.cy - by];
+}
+// where each world sits, in this world's sky
+function skyWorldPos(w) {
+  const d = skyShift();
+  if (!d) return null;
+  const [x, y] = w === 0 ? [DISK.cx, DISK.cy] : LOCK[WORLDS[w].body].pos();
+  return [x + d[0], y + d[1]];
+}
+function drawHomeInSky(z) {
+  const [sx, sy] = toScreen(DISK.cx, DISK.cy), r = Math.max(3, DISK.R * z);
+  if (sx < -r || sy < -r || sx > cw + r || sy > ch + r) return;
+  const g = ctx.createRadialGradient(sx - r * 0.3, sy - r * 0.3, r * 0.1, sx, sy, r);
+  g.addColorStop(0, '#7fc28a'); g.addColorStop(0.55, '#3f7fb8'); g.addColorStop(1, '#1d3d66');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(170,210,255,0.5)'; ctx.lineWidth = Math.max(1, r * 0.05); ctx.stroke();
+}
+function drawForeignSky(z) {
+  const d = skyShift();
+  if (!d) return;
+  const ox = cam.x, oy = cam.y;
+  cam.x -= d[0]; cam.y -= d[1];
+  skyHide = WORLDS[WORLD].body;
+  try { drawSun(z); drawVulcan(z); drawOuterBodies(z); if (skyHide !== 'moon') drawMoon(z); drawHomeInSky(z); }
+  finally { cam.x = ox; cam.y = oy; skyHide = null; }
+  // your other worlds: a label to click
+  if (DISK.R * z > cw * 0.25) return;              // still close in: no labels over the map
+  for (const P of WORLDS) {
+    if (P.id === WORLD) continue;
+    const p = skyWorldPos(P.id);
+    if (!p) continue;
+    const [sx, sy] = toScreen(...p), r = P.id === 0 ? DISK.R * z : (LOCK[P.body] ? LOCK[P.body].r() * z : 4);
+    if (sx < -80 || sy < -80 || sx > cw + 80 || sy > ch + 80) continue;
+    pill(sx, sy + Math.max(10, r) + 14, `${P.short}${worldGenerated(P.id) ? '' : ' (unvisited)'} · ${say('click', 'tap')} to go`, { size: 11, fg: '#9fd0ff' });
+  }
+}
+// a click on another world in the sky: go there
+function foreignSkyClick(wx, wy) {
+  if (!WORLD) return false;
+  for (const P of WORLDS) {
+    if (P.id === WORLD) continue;
+    const p = skyWorldPos(P.id);
+    if (!p) continue;
+    const r = P.id === 0 ? DISK.R : LOCK[P.body] ? LOCK[P.body].r() : 10;
+    if (Math.hypot(wx - p[0], wy - p[1]) < Math.max(r * 1.15, 30 / cam.zoom)) {
+      viewWorld(P.id);
+      if (!camOf[P.id]) { cam.x = DISK.cx; cam.y = DISK.cy; cam.zoom = fitZoom(); }
+      toast(`Now on ${P.id ? WORLDS[P.id].name : 'your home world'}`);
+      return true;
+    }
+  }
+  return false;
+}
 function render() {
   const z = cam.zoom;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -8468,8 +8702,8 @@ function render() {
     drawOuterBodies(z);
     drawMoon(z);
     drawAtmosphere(z);
-  }
-  drawLockHover(z);
+  } else drawForeignSky(z);                        // from another world: the same sky, seen from there
+  if (!WORLD) drawLockHover(z);
 
   // terrain + territory (1 px per tile, scaled up crisp)
   // crisp pixels up close; smooth scaling when zoomed far out (less shimmer)
@@ -8631,10 +8865,10 @@ function render() {
 // and one to three pieces picked by the tile's own hash: mixed trees with stands of conifers, boulders and
 // rubble, ore chunks with bright flecks. Thick in the middle of a deposit, thinner and smaller at its edge.
 const GROUND = { forest: 'rgba(32,62,30,0.36)', stone: 'rgba(118,122,126,0.38)', iron: 'rgba(120,66,44,0.42)',
-  gold: 'rgba(160,120,30,0.35)', oil: 'rgba(10,10,12,0.45)', wheat: 'rgba(150,110,30,0.18)', uranium: 'rgba(60,140,40,0.35)' };
+  gold: 'rgba(160,120,30,0.35)', oil: 'rgba(10,10,12,0.45)', wheat: 'rgba(150,110,30,0.18)', uranium: 'rgba(60,140,40,0.35)', silicon: 'rgba(220,226,236,0.4)', cobalt: 'rgba(50,90,190,0.4)' };
 const ROCKS = { stone: ['rockA', 'rockB', 'rockC'], iron: ['oreA', 'oreB', 'oreC'] };
 function drawDepositsDetail(x0, y0, x1, y1, z) {
-  const ground = { forest: new Path2D(), stone: new Path2D(), iron: new Path2D(), gold: new Path2D(), oil: new Path2D(), wheat: new Path2D(), uranium: new Path2D() };
+  const ground = { forest: new Path2D(), stone: new Path2D(), iron: new Path2D(), gold: new Path2D(), oil: new Path2D(), wheat: new Path2D(), uranium: new Path2D(), silicon: new Path2D(), cobalt: new Path2D() };
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
     const dep = depositOf[idx(x, y)];
     if (!depVisible(dep)) continue;
@@ -8647,7 +8881,7 @@ function drawDepositsDetail(x0, y0, x1, y1, z) {
     const i = idx(x, y), dep = depositOf[i];
     if (!depVisible(dep) || building[i]) continue;
     const t = deposits[dep].type;
-    if (t === 'wheat' || t === 'gold' || t === 'oil' || t === 'uranium') {
+    if (t === 'wheat' || t === 'gold' || t === 'oil' || t === 'uranium' || t === 'silicon' || t === 'cobalt') {
       const h1 = hash2(x, y, 21);
       if (t === 'wheat') { drawSprite('wheatTile', x + 0.3, y + 0.5, z * 0.9); drawSprite('wheatTile', x + 0.75, y + 0.55, z * 0.85); }
       else drawSprite(DEP_SPRITE[t], x + 0.5 + (h1 - 0.5) * 0.4, y + 0.5, z * (t === 'oil' ? 0.9 : 0.8 + h1 * 0.4));
@@ -8933,6 +9167,14 @@ window.addEventListener('mouseup', e => {
 // a click (or a tap: btn 0; a long press: btn 2) at a screen point
 function clickAt(btn, x, y) {
   mouse.x = x; mouse.y = y;
+  if (game.wallFrom >= 0) {                        // picking the second fortress for a wall: before anything else, and generously
+    if (btn !== 0) { game.wallFrom = -1; toast('Wall cancelled'); return; }
+    const b = fortPick(x, y), a = buildingAt(game.wallFrom);
+    if (!a) { game.wallFrom = -1; return; }
+    if (b === a) { game.wallFrom = -1; toast('Wall cancelled'); return; }
+    if (b) return pickWallEnd(b);
+    return toast(say('Click near one of the glowing fortresses (click the first one again, or Esc, to cancel)', 'Tap near one of the glowing fortresses (tap the first one again to cancel)'));
+  }
   if (game.colonyPick) { const t = tileAtScreen(x, y); if (btn === 0) pickColonySite(t); else { game.colonyPick = false; viewWorld(game.colonyFrom ? game.colonyFrom.home : 0); game.colonyFrom = null; } return; }
   if (btn === 0 && game.aiming) { const t = hoverTile(); if (t) fireMissile(t.x, t.y); return; }
   if (bombing) { const t = tileAtScreen(x, y); if (btn === 0 && t >= 0) sendBomber(t % W, (t / W) | 0); else setBombing(false); return; }
@@ -8962,7 +9204,8 @@ function clickAt(btn, x, y) {
     }
   }
   // a plain click on any body (or your world from far out) locks onto it
-  if (btn === 0) {
+  if (btn === 0 && WORLD) { const [wx, wy] = toWorld(x, y); if (!overWorld(wx, wy) && foreignSkyClick(wx, wy)) return; }
+  if (btn === 0 && !WORLD) {
     const [wx, wy] = toWorld(x, y);
     const body = bodyUnder(wx, wy);
     if (body && cam.follow !== body.id) { followBody(body.id); return; }
@@ -8984,12 +9227,6 @@ function commandClick(t) {
   if (game.cmd === 'attack') {
     if (!foe) return toast("Pick a nation's land to attack (tap Expand to claim free land).");
     guardedAttack(foe, t.x, t.y); return;
-  }
-  if (game.wallFrom >= 0) {                       // picking the second fort for a wall: the nearest fortress to the click
-    const b = fortNear(t.x + 0.5, t.y + 0.5) || (building[t.i] ? buildingAt(t.i) : null);
-    if (b && b.type === 'fort' && owner[b.i] && b.i !== game.wallFrom) return pickWallEnd(b);
-    if (b && b.i === game.wallFrom) return toast(say('Now click another fortress', 'Now tap another fortress'));
-    game.wallFrom = -1; toast('Wall cancelled'); return;
   }
   if (owner[t.i] && building[t.i] && cam.zoom >= 3) return showBuildingCard(buildingAt(t.i));
   if (cam.zoom >= 2 && game.walls.length) { const [wx, wy] = toWorld(mouse.x, mouse.y), w = wallNear(wx, wy); if (w && (owner[w.a] || owner[w.b])) return showWallCard(w); }
@@ -9075,6 +9312,7 @@ window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
 
 // Esc: let go of whatever you're doing
 function cancelAll() {
+  if (game.wallFrom >= 0) { game.wallFrom = -1; toast('Wall cancelled'); return; }
   if (bombing) { setBombing(false); toast('Bomber cancelled'); return; }
   if (game.colonyPick) { game.colonyPick = false; viewWorld(game.colonyFrom ? game.colonyFrom.home : 0); game.colonyFrom = null; toast('Colony ship cancelled'); return; }
   if (game.flying && !game.tool && !buildOpen) { game.flying = null; toast(say('Let go of the rocket: it flies on. Press X or click it to take it back.', 'Let go of the rocket: it flies on. Tap it to take it back.')); return; }
@@ -9090,8 +9328,7 @@ function nextCountry(dir) {
   flyToCountry(alive[(j + (dir < 0 ? alive.length - 1 : 1)) % alive.length]);
 }
 function askNewGame() {
-  showModal('<div class="md-title">Start a new map?</div><div class="md-body">This deletes your saved game.</div>',
-    [{ label: 'New map', cls: 'danger', act: newGame }, { label: 'Keep playing', act: () => {} }]);
+  modePicker('Start a new map?', 'This deletes your saved game. Pick how the other nations play (you can change it later from the Command menu):', m => newGame(m));
 }
 
 // ---------- touch: one finger pans (or drags the building you're placing), two pinch-zoom, a tap is a click ----------
@@ -9301,7 +9538,7 @@ function applyFollow() {
 function iconFill() {
   document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = SVG[el.dataset.icon]; });
 }
-const CATEGORIES = ['Housing', 'Food', 'Resources', 'Transport', 'Military', 'Energy', 'Space'];
+const CATEGORIES = ['Housing', 'Food', 'Resources', 'Transport', 'Military', 'Energy', 'Computing', 'Space'];
 const costHtml = (cost, C) => Object.entries(cost).map(([r, n]) =>
   `<span class="${C && C.res[r] < n ? 'no' : ''}">${SVG[RES_ICON[r]]}${n}</span>`).join('');
 function initUI() {
@@ -9337,6 +9574,7 @@ function initUI() {
     else if (act === 'home') goHome();
     else if (act === 'drive') nextVehicle();
     else if (act === 'new') askNewGame();
+    else if (act === 'mode') modePicker('Game mode', `Now: <b>${modeName()}</b>. Change how the other nations play, from now on.`, setGameMode);
     else if (act === 'debug') toggleDebug();
     else if (act === 'bomber') { toggleCmdMenu(false, true); setBombing(!bombing); }
     updateCmdMenu();
@@ -9491,9 +9729,27 @@ function renderBuildMenu() {
       sub.appendChild(el);
     }
   }
+  // crafting: made from your stock on the spot, nothing to place
+  const head = document.createElement('div');
+  head.className = 'bm-cat'; head.textContent = 'Crafting';
+  grid.appendChild(head);
+  const sub = document.createElement('div');
+  sub.className = 'bm-catgrid';
+  grid.appendChild(sub);
+  for (const [id, K] of Object.entries(CRAFTS)) {
+    const open = game.research.done.has(K.tech), el = document.createElement('div');
+    el.className = 'bm-card' + (open ? '' : ' locked');
+    el.innerHTML = `<div class="bm-ic">${SVG[K.icon]}</div>
+      <div class="bm-body"><div class="bm-name">${K.name} <span class="d">· you have ${fmtNum((C && C.res[K.res]) || 0)}</span></div>
+      <div class="bm-desc">${K.desc}</div>
+      <div class="bm-foot"><div class="cost">${costHtml(K.cost, C)}</div><div class="bm-status">${open ? '<button class="craft" data-n="1">Craft 1</button><button class="craft" data-n="10">Craft 10</button>' : `🔒 needs ${TECH[K.tech].name}`}</div></div></div>`;
+    for (const bt of el.querySelectorAll('.craft')) bt.addEventListener('click', e => { e.stopPropagation(); craft(id, +bt.dataset.n); renderBuildMenu(); });
+    sub.appendChild(el);
+  }
 }
 function updateCmdMenu() {
   if (!cmdOpen) return;
+  if ($('mode-btn')) $('mode-btn').textContent = 'Mode: ' + modeName();
   document.querySelectorAll('#cmdmenu [data-cmd]').forEach(b => b.classList.toggle('on', game.cmd === b.dataset.cmd && !game.aiming));
   const fire = document.querySelector('#cmdmenu [data-act="fire"]');
   fire.classList.toggle('on', !!game.aiming); fire.hidden = !silosOf().length && !(game.research.done.has('ipbm') && ipbmSilos().length);
@@ -9586,6 +9842,547 @@ function pickWallEnd(b) {
         floatText(a.i % W + 0.5, ((a.i / W) | 0) - 1, 'Wall built', '#7bd389');
       } },
      { label: 'Cancel', act: () => {} }]);
+}
+// =====================================================================================================
+// ---------- computing: the central computer of each domain, its upgrades and data centers ----------
+// A domain's computer (only one each) cuts the power everything else uses, adds wheat, trains troops faster and speeds
+// research, all scaled by how well powered the domain is. Data centers add 1% each (until it becomes an AI, when they
+// are its brain). Rockets need a computer somewhere in your empire to fly themselves (not the first station's rocket).
+// =====================================================================================================
+const COMP = [
+  { name: 'Central computer', short: 'Computer', mw: 30, power: 0.25, wheat: 0.10, train: 0.30, research: 0.25, range: 1 },
+  { name: 'Mass Central Computational System (M.C.C.S.)', short: 'M.C.C.S.', tech: 'mccs', mw: 45, power: 0.30, wheat: 0.15, train: 0.35, research: 0.70, range: 6,
+    cost: { iron: 100, silicon: 60, chips: 80, gold: 60 } },
+  { name: 'Quantum Computational Array (Q.C.A.)', short: 'Q.C.A.', tech: 'qca', mw: 70, power: 0.30, wheat: 0.15, train: 0.35, research: 1.20, range: 6,
+    cost: { iron: 150, silicon: 120, chips: 200, cobalt: 60, gold: 150 } },
+  { name: 'Central Artificial Intelligence System (C.A.I.S.)', short: 'C.A.I.S.', tech: 'cais', mw: 100, power: 0.30, wheat: 0.15, train: 0.35, research: 1.20, range: 6,
+    cost: { iron: 200, silicon: 200, chips: 400, cobalt: 100, gold: 250 } },
+];
+const compOf = C => C && game.buildings.find(b => b.type === 'computer' && !underway(b) && owner[b.i] && countryAt(b.i) === C);
+const dcCount = C => game.buildings.filter(b => b.type === 'datacenter' && !underway(b) && owner[b.i] && countryAt(b.i) === C).length;
+// what a domain's computer does for it right now (all zero without one)
+function compFx(C) {
+  const b = compOf(C);
+  if (!b) return { lvl: -1, power: 0, wheat: 0, train: 0, research: 0, range: 1 };
+  const L = COMP[b.lvl || 0], on = C.sat ?? 1, dc = (b.lvl || 0) <= 2 ? 1 + 0.01 * dcCount(C) : 1;
+  return { lvl: b.lvl || 0, b, power: L.power * on * dc, wheat: L.wheat * on * dc, train: L.train * on * dc, research: L.research * on * dc, range: L.range };
+}
+// any computer you own, on any world: it can steer rockets
+function bestComputer() {
+  let lvl = -1;
+  for (const P of WORLDS) for (const { b } of worldBuildings(P.id, 'computer')) lvl = Math.max(lvl, b.lvl || 0);
+  return lvl;
+}
+// a rocket that has to fly itself: tell the player what's missing
+function needsComputer(what) {
+  if (bestComputer() >= 0) return false;
+  notify('🖥 A central computer is needed', `${what} has to fly itself, and rockets need a central computer to steer them. ${game.research.done.has('computing') ? 'Build one (Build menu, Computing).' : 'Research Computing, then build one (Build menu, Computing).'} (You can still fly a rocket yourself.)`);
+  return true;
+}
+function upgradeComputer(b) {
+  const C = countryAt(b.i), nx = (b.lvl || 0) + 1, L = COMP[nx];
+  if (!C || !L) return;
+  if (!game.research.done.has(L.tech)) return toast(`Needs ${TECH[L.tech].name}`);
+  const miss = missingFor(L.cost, C);
+  if (miss) return toast(`The ${L.short} needs ${costText(L.cost)}: short of ${miss}`);
+  for (const r in L.cost) C.res[r] -= L.cost[r];
+  b.lvl = nx;
+  floatText(b.i % W + 0.5, ((b.i / W) | 0) - 1.5, L.short + '!', '#9fd0ff');
+  notify(`🖥 ${L.name}`, nx === 3 ? 'Your central computer is now an AI. Open it to give it work, assign it power, and see what it can do.' : `Its bonuses are stronger${nx === 1 ? ', research +40% more, and rockets it steers fly six times as far' : ', and research is 50% faster again'}.`);
+}
+// research: each domain's people count for more where a computer helps them
+function researchPeople() {
+  let t = 0;
+  for (const c of game.countries) if (c.alive) t += c.people * (1 + (c.fx || compFx(c)).research + aiResearchBonus(c));
+  return t;
+}
+// ---------- reusable rockets: four marks, each faster, bigger and with longer range ----------
+const SHUTTLE_MK = [
+  { name: 'Mk I', speed: 1, cargo: 400, range: 50 },
+  { name: 'Mk II', speed: 1.3, cargo: 650, range: 100, tech: 'reusable', cost: { iron: 120, cobalt: 20, chips: 15 } },
+  { name: 'Mk III', speed: 1.7, cargo: 1000, range: 170, tech: 'mccs', cost: { iron: 200, cobalt: 40, chips: 35, silicon: 30 } },
+  { name: 'Mk IV', speed: 2.3, cargo: 1500, range: 280, tech: 'qca', cost: { iron: 300, cobalt: 70, chips: 70, silicon: 60 } },
+];
+const shMk = sh => SHUTTLE_MK[sh.mk || 0];
+const shCargo = sh => shMk(sh).cargo;
+// how far a rocket can go: its mark, times what the best computer steering it allows
+const shRange = sh => shMk(sh).range * COMP[Math.max(0, bestComputer())].range;
+const canReachWorld = (sh, w) => WORLDS[w] && WORLDS[w].trip <= shRange(sh);
+function upgradeShuttle(sh, C) {
+  const nx = (sh.mk || 0) + 1, M = SHUTTLE_MK[nx];
+  if (!M || !C) return;
+  if (!game.research.done.has(M.tech)) return toast(`${M.name} needs ${TECH[M.tech].name}`);
+  const miss = missingFor(M.cost, C);
+  if (miss) return toast(`${M.name} needs ${costText(M.cost)}: short of ${miss}`);
+  for (const r in M.cost) C.res[r] -= M.cost[r];
+  sh.mk = nx;
+  toast(`Reusable rocket refitted to ${M.name}: ${M.cargo} cargo, ${M.speed}x speed, range ${M.range}.`);
+}
+// ---------- batteries: crafted (not placed). Spare power charges them, shortfalls drain them ----------
+const BATTERY = { store: 600, rate: 6 };          // each: 600 MW·s (10 MW for a minute), charges or discharges up to 6 MW
+const CRAFTS = {
+  battery: { name: 'Battery', res: 'batteries', tech: 'batteries', cost: { cobalt: 3, iron: 2, silicon: 1 }, icon: 'batteryI',
+    desc: 'Stores 10 MW for a minute in your domain\'s grid: spare power charges it, shortfalls (and electric trains) draw on it. No need to place it.' },
+};
+function craft(id, n = 1) {
+  const K = CRAFTS[id], C = activeCountry();
+  if (!K || !C) return;
+  if (!game.research.done.has(K.tech)) return toast(`Needs ${TECH[K.tech].name}`);
+  let made = 0;
+  for (let k = 0; k < n; k++) { if (missingFor(K.cost, C)) break; for (const r in K.cost) C.res[r] -= K.cost[r]; C.res[K.res] += 1; made++; }
+  if (!made) return toast(`${K.name}: needs ${costText(K.cost)} (short of ${missingFor(K.cost, C)})`);
+  toast(`Crafted ${made} ${made > 1 ? 'batteries' : 'battery'}: ${fmtNum(C.res[K.res])} in ${C.short}.`);
+}
+// ---------- chip factories: silicon and a little gold into chips ----------
+function stepChipFabs(dt) {
+  for (const b of game.buildings) {
+    if (b.type !== 'chipfab' || underway(b) || !owner[b.i]) continue;
+    const C = countryAt(b.i);
+    if (!C) continue;
+    const want = 0.085 * (C.sat ?? 1) * dt, k = Math.max(0, Math.min(want, C.res.silicon / 2, C.res.gold / 0.5, (C.store ? C.store.chips : 1e9) - C.res.chips));
+    if (k <= 0) { b.idle = true; continue; }
+    b.idle = false; C.res.silicon -= k * 2; C.res.gold -= k * 0.5; C.res.chips += k; C.prod.chips = (C.prod.chips || 0) + k / dt;
+  }
+}
+// =====================================================================================================
+// ---------- C.A.I.S.: the AI a central computer becomes. It runs parts of its domain for you ----------
+// Its "compute" comes from its data centers and the share of the domain's spare power you give it. More compute
+// unlocks more commands, and lets it act on big moves by itself (with less, it asks you first).
+// It only ever spends from what you allot it: a share of the stock there now, and the same share of what's made later.
+// =====================================================================================================
+const AICMD = {
+  build:    { name: 'Building strategy', need: 3, desc: 'Builds what the domain lacks: farms when food runs short, power when the grid is short, collectors on deposits nobody works.' },
+  grid:     { name: 'Grid manager', need: 5, desc: 'Crafts batteries to steady the grid, and keeps them charged.' },
+  trade:    { name: 'Trade manager', need: 6, desc: 'Sells what overflows and buys what runs short, at the market or with friendly nations.' },
+  logistics:{ name: 'Logistics', need: 7, desc: 'Buys haulers when goods pile up waiting for one.' },
+  roads:    { name: 'Road restructuring', need: 8, desc: 'Slowly bends your existing roads to pass close to stations, collectors and anything else not on a road. No new roads.' },
+  warning:  { name: 'Early warning', need: 9, desc: 'Spots incoming attacks early and moves troops to the fortress that will be hit.' },
+  gambit:   { name: "Hadrian's Gambit", need: 10, desc: 'Rings the domain with fortresses and walls along its edges, and upgrades them over time.' },
+  research: { name: 'Research director', need: 12, desc: 'Steers the scientists: research in this domain up to 30% faster (more with more compute).' },
+  war:      { name: 'War command', need: 10, desc: 'Takes command of the troops you allot it when you are at war, with the strategy you pick.' },
+  diplo:    { name: 'Diplomacy', need: 20, desc: 'Keeps treaties renewed, seeks peace when a war goes badly, and demands surrender from a beaten enemy.' },
+};
+const STRATS = {
+  defensive: { name: 'Defensive', need: 10, desc: 'Holds your borders: reinforces the threatened front and wears down every attack.' },
+  guerrilla: { name: 'Guerrilla', need: 16, desc: 'Ambushes attackers and pulls back before they can hit hard: best against bigger armies.' },
+  pillage:   { name: 'Pillage', need: 22, desc: "Rushes into enemy land, takes a town and its stores, and pulls back to your border when their troops come." },
+  conquest:  { name: 'Conquest', need: 28, desc: 'Takes the fight to them: strikes their weakest towns again and again.' },
+};
+const ACT_ALONE = 25;                              // compute at which it acts on big moves without asking
+const aiOfDomain = C => { const b = compOf(C); return b && (b.lvl || 0) >= 3 ? b : null; };
+function aiState(b) { return b.ai || (b.ai = { energy: 0.25, pct: 0.25, troops: 0.25, strat: 'defensive', cmds: {}, ledger: null, log: [] }); }
+// compute: data centers are its brain, power its blood
+function aiCompute(C) {
+  const b = aiOfDomain(C);
+  if (!b) return 0;
+  return Math.round((dcCount(C) * 2 + Math.sqrt(Math.max(0, C.aiMW || 0)) * 1.6) * 10) / 10;
+}
+const aiCan = (C, need) => aiCompute(C) >= need;
+// its allowance: a share of the stock when you set it, plus the same share of everything made since
+function aiLedger(b, C) {
+  const A = aiState(b);
+  if (!A.ledger || A.ledgerPct !== A.pct) { A.ledger = {}; for (const r of RESOURCES) A.ledger[r] = Math.max(0, C.res[r]) * A.pct; A.ledgerPct = A.pct; }
+  return A.ledger;
+}
+function aiSpend(b, C, cost) {
+  const L = aiLedger(b, C);
+  for (const r in cost) if ((L[r] || 0) < cost[r] || C.res[r] < cost[r]) return false;
+  for (const r in cost) L[r] -= cost[r];
+  return true;
+}
+function aiNote(b, txt) { const A = aiState(b); A.log.unshift(`${fmtClock(game.time)} ${txt}`); A.log.length = Math.min(A.log.length, 8); }
+const fmtClock = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+// a big move: with enough compute it just does it and tells you; otherwise it asks
+function aiAsk(b, C, title, body, act) {
+  if (aiCan(C, ACT_ALONE)) { act(); aiNote(b, title); notify(`🤖 ${title}`, body + ' (Your AI decided this itself.)'); return; }
+  const A = aiState(b);
+  if (A.asked && game.time - A.asked < 60) return;
+  A.asked = game.time;
+  notify(`🤖 Your AI asks: ${title}?`, body, [{ label: 'Yes', cls: 'go', act: () => { act(); aiNote(b, title); } }, { label: 'No', act: () => {} }]);
+}
+// a free spot for a building near a tile, in the same domain
+function aiSpotNear(C, t, type, R = 10) {
+  const x0 = t % W, y0 = (t / W) | 0;
+  for (let r = 1; r <= R; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+    const x = x0 + dx, y = y0 + dy;
+    if (!inb(x, y)) continue;
+    const i = idx(x, y);
+    if (countryAt(i) === C && !canBuild(i, type)) return i;
+  }
+  return -1;
+}
+function aiBuild(b, C, i, type) {
+  if (i < 0 || !isUnlocked(type)) return false;
+  const cost = totalCost(type, planFor(i, type), i);
+  if (missingFor(cost, C) || !aiSpend(b, C, cost)) return false;
+  const quiet = toast; toast = () => {};          // it builds quietly; its log says what it did
+  try { tryBuild(i, type); } finally { toast = quiet; }
+  aiNote(b, `built a ${CFG.buildings[type].name.toLowerCase()}`);
+  return true;
+}
+let aiTimer2 = 0;
+function stepAIs(dt) {
+  for (const b of game.buildings) {                // the allowance grows with what's made
+    if (b.type !== 'computer' || (b.lvl || 0) < 3 || !b.ai || !b.ai.ledger) continue;
+    const C = countryAt(b.i);
+    if (C) for (const r of RESOURCES) if ((C.prod[r] || 0) > 0) b.ai.ledger[r] += C.prod[r] * b.ai.pct * dt;
+  }
+  for (const r of game.raids) aiAmbush(r, dt);
+  if ((aiTimer2 += dt) < 3) return;
+  aiTimer2 = 0;
+  for (const C of game.countries) {
+    const b = C.alive && aiOfDomain(C);
+    if (!b) continue;
+    const A = aiState(b), on = k => A.cmds[k] && aiCan(C, AICMD[k].need);
+    try {
+      if (on('build')) aiDoBuild(b, C);
+      if (on('grid')) aiDoGrid(b, C);
+      if (on('trade')) aiDoTrade(b, C);
+      if (on('logistics')) aiDoLogistics(b, C);
+      if (on('roads')) aiDoRoads(b, C);
+      if (on('warning')) aiDoWarning(b, C);
+      if (on('gambit')) aiDoGambit(b, C);
+      if (on('war')) aiDoWar(b, C);
+      if (on('diplo')) aiDoDiplo(b, C);
+    } catch (e) { console.warn('AI step', e); }
+  }
+}
+// research director: a bonus on top of the computer's own
+const aiResearchBonus = C => { const b = aiOfDomain(C); return b && b.ai && b.ai.cmds.research && aiCan(C, AICMD.research.need) ? Math.min(0.6, 0.12 + aiCompute(C) * 0.006) : 0; };
+// ---------- the commands ----------
+function aiDoBuild(b, C) {
+  const S = settlementsOf(C), A = aiState(b);
+  if (!S.length || game.time - (A.buildAt || 0) < 15) return;   // one project at a time, and give each a chance to work
+  A.buildAt = game.time;
+  const near = S[(Math.random() * S.length) | 0].i;
+  if ((C.rates.wheat || 0) < 0 && C.res.wheat < C.store.wheat * 0.5) { const i = aiSpotNear(C, near, 'farm', 12); if (aiBuild(b, C, i, 'farm')) return; }
+  if ((C.sat ?? 1) < 0.95) {
+    for (const t of ['solar', 'oilplant', 'burner']) if (isUnlocked(t) && (t !== 'solar' || C.res.silicon > 20) && (t !== 'oilplant' || C.res.oil > 60)) { if (aiBuild(b, C, aiSpotNear(C, near, t, 12), t)) return; }
+  }
+  // a deposit in the domain that nobody works
+  for (const d of deposits) {
+    if (!d.tiles.length || !depVisible(deposits.indexOf(d)) || d.type === 'wheat' || countryAt(d.tiles[0]) !== C || d.tiles.some(t => isHarvested(t))) continue;
+    const type = d.type === 'forest' ? 'cabin' : d.type === 'oil' ? 'derrick' : d.type === 'silicon' ? 'refinery' : 'camp';
+    if (!isUnlocked(type)) continue;
+    const i = aiSpotNear(C, d.tiles[0], type, 4);
+    if (aiBuild(b, C, i, type)) return;
+  }
+}
+function aiDoGrid(b, C) {
+  if (!game.research.done.has('batteries')) return;
+  const want = Math.ceil(Math.max(2, (C.mw.need || 0) / 10));
+  if ((C.res.batteries || 0) >= want) return;
+  const K = CRAFTS.battery;
+  if (aiSpend(b, C, K.cost)) { for (const r in K.cost) C.res[r] -= K.cost[r]; C.res.batteries += 1; aiNote(b, 'crafted a battery'); }
+}
+function aiDoTrade(b, C) {
+  const A = aiState(b);
+  if (game.time - (A.tradeAt || 0) < 30) return;
+  A.tradeAt = game.time;
+  const over = RESOURCES.filter(r => C.store && C.store[r] && C.res[r] > C.store[r] * 0.85 && r !== 'gold').sort((p, q) => C.res[q] / C.store[q] - C.res[p] / C.store[p])[0];
+  const short = shortages(C).map(([r]) => r).find(r => r !== 'gold' && resKnown(r));
+  // a friendly nation first, then the market
+  if (over && short) {
+    const give = Math.floor(C.res[over] * 0.25), ask = Math.floor(give * PRICE[over] / PRICE[short] * 0.9);
+    for (const n of game.nations.filter(n => n.alive && !n.hostile && getOp('P', n.id) > 0)) {
+      const offer = { give: { res: { [over]: give }, towns: [] }, ask: { res: { [short]: ask }, towns: [] } };
+      if (ask >= 5 && aiConsider(n, offer).accept && aiSpend(b, C, { [over]: give })) { doTrade(n, offer); aiNote(b, `traded ${give} ${over} for ${ask} ${short} with ${n.short}`); return; }
+    }
+  }
+  if (over && C.res[over] >= MARKET.lot && aiSpend(b, C, { [over]: MARKET.lot })) { C.res[over] += 0; marketTrade(C, over, 'sell'); aiNote(b, `sold ${MARKET.lot} ${over} at the market`); return; }
+  if (short && goldOf(C) >= lotGold(short, 'buy') && aiSpend(b, C, { gold: lotGold(short, 'buy') })) { marketTrade(C, short, 'buy'); aiNote(b, `bought ${MARKET.lot} ${short} at the market`); }
+}
+function aiDoLogistics(b, C) {
+  const full = game.buildings.filter(q => q.full && countryAt(q.i) === C).length, cars = game.cars.filter(v => v.country === C.id).length;
+  if (full < 2 || cars > 40) return;
+  const cost = FLEET.car.tiers[Math.max(0, fleetTarget('car'))].cost;
+  if (aiSpend(b, C, cost)) { const S = nearestSettlement(C, C.lx, C.ly); if (S) { for (const r in cost) C.res[r] -= cost[r]; addCar(C, S); aiNote(b, 'bought a hauler'); } }
+}
+// road restructuring: bend a road so it passes by a building that isn't on one (it never adds a road)
+function aiDoRoads(b, C) {
+  const A = aiState(b);
+  if (game.time - (A.roadAt || 0) < 20) return;
+  A.roadAt = game.time;
+  const onRoad = i => { const x0 = i % W, y0 = (i / W) | 0; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const x = x0 + dx, y = y0 + dy; if (inb(x, y) && (NET[idx(x, y)] & 1)) return true; } return false; };
+  const lonely = game.buildings.filter(q => countryAt(q.i) === C && !underway(q) && (HARVESTS[q.type] || linkKind(q.type) || q.type === 'pad' || q.type === 'base' || q.type === 'fort') && !onRoad(q.i));
+  for (const q of lonely.slice(0, 6)) {
+    let best = null, bd = 22;
+    for (const r of roads) {
+      if (r.side <= 0 || r.cut != null || countryAt(r.a) !== C) continue;
+      for (let k = 0; k < r.pts.length; k += 2) { const d = Math.hypot(r.pts[k][0] - q.i % W, r.pts[k][1] - ((q.i / W) | 0)); if (d < bd) { bd = d; best = r; } }
+    }
+    if (!best) continue;
+    let wp = -1;
+    for (const [dx, dy] of DIRS8) { const x = q.i % W + dx, y = ((q.i / W) | 0) + dy; if (inb(x, y) && !building[idx(x, y)] && isLand(idx(x, y)) && owner[idx(x, y)]) { wp = idx(x, y); break; } }
+    if (wp < 0) continue;
+    const cost = netCost(best.side, true), p1 = tilePath(best.a, wp, cost, 12000), p2 = p1 && tilePath(wp, best.b, cost, 12000);
+    if (!p1 || !p2) continue;
+    const full = [...p1, ...p2.slice(1)], c2 = netCost(best.side, false);
+    const L = smoothLine(full, i => c2(i) <= 1.5 || i === best.a || i === best.b || i === wp);
+    if (L.len > best.len * 1.45 + 8) continue;    // too long a detour: it would slow everything else
+    roads = roads.filter(r => r !== best);
+    roads.push({ ...L, key: best.key, side: best.side, kind: 'road', a: best.a, b: best.b, bent: true });
+    markNet();
+    aiNote(b, `bent a road to pass a ${CFG.buildings[q.type].name.toLowerCase()}`);
+    return;
+  }
+}
+function aiDoWarning(b, C) {
+  for (const r of game.raids) {
+    if (r.warned || r.dom !== C.id && r.lx != null) continue;
+    const n = game.nations[r.n];
+    r.warned = true;
+    // move allotted troops to the fortress nearest where they're heading
+    const tgt = game.buildings.filter(q => q.type === 'fort' && countryAt(q.i) === C && !underway(q)).sort((p, q) => tileDist(p.i, r.tx, r.ty) - tileDist(q.i, r.tx, r.ty))[0];
+    const bases = game.buildings.filter(q => q.type === 'base' && countryAt(q.i) === C && (q.units || 0) > 2);
+    let moved = 0;
+    if (tgt) for (const q of bases) { const k = Math.floor(q.units * aiState(b).troops); if (k > 0) { q.units -= k; tgt.units = (tgt.units || 0) + k; moved += k; } }
+    notify(`🤖 Early warning: ${n ? n.short : 'an enemy'} is coming`, `${Math.round(r.budget)} troops heading for ${C.short}.${moved ? ` Your AI moved ${moved} troops to the fortress in their way.` : ''}`);
+    aiNote(b, `warned of an attack${moved ? `, moved ${moved} troops` : ''}`);
+  }
+}
+// Hadrian's Gambit: fortresses along the domain's edge, walled together, upgraded over time
+function aiDoGambit(b, C) {
+  const A = aiState(b);
+  if (game.time - (A.gambitAt || 0) < 8) return;
+  A.gambitAt = game.time;
+  if (!isUnlocked('fort')) return;
+  const forts = game.buildings.filter(q => q.type === 'fort' && countryAt(q.i) === C);
+  // 1) a fortress where the edge has none within 18 tiles (edge: owned land beside land that isn't ours)
+  const edge = [];
+  for (let k = 0; k < 600; k++) {
+    const i = (Math.random() * N) | 0;
+    if (countryAt(i) !== C) continue;
+    const x = i % W, y = (i / W) | 0;
+    if (DIRS4.some(([dx, dy]) => inb(x + dx * 3, y + dy * 3) && isLand(idx(x + dx * 3, y + dy * 3)) && !owner[idx(x + dx * 3, y + dy * 3)])) edge.push(i);
+  }
+  for (const e of edge) {
+    if (forts.some(f => tileDist(f.i, e % W + 0.5, ((e / W) | 0) + 0.5) < 18)) continue;
+    if (aiBuild(b, C, aiSpotNear(C, e, 'fort', 3), 'fort')) return;
+  }
+  // 2) walls between neighbouring fortresses
+  const ready = forts.filter(f => !underway(f) && owner[f.i]);
+  for (const f of ready) {
+    const g = ready.filter(o => o !== f && !game.walls.some(w => (w.a === f.i && w.b === o.i) || (w.a === o.i && w.b === f.i))).sort((p, q) => tileDist(p.i, ...tileCenter(f.i)) - tileDist(q.i, ...tileCenter(f.i)))[0];
+    if (!g) continue;
+    const P = wallPlan(f, g);
+    if (P.why || !aiSpend(b, C, P.cost)) continue;
+    C.res.stone -= P.cost.stone;
+    game.walls.push({ a: f.i, b: g.i, ...P.line, dmg: 0, up: {} });
+    markNet();
+    aiNote(b, `walled two fortresses (${Math.round(P.line.len)} tiles)`);
+    return;
+  }
+  // 3) upgrades, a bit at a time
+  for (const w of game.walls) {
+    if (countryAt(w.a) !== C) continue;
+    for (const u of ['turret', 'aa', 'iron']) {
+      if (w.up && w.up[u] || !game.research.done.has(WALLUP[u].tech)) continue;
+      const cost = upgradeCost(wallGroupOf(w), u);
+      if (cost && !missingFor(cost, C) && aiSpend(b, C, cost)) { for (const r in cost) C.res[r] -= cost[r]; for (const v of wallGroupOf(w)) (v.up || (v.up = {}))[u] = true; markNet(); aiNote(b, `added ${WALLUP[u].name.toLowerCase()} to a wall`); return; }
+    }
+  }
+}
+// war command: the allotted troops, used the way you chose
+function aiDoWar(b, C) {
+  const A = aiState(b), foes = game.nations.filter(n => n.alive && n.hostile && n.tiles);
+  if (!foes.length && !A.pillage) return;
+  const st = STRATS[A.strat] && aiCan(C, STRATS[A.strat].need) ? A.strat : 'defensive';
+  const mine = garrisons().filter(g => countryAt(g.i) === C), troops = mine.reduce((t, g) => t + (g.units || 0), 0) * A.troops;
+  const strike = foes.length && (st === 'conquest' || st === 'pillage') && !A.pillage && game.time - (A.strikeAt || 0) >= (st === 'conquest' ? 25 : 45) && troops >= 8 && !game.attacks.some(a => a.ai);
+  // the weakest town of the nearest enemy: close to your border
+  const n0 = strike ? foes.sort((p, q) => Math.hypot(p.lx - C.lx, p.ly - C.ly) - Math.hypot(q.lx - C.lx, q.ly - C.ly))[0] : null;
+  const town = n0 ? game.buildings.filter(q => q.type === 'settlement' && aiOf[q.i] === n0.id + 1).sort((p, q) => tileDist(p.i, C.lx, C.ly) - tileDist(q.i, C.lx, C.ly))[0] : null;
+  if (town) {
+    const n = n0, keep = game.troopPct;
+    game.troopPct = Math.round(A.troops * 100);
+    let ok = false;
+    const quiet = toast; toast = () => {};
+    try { ok = launchAttack(n, town.i % W, (town.i / W) | 0); } finally { toast = quiet; game.troopPct = keep; }
+    A.strikeAt = game.time;
+    if (ok !== false) {
+      const at = game.attacks[game.attacks.length - 1];
+      if (at) at.ai = true;
+      if (st === 'pillage') {                      // remember their land around the town, to hand it back after
+        const tiles = [], x0 = town.i % W, y0 = (town.i / W) | 0;
+        for (let dy = -14; dy <= 14; dy++) for (let dx = -14; dx <= 14; dx++) { const x = x0 + dx, y = y0 + dy; if (inb(x, y) && aiOf[idx(x, y)] === n.id + 1) tiles.push(idx(x, y)); }
+        A.pillage = { n: n.id, town: town.i, until: game.time + 70, tiles };
+      }
+      aiNote(b, `${st === 'pillage' ? 'raided' : 'attacked'} ${n.short}`);
+    }
+  }
+  // pillage: when their troops come (or time's up), give the land back and come home with the loot
+  if (A.pillage) {
+    const P = A.pillage, n = game.nations[P.n], near = game.raids.some(r => r.n === P.n && r.lx != null && tileDist(P.town, r.lx, r.ly) < 30);
+    if (game.time > P.until || near || !n || !n.alive) {
+      let back = 0;
+      const tb = buildingAt(P.town); if (tb) tb.inv = {};   // the loot is already home: nothing left in the town to lose
+      if (n && n.alive) for (const i of P.tiles) if (owner[i]) { aiTake(n, i); back++; }
+      A.pillage = null;
+      if (back) { game.landDirty = true; aiNote(b, `pulled back from ${n.short}'s land with the loot`); }
+    }
+  }
+}
+// defensive and guerrilla: attackers in an AI domain lose men faster (ambushed, or met by the reinforced front)
+function aiAmbush(r, dt) {
+  if (r.lx == null || r.dom == null) return;
+  const C = liveCountry(r.dom), b = C && aiOfDomain(C);
+  if (!b || !b.ai || !b.ai.cmds.war || !aiCan(C, AICMD.war.need)) return;
+  const A = b.ai, st = STRATS[A.strat] && aiCan(C, STRATS[A.strat].need) ? A.strat : 'defensive';
+  const mine = garrisons().filter(g => countryAt(g.i) === C), troops = mine.reduce((t, g) => t + (g.units || 0), 0) * A.troops;
+  if (troops < 1) return;
+  const k = Math.min(r.budget, troops * (st === 'guerrilla' ? 0.03 : 0.015) * dt * (1 + aiCompute(C) / 40));
+  r.budget -= k; r.killed = (r.killed || 0) + k;
+  if (st !== 'guerrilla') { const g = mine.find(g2 => (g2.units || 0) > 1); if (g) g.units -= k * 0.25; }   // a guerrilla ambush costs almost nothing
+}
+function aiDoDiplo(b, C) {
+  const A = aiState(b);
+  if (game.time - (A.dipAt || 0) < 30) return;
+  A.dipAt = game.time;
+  for (const n of game.nations.filter(n => n.alive && n.tiles)) {
+    if (n.hostile) {
+      const L = warLosing(n);
+      if (L >= 1) { aiAsk(b, C, `Demand ${n.short}'s total surrender`, `${n.full} is beaten. Total surrender would hand you all its land, towns, troops and stores.`, () => { const r = aiSurrender(n, { total: true }); if (r.accept) doSurrender(n, { total: true }); else toast(`${n.short}: ${r.why}`); }); continue; }
+      if (C.lost && fearOf(n) < 0.6) { aiAsk(b, C, `Ask ${n.short} for peace`, `The war with ${n.full} is going badly for you.`, () => { const r = aiPeace(n); toast(`${n.short}: ${r.why}`); }); continue; }
+      continue;
+    }
+    if (!treaty('nonagg', n.id) && touchesYou(n) && aiTreaty(n, 'nonagg').accept) { signTreaty(n, 'nonagg'); aiNote(b, `signed a non-aggression treaty with ${n.short}`); return; }
+    if (!treaty('research', n.id) && aiTreaty(n, 'research').accept) { signTreaty(n, 'research'); aiNote(b, `signed a research pact with ${n.short}`); return; }
+  }
+}
+// ---------- its panel: open the computer ----------
+function computerLines(b, C, lines, btns) {
+  const L = COMP[b.lvl || 0], fx = compFx(C);
+  lines.push(`<b>${L.name}</b> · ${Math.round(L.mw)} MW${(b.lvl || 0) <= 2 ? ` · ${dcCount(C)} data center${dcCount(C) === 1 ? '' : 's'} (+${dcCount(C)}%)` : ''}`);
+  lines.push(`In ${C.short}: power use −${Math.round(fx.power * 100)}%, wheat +${Math.round(fx.wheat * 100)}%, troop training +${Math.round(fx.train * 100)}%, research +${Math.round(fx.research * 100)}%${fx.range > 1 ? `, rocket range x${fx.range}` : ''}${(C.sat ?? 1) < 0.99 ? ` <span class="a">(underpowered: ${Math.round((C.sat ?? 1) * 100)}%)</span>` : ''}.`);
+  const nx = COMP[(b.lvl || 0) + 1];
+  if (nx) btns.push({ label: `Upgrade to ${nx.short} · ${costText(nx.cost)}`, cls: game.research.done.has(nx.tech) && !missingFor(nx.cost, C) ? 'go' : '', act: () => { upgradeComputer(b); refreshCard(true); }, off: !game.research.done.has(nx.tech) || !!missingFor(nx.cost, C) });
+  if (nx && !game.research.done.has(nx.tech)) lines.push(`<span class="d">Next: ${nx.short}, with ${TECH[nx.tech].name}.</span>`);
+  if ((b.lvl || 0) >= 3) btns.push({ label: '🤖 Open the AI', cls: 'go', act: () => showAIPanel(b) });
+}
+let aiTab = 'commands';
+function showAIPanel(b) {
+  const C = countryAt(b.i);
+  if (!C) return;
+  const A = aiState(b), cp = aiCompute(C);
+  const tabs = ['commands', 'war', 'energy', 'log'].map(t => `<button class="ai-tab${aiTab === t ? ' on' : ''}" data-tab="${t}">${{ commands: 'Commands', war: 'Military', energy: 'Energy', log: 'Log' }[t]}</button>`).join('');
+  let body = '';
+  if (aiTab === 'commands') {
+    body = `<div class="ai-row">Resources it may use: <input type="range" min="0" max="100" step="5" data-k="pct" value="${Math.round(A.pct * 100)}"> <b>${Math.round(A.pct * 100)}%</b> <span class="d">of what's in ${C.short} now, and of what's made from now on</span></div>` +
+      Object.entries(AICMD).filter(([k]) => k !== 'war').map(([k, K]) => { const ok = cp >= K.need; return `<label class="ai-cmd${ok ? '' : ' locked'}"><input type="checkbox" data-cmd="${k}" ${A.cmds[k] ? 'checked' : ''} ${ok ? '' : 'disabled'}> <b>${K.name}</b>${ok ? '' : ` <span class="d">(needs compute ${K.need})</span>`}<span>${K.desc}</span></label>`; }).join('');
+  } else if (aiTab === 'war') {
+    const ok = cp >= AICMD.war.need;
+    body = `<label class="ai-cmd${ok ? '' : ' locked'}"><input type="checkbox" data-cmd="war" ${A.cmds.war ? 'checked' : ''} ${ok ? '' : 'disabled'}> <b>Give the AI command of troops in ${C.short}</b>${ok ? '' : ` <span class="d">(needs compute ${AICMD.war.need})</span>`}<span>${AICMD.war.desc}</span></label>
+      <div class="ai-row">Troops it may use: <input type="range" min="0" max="100" step="5" data-k="troops" value="${Math.round(A.troops * 100)}"> <b>${Math.round(A.troops * 100)}%</b></div>` +
+      Object.entries(STRATS).map(([k, S]) => { const ok2 = cp >= S.need; return `<label class="ai-cmd${ok2 ? '' : ' locked'}"><input type="radio" name="strat" data-strat="${k}" ${A.strat === k ? 'checked' : ''} ${ok2 ? '' : 'disabled'}> <b>${S.name}</b>${ok2 ? '' : ` <span class="d">(needs compute ${S.need})</span>`}<span>${S.desc}</span></label>`; }).join('');
+  } else if (aiTab === 'energy') {
+    const spare = Math.max(0, (C.mw.max || 0) - (C.mw.need || 0) + (C.aiMW || 0));
+    body = `<div class="ai-row">Share of ${C.short}'s spare power for the AI: <input type="range" min="0" max="100" step="5" data-k="energy" value="${Math.round(A.energy * 100)}"> <b>${Math.round(A.energy * 100)}%</b></div>
+      <div>It draws <b>${fmtNum(C.aiMW || 0)} MW</b> of about ${fmtNum(spare)} MW spare (power for vehicles and other domains is never touched).</div>
+      <div>Data centers: <b>${dcCount(C)}</b>. <b>Compute: ${cp}</b> (data centers x2, plus the square root of its power x1.6).</div>
+      <div class="d">More compute unlocks more commands and strategies. From ${ACT_ALONE} it makes big moves (demanding surrender, asking for peace) by itself; below that it asks you first.</div>`;
+  } else body = A.log.length ? A.log.map(l => `<div>${l}</div>`).join('') : '<div class="d">Nothing yet.</div>';
+  showModal(`<div class="md-title">🤖 C.A.I.S. · ${C.short}</div><div class="md-body"><div class="ai-tabs">${tabs}</div><div class="ai-compute">Compute <b>${cp}</b></div>${body}</div>`, [{ label: 'Done', act: () => {} }]);
+  const again = () => showAIPanel(b);
+  for (const el of document.querySelectorAll('#md-text [data-tab]')) el.addEventListener('click', () => { aiTab = el.dataset.tab; again(); });
+  for (const el of document.querySelectorAll('#md-text [data-cmd]')) el.addEventListener('change', () => { A.cmds[el.dataset.cmd] = el.checked; aiNote(b, `${el.checked ? 'took on' : 'dropped'}: ${AICMD[el.dataset.cmd].name}`); });
+  for (const el of document.querySelectorAll('#md-text [data-strat]')) el.addEventListener('change', () => { A.strat = el.dataset.strat; });
+  for (const el of document.querySelectorAll('#md-text [data-k]')) el.addEventListener('change', () => { A[el.dataset.k] = (+el.value) / 100; again(); });
+}
+// =====================================================================================================
+// ---------- where the goods are: each settlement holds a share of its domain's stock ----------
+// The top bar shows the domain's total (spendable anywhere: haulers fetch from whichever settlement holds it).
+// Goods gather where real goods would: in safe, well-defended towns away from enemies, at busy crossroads (stations,
+// ports, airports, roads), and near the mines, farms and camps that make them. They drift there slowly.
+// Whoever captures a settlement takes what's stored in it.
+// =====================================================================================================
+const INV = { drift: 0.012, every: 1, near: 15 };
+let invTimer = 0;
+const settlementsOf = C => game.buildings.filter(b => b.type === 'settlement' && !underway(b) && owner[b.i] && countryAt(b.i) === C);
+// how strongly a settlement draws goods to itself, and why (for its card)
+function invPull(b, C) {
+  const x0 = b.i % W, y0 = (b.i / W) | 0, why = [];
+  // A) safety: far from enemy land (nations at war with you count fully, others a little), behind walls and forts
+  let foe = 999;
+  for (const n of game.nations) if (n.alive && n.tiles) { const d = Math.hypot(n.lx - x0, n.ly - y0) - Math.sqrt(n.tiles / Math.PI); foe = Math.min(foe, n.hostile ? d : d + 60); }
+  let safe = clamp(foe / 80, 0.25, 1.4);
+  let def = 0;
+  for (const q of game.buildings) if (owner[q.i] && (q.type === 'fort' || q.type === 'base') && tileDist(q.i, x0 + 0.5, y0 + 0.5) < INV.near) def += 0.25 + Math.min(0.5, (q.units || 0) / 80);
+  def += (DEFM[b.i] || 0) / 60;
+  safe *= 1 + Math.min(1, def);
+  why.push(safe >= 1.2 ? 'safe and well defended' : safe >= 0.8 ? 'fairly safe' : 'exposed to the enemy');
+  // B) traffic: stations, ports, airports and launch pads nearby; roads running through
+  let traffic = 0;
+  for (const q of game.buildings) if (owner[q.i] && (linkKind(q.type) || q.type === 'pad') && tileDist(q.i, x0 + 0.5, y0 + 0.5) < INV.near) traffic += 0.6;
+  let rd = 0;
+  for (const [dx, dy] of DIRS8) { const x = x0 + dx * 2, y = y0 + dy * 2; if (inb(x, y) && (NET[idx(x, y)] & 1)) rd++; }
+  traffic += rd * 0.12;
+  if (traffic >= 0.6) why.push('a busy crossroads');
+  // C) production: collectors nearby
+  let prod = 0;
+  for (const q of game.buildings) if (owner[q.i] && HARVESTS[q.type] && !underway(q) && tileDist(q.i, x0 + 0.5, y0 + 0.5) < INV.near) prod += 0.2;
+  if (prod >= 0.6) why.push(`near ${Math.round(prod / 0.2)} producers`);
+  return { w: safe * (0.4 + traffic + prod) * (0.5 + settlementLevel(b) * 0.25), why };
+}
+function stepInventories(dt) {
+  if ((invTimer += dt) < INV.every) return;
+  const T = invTimer; invTimer = 0;
+  for (const C of game.countries) {
+    if (!C.alive) continue;
+    const S = settlementsOf(C);
+    if (!S.length) continue;
+    const pulls = S.map(b => invPull(b, C).w), tot = pulls.reduce((a, v) => a + v, 0) || 1;
+    for (const b of S) if (!b.inv) b.inv = {};
+    for (const r of RESOURCES) {
+      // first, square the books with the domain total: new goods arrive where they're drawn; spending draws from all
+      let sum = 0;
+      for (const b of S) sum += b.inv[r] || 0;
+      const have = Math.max(0, C.res[r] || 0), delta = have - sum;
+      if (delta > 0) S.forEach((b, k) => { b.inv[r] = (b.inv[r] || 0) + delta * pulls[k] / tot; });
+      else if (delta < 0 && sum > 0) { const f = have / sum; for (const b of S) b.inv[r] = (b.inv[r] || 0) * f; }
+      // then drift a little toward where they're drawn
+      const k = Math.min(1, INV.drift * T);
+      S.forEach((b, j) => { const target = have * pulls[j] / tot; b.inv[r] += (target - b.inv[r]) * k; });
+    }
+  }
+}
+// what a settlement holds right now
+const invOf = b => b.inv || {};
+// a settlement falls: whoever takes it takes what was stored there
+function lootSettlement(b, fromC, toNation) {
+  if (!b || b.type !== 'settlement' || !fromC) return;
+  const got = {};
+  for (const r of RESOURCES) { const k = Math.min(Math.max(0, fromC.res[r] || 0), (b.inv || {})[r] || 0); if (k >= 0.5) { fromC.res[r] -= k; got[r] = k; } }
+  b.inv = {};
+  if (toNation) for (const r in got) { if (r === 'iron') toNation.iron = (toNation.iron || 0) + got[r]; else toNation.stock[r] = (toNation.stock[r] || 0) + got[r]; }
+  const txt = resWord(got);
+  if (txt) toast(`${toNation ? toNation.short : 'The enemy'} seized ${txt} stored in a settlement you lost.`);
+}
+// you take one of a nation's settlements: you get its share of their stores (by the land it served)
+function lootNation(b, n, C) {
+  if (!b || b.type !== 'settlement' || !n || !C) return;
+  const f = clamp(settlementLand(b).length / Math.max(1, n.tiles), 0.05, 0.5), got = {};
+  for (const r of RESOURCES) {
+    const have = r === 'iron' ? n.iron || 0 : (n.stock || {})[r] || 0, k = have * f;
+    if (k < 0.5) continue;
+    if (r === 'iron') n.iron -= k; else n.stock[r] -= k;
+    got[r] = k;
+  }
+  storeIn(C, got);
+  const txt = resWord(got);
+  if (txt) { floatText(b.i % W + 0.5, ((b.i / W) | 0) - 1.5, 'Captured stores', '#f2c14e'); toast(`You captured ${txt} stored in ${n.short}'s settlement.`); }
+}
+// the settlement a hauler should fetch a resource from: plenty of it, not too far
+function sourceSettlement(C, r, x, y, fallback) {
+  let best = fallback, bs = -Infinity;
+  for (const b of settlementsOf(C)) {
+    const have = invOf(b)[r] || 0;
+    if (have < 1) continue;
+    const s = Math.log(1 + have) * 30 - Math.hypot(b.i % W + 0.5 - x, ((b.i / W) | 0) + 0.5 - y) - (landGroup(b.i) !== landGroup(tileOf(x, y)) ? 500 : 0);
+    if (s > bs) { bs = s; best = b; }
+  }
+  return best;
 }
 // =====================================================================================================
 // ---------- walls, part 2: every stretch between two fortresses has its own health. Joined stretches are one wall for
@@ -9967,6 +10764,20 @@ function wallNear(wx, wy) {
   }
   return best;
 }
+// the fortress a click is meant for while picking a wall's far end: the nearest one on screen within a big radius
+// (bigger still on a touch screen), preferring forts the wall can actually reach
+function fortPick(x, y) {
+  const a = buildingAt(game.wallFrom), R = Math.max(TOUCH ? 80 : 56, cam.zoom * 2.6);
+  let best = null, bd = Infinity;
+  for (const b of game.buildings) {
+    if (b.type !== 'fort' || !owner[b.i] || underway(b)) continue;
+    const [sx, sy] = toScreen(...tileCenter(b.i)), d = Math.hypot(sx - x, sy - y);
+    if (d > R) continue;
+    const ok = b === a || !wallPlan(a, b).why, score = d - (ok ? R : 0);   // a reachable fort wins over a nearer one that isn't
+    if (score < bd) { bd = score; best = b; }
+  }
+  return best;
+}
 // the fortress nearest a click, generously (the second fort of a new wall is easy to miss)
 function fortNear(wx, wy) {
   const r = Math.max(2.5, 34 / cam.zoom);
@@ -9992,7 +10803,7 @@ function marketTrade(C, r, side) {
 function showMarket() {
   const C = activeCountry();
   if (!C) return;
-  const list = RESOURCES.filter(r => r !== 'gold' && (r !== 'oil' || oilKnown()) && (r !== 'uranium' || uraniumKnown()));
+  const list = RESOURCES.filter(r => r !== 'gold' && resKnown(r));
   const rows = list.map(r => `<div class="mk-row"><span class="ri">${SVG[RES_ICON[r]]}</span><b>${r}</b><span class="have">${fmtNum(Math.max(0, C.res[r]))}</span>
     <button data-mk="buy" data-r="${r}" ${goldOf(C) < lotGold(r, 'buy') ? 'disabled' : ''}>Buy ${MARKET.lot} · ${lotGold(r, 'buy')} gold</button>
     <button data-mk="sell" data-r="${r}" ${C.res[r] < MARKET.lot ? 'disabled' : ''}>Sell ${MARKET.lot} · ${lotGold(r, 'sell')} gold</button></div>`).join('');
@@ -10068,6 +10879,12 @@ function showBuildingCard(b) {
   if (b.type === 'settlement') lines.push(`Holds ${Math.round(settlementCap(b))} people from ${b.tiles} tiles in reach. Roads join it to the other settlements of ${C ? C.short : 'its domain'} by themselves, and haulers bring harvests here.`);
   if ((b.type === 'base' || b.type === 'fort') && !underway(b) && C && unitStats().type) btns.push({ label: `Hire ${MERC.n} troops · ${mercCost()} gold`, act: () => { hireTroops(b); refreshCard(true); }, off: goldOf(C) < mercCost() || (b.units || 0) >= garrisonCap(b) - 0.5 });
   if (b.type === 'settlement' && !underway(b)) btns.push({ label: `Market · ${fmtNum(goldOf(C))} gold`, act: () => showMarket() });
+  if (b.type === 'settlement' && !underway(b) && C) {     // its share of the domain's stock
+    const inv = invOf(b), list = RESOURCES.filter(r => (inv[r] || 0) >= 0.5 && resKnown(r));
+    const P = invPull(b, C);
+    lines.push(list.length ? `<b>Stored here:</b> ${list.map(r => `${fmtNum(inv[r])} ${r}`).join(', ')}` : 'Nothing stored here yet.');
+    lines.push(`<span class="d">Goods gather here because it is ${P.why.join(', ')}. Whoever captures it takes what is stored in it.</span>`);
+  }
   if (b.type === 'base' || b.type === 'fort') lines.push(`<b class="g">${Math.floor(b.units || 0)} / ${garrisonCap(b)} ${unitStats().type.name}</b>${b.training ? ' · training' : ''}${b.incoming ? ` · ${b.incoming} on the way` : ''}${b.oil != null && unitStats().type.oil ? ` · ${fmtNum(b.oil)} oil` : ''}`);
   if (b.type === 'fort' && !underway(b)) {
     const st = fortState(b), ws = fortWalls(b.i);
@@ -10113,6 +10930,9 @@ function showBuildingCard(b) {
     lines.push(txt ? `<b>In this ${HUB_NAME[linkKind(b.type)]}:</b> ${txt}${toSite ? ` · ${toSite} load${toSite > 1 ? 's' : ''} for building sites, waiting for a hauler` : ''}` : `Its inventory is empty.`);
     if (linkKind(b.type) === 'rail') lines.push(stationNearSettlement(C, b.i) ? 'By a settlement: goods for your stock are unloaded straight into it here.' : 'Goods unloaded here wait for a hauler to take them on.');
   }
+  if (b.type === 'computer' && !underway(b) && C) computerLines(b, C, lines, btns);
+  if (b.type === 'datacenter' && !underway(b) && C) { const cb = compOf(C); lines.push(cb ? ((cb.lvl || 0) >= 3 ? `Part of the AI's brain in ${C.short}: compute ${aiCompute(C)}.` : `Makes ${C.short}'s ${COMP[cb.lvl || 0].short} 1% more effective.`) : `<span class="a">No central computer in ${C.short} yet: it does nothing until there is one.</span>`); }
+  if (b.type === 'chipfab' && !underway(b) && C) lines.push(b.idle ? `<span class="a">Idle: needs silicon (2 a chip) and gold (0.5 a chip)${(C.sat ?? 1) < 1 ? ', and power' : ''}.</span>` : '<span class="g">Making chips.</span>');
   if (b.type === 'pad' && !underway(b)) {
     const st = rocketState(b), R = CFG.rocket, sp = C && C.space || { drills: 0 };
     lines.push(sp.drills ? `Fuel from ${sp.drills} ice drill${sp.drills > 1 ? 's' : ''} (${(sp.drills * R.drillFuel * (C.sat ?? 1)).toFixed(1)}/s, shared)` : `<span class="a">No ice drills in ${C ? C.short : 'this domain'}: fuel comes from burning oil (${R.padOil}/s for ${R.padOil * R.oilFuel} fuel/s). Ice drills on the polar caps are free.</span>`);
@@ -10123,11 +10943,13 @@ function showBuildingCard(b) {
     if (!only && st === 'ready' && !b.supply && !WORLD) btns.push({ label: 'Fly the rocket', cls: busy ? '' : 'go', act: () => launchRocket(b), off: busy });
     if (!only && !WORLD) stationOrder(b, C, lines, btns, busy);
     if (b.supply) btns.push({ label: `Stop supplying Station ${b.supply}`, act: () => { b.supply = null; refreshCard(true); } });
-    else if (!only && !WORLD && myStations().length && !(C && shuttlesOf(C).length)) btns.push({ label: `Supply Station ${myStations()[0].n} with one-way rockets`, act: () => { b.supply = myStations()[0].n; refreshCard(true); } });
+    else if (!only && !WORLD && myStations().length && !(C && shuttlesOf(C).length)) btns.push({ label: `Supply Station ${myStations()[0].n} with one-way rockets`, act: () => { if (needsComputer('A supply rocket')) return; b.supply = myStations()[0].n; refreshCard(true); } });
     const mine = game.shuttles.filter(sh => sh.w === WORLD && sh.pad === b.i && sh.state === 'docked'), out = game.shuttles.filter(sh => sh.state !== 'docked' && sh.c === (C && C.id)).length;
     if (game.research.done.has('reusable')) {
+      for (const sh of mine) { const nx = SHUTTLE_MK[(sh.mk || 0) + 1]; if (nx) btns.push({ label: `Refit a rocket to ${nx.name} · ${costText(nx.cost)}`, act: () => { upgradeShuttle(sh, C); refreshCard(true); }, off: !game.research.done.has(nx.tech) || (C && !!missingFor(nx.cost, C)) }); break; }
       const say1 = sh => { const d = sh.plan[sh.plan.length - 1]; return `fuel ${Math.floor(sh.fuel / CFG.shuttle.tank * 100)}%${sh.plan.length ? `, loading ${Math.round(boxSum(sh.cargo))} of ${Math.round(boxSum(sh.cargo) + shuttleLoadLeft(sh))} for ${d.w ? WORLDS[d.w].short : sh.plan[0].st != null ? 'Station ' + sh.plan[0].st : 'home'}` : ', waiting for something to carry'}`; };
-      lines.push(mine.length ? `<b>Reusable rocket${mine.length > 1 ? 's' : ''} here:</b> ${mine.map(say1).join('; ')}.` : 'Reusable rockets: big freighters between worlds (up to ' + CFG.shuttle.cargo + ' goods), and station supplies on the way. Trucks load them here while they fuel.');
+      lines.push(mine.length ? `<b>Reusable rocket${mine.length > 1 ? 's' : ''} here:</b> ${mine.map(sh => `${shMk(sh).name} (cargo ${shCargo(sh)}, range ${Math.round(shRange(sh))}: ${WORLDS.slice(1).filter(P => canReachWorld(sh, P.id)).map(P => P.short).join(', ') || 'stations only'}), ${say1(sh)}`).join('; ')}.` : `Reusable rockets: big freighters between worlds (Mk I: ${SHUTTLE_MK[0].cargo} goods, range ${SHUTTLE_MK[0].range}: the Moon is ${WORLDS[1].trip} away, Aries ${WORLDS[2].trip}), and station supplies on the way. Refits and an M.C.C.S. computer go further.`);
+      if (bestComputer() < 0) lines.push('<span class="a">Reusable rockets fly themselves: they need a central computer (Computing) somewhere in your empire.</span>');
       if (out) lines.push(`${out} more of yours away (flying, or at a landing pad).`);
       btns.push({ label: `Buy a reusable rocket · ${costText(CFG.shuttle.cost)}`, cls: mine.length ? '' : 'go', act: () => { buyShuttle(b); refreshCard(true); }, off: C && !!missingFor(CFG.shuttle.cost, C) });
       if (!WORLD) btns.push({ label: only ? 'Production: all rockets again' : 'Production: reusable rockets only', act: () => { b.shuttleOnly = !b.shuttleOnly; if (b.shuttleOnly && b.rocket) { C.res.iron += R.iron; b.rocket = null; } if (b.shuttleOnly) b.supply = null; refreshCard(true); } });
@@ -10358,7 +11180,7 @@ let termsDraft = null;
 function surrenderDialog(list) {
   const one = list.length === 1 ? list[0] : null;
   termsDraft = termsDraft || { res: {}, people: 0, soldiers: 0, vehicles: 0, towns: [], total: false };
-  const resList = RESOURCES.filter(r => (r !== 'oil' || oilKnown()) && (r !== 'uranium' || uraniumKnown()));
+  const resList = RESOURCES.filter(resKnown);
   const inp = (k, v, lbl) => `<label class="tm-f"><span>${lbl}</span><input type="number" min="0" step="5" data-t="${k}" value="${v || ''}" placeholder="0"></label>`;
   const towns = one ? game.buildings.filter(b => b.type === 'settlement' && aiOf[b.i] === one.id + 1).slice(0, 8)
     .map(b => `<label class="dp-town"><input type="checkbox" data-town="${b.i}" ${termsDraft.towns.includes(b.i) ? 'checked' : ''}> ${CFG.settlement.levels[settlementLevel(b)].name} · ${settlementLand(b).length} tiles</label>`).join('') : '';
@@ -10422,7 +11244,7 @@ function openDiplomacyAll() {
 }
 function renderDiplomacyAll() {
   const list = knownNations(), war = list.filter(n => n.hostile), C = activeCountry();
-  const resList = RESOURCES.filter(r => (r !== 'oil' || oilKnown()) && (r !== 'uranium' || uraniumKnown()));
+  const resList = RESOURCES.filter(resKnown);
   const resRow = (side, r) => `<div class="dp-res"><span class="ri">${SVG[RES_ICON[r]]}</span><input type="number" min="0" step="10" data-side="${side}" data-r="${r}" value="${dipDraft[side].res[r] || ''}" placeholder="0"></div>`;
   const rows = list.map(n => { const ts = treatiesWith(n.id).map(t => TREATY[t.kind].name.split(' ')[0]).join(', '); return `<div class="dp-nrow"><span class="dp-flag" style="background:${n.hex}"></span><b>${n.short}</b>
     <span class="d">${opWord(getOp('P', n.id))}</span>${n.hostile ? ' <span class="r">at war</span>' : allied('P', n.id) ? ' <span class="g">ally</span>' : ''}${ts ? ` <span class="g">· ${ts}</span>` : ''}<button data-open="${n.id}">Open</button></div>`; }).join('');
@@ -10474,6 +11296,7 @@ function aiNeeds(n) {
 let dipOf = -1, dipDraft = null, dipMsg = '';
 function opWord(op) { return op >= 60 ? 'Friendly' : op >= 25 ? 'Cordial' : op > -25 ? 'Neutral' : op > -60 ? 'Wary' : 'Hostile'; }
 function openDiplomacy(n, tx = null, ty = null) {
+  engage(n);
   if (!n || !n.alive) return closeDiplomacy();
   if (dipOf !== n.id) { dipDraft = { give: { res: {}, towns: [] }, ask: { res: {}, towns: [] } }; dipMsg = ''; }
   dipOf = n.id;
@@ -10502,7 +11325,7 @@ function renderDiplomacy() {
     return list.map(b => `<label class="dp-town"><input type="checkbox" data-side="${side}" data-town="${b.i}" ${dipDraft[side].towns.includes(b.i) ? 'checked' : ''}>
       ${CFG.settlement.levels[settlementLevel(b)].name} · ${settlementLand(b).length} tiles</label>`).join('') || '<div class="d" style="font-size:11px">none near</div>';
   };
-  const resList = RESOURCES.filter(r => (r !== 'oil' || oilKnown()) && (r !== 'uranium' || uraniumKnown()));
+  const resList = RESOURCES.filter(resKnown);
   $('diplo').innerHTML = `
     <div class="dp-head"><span class="dp-flag" style="background:${n.hex}"></span><div style="flex:1"><div class="dp-name">${n.full}</div>
       <div class="dp-sub">${n.pers.name} · ${fmtNum(n.people)} people · ${fmtNum(n.units)} ${us.type.name} · ${n.R.size} techs${al ? ` · in ${al.name}` : ''}</div></div>
@@ -10515,7 +11338,7 @@ function renderDiplomacy() {
       <button data-dp="expand">Expand to their border</button>
     </div>
     <div class="dp-row">
-      ${n.hostile ? '<button class="go" data-dp="peace">🕊 Ask for peace</button>' : `<button class="danger" data-dp="war">Declare war</button>`}
+      ${n.hostile ? '<button class="go" data-dp="peace">🕊 Ask for peace</button>' : MODE().war ? `<button class="danger" data-dp="war">Declare war</button>` : '<button disabled>Peaceful mode: no wars</button>'}
       ${allied('P', n.id) ? (mine && mine.leader === 'P' ? '<button data-dp="kick">Remove from alliance</button>' : '') :
         mine ? `<button class="go" data-dp="invite">Invite to ${mine.name}</button>` : al ? `<button class="go" data-dp="join">Ask to join ${al.name}</button>` : '<button class="go" data-dp="ally">🤝 Propose an alliance</button>'}
     </div>
@@ -10704,8 +11527,14 @@ function updateHud() {
   $('rate-oil').textContent += noOil ? ' OUT' : '';
   const M = C.mw, short = M.need > 0 && C.sat < 0.999;
   $('val-power').textContent = M.need || M.max ? `${fmtNum(M.need)} / ${fmtNum(M.max)} MW` : '-';
+
+  // silicon, cobalt and chips: one box, once you know electronics
+  $('res-tech').hidden = !techKnown();
+  if (techKnown()) $('val-tech').innerHTML = ['silicon', 'cobalt', 'chips'].map(r => `<span title="${r}">${SVG[RES_ICON[r]].replace('width="64" height="64"', 'width="13" height="13"')}${fmtNum(Math.max(0, tot[r] || 0))}</span>`).join(' ');
   $('val-power').classList.toggle('short', short);
   $('rate-power').textContent = short ? `${Math.round(C.sat * 100)}%` : M.need ? 'OK' : '';
+  const bc = (C.res.batteries || 0) * BATTERY.store;   // batteries: how full, beside the label
+  if (bc > 0) $('rate-power').textContent += ` 🔋${Math.round((C.charge || 0) / bc * 100)}%`;
   $('rate-power').classList.toggle('neg', short);
   $('val-terr').textContent = (game.ownedCount / game.landTiles * 100).toFixed(1) + '%';
   $('val-time').textContent = fmtTime(game.time);
@@ -11071,5 +11900,5 @@ window.__game = { TOUCH, mouse, game, cam, CFG, SEED, tick: tickAll, tickOne: ti
   fireMissile, setAiming, explode, saveGame, SAVE_KEY, recomputeBuildings, building, buildingAt, freePeople, params, isHarvested, aiTake, stepRaid, aiThink, aiFire, provoke,
   render, followBody, stopFollow, sunPos, wallGarrisons, buildDysonRocket, launchDyson, sendBomber, fireIPBM, setBombing, dysonPower, buildBridge, bridgePlan, POLAR, claim, isLand, launchRocket, makeStation, buyShuttle, toggleEngine, orbitOf, DISK, keys, showBuildingCard, refreshCard, openDiplomacy, aiConsider, doTrade, aiPeace, aiAlly, allianceOf, getOp, addOp, atWar, setWar, settlementLand, guardedAttack, autoDefend, buyVehicle, orderUpgrade, fleetSummary, tierOpen, addCar, seaCrossing, keys, settleExpedition, takeWheel, completeTech, setPct, setTroopPct, roadsList: () => roads, buildRoads, netGraph, findRoute, connectPlan, connectToRoad, wallPlan, pickWallEnd, showBuildingCard, strikePlan, strikeReach, techIn, goldBoost, haulProf, NET, defenseMult, nextVehicle, driveStep: (e, dt) => driveStep(e, dt), fireMissile, removeBuilding, TECH, unitStats, garrisons, totalUnits, launchAttack, frontWith, setTool, confirmGhost, setCmd, clickAt, commandClick,
   routesTo, dispatchSupplies, linkStats, techCost, pickTech, playerTechScore, resourceProfile, research: () => game.research, hasDep, oilKnown, W, frontier, tileCenter,
-  stopSaving: () => { noSave = true; }, scanAiBorders, dbgAI: () => ({ borders: [...aiBorders.keys()], gaps: [...aiGap.entries()].map(([k, v]) => k + ':' + Math.round(v.d)), dipTimer, borderTimer, offerTimer }), aiOffers, aiRelations, driftOpinions, aiTreaty, signTreaty, treaty, aiSurrender, doSurrender, warLosing, nationWorth, termsValue, askAll, openDiplomacyAll, aiNeeds, surrenderDialog, fearOf, showMarket, marketTrade, rushSite, rushCost, hireTroops, mercCost, treasury, orderStation, padBusy, myStations, wallState, fortState, damageWall, damageFort, wallMax, fortMax, showWallCard, wallNear, fortNear, buyWallUpgrade, upgradeCost, wallGroupOf, wallsAfterWar, stepRepairs, ironWallCross, viaLink, landWay, keepOnLand, shipGoods, crossesWater, tradePath, shoreOf, landGroup, overland, wet, tradeEnd, tilePath, intraArrive, stationNearSettlement, carProf };
+  stopSaving: () => { noSave = true; }, scanAiBorders, dbgAI: () => ({ borders: [...aiBorders.keys()], gaps: [...aiGap.entries()].map(([k, v]) => k + ':' + Math.round(v.d)), dipTimer, borderTimer, offerTimer }), aiOffers, aiRelations, driftOpinions, compFx, compOf, bestComputer, upgradeComputer, researchPeople, SHUTTLE_MK, upgradeShuttle, shRange, canReachWorld, craft, CRAFTS, aiCompute, aiState, showAIPanel, stepAIs, aiDoRoads, aiDoGambit, aiDoWar, aiDoBuild, aiDoTrade, roadsList2: () => roads, invPull, invOf, lootSettlement, lootNation, sourceSettlement, stepInventories, skyWorldPos, foreignSkyClick, viewWorld, setGameMode, MODE, modePicker, aiThink, aiUnitCap, aiTreaty, signTreaty, treaty, aiSurrender, doSurrender, warLosing, nationWorth, termsValue, askAll, openDiplomacyAll, aiNeeds, surrenderDialog, fearOf, showMarket, marketTrade, rushSite, rushCost, hireTroops, mercCost, treasury, orderStation, padBusy, myStations, wallState, fortState, damageWall, damageFort, wallMax, fortMax, showWallCard, wallNear, fortNear, buyWallUpgrade, upgradeCost, wallGroupOf, wallsAfterWar, stepRepairs, ironWallCross, viaLink, landWay, keepOnLand, shipGoods, crossesWater, tradePath, shoreOf, landGroup, overland, wet, tradeEnd, tilePath, intraArrive, stationNearSettlement, carProf };
 init();
