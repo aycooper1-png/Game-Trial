@@ -14,6 +14,16 @@ Pick one when you start a new map, and change it any time from the Command menu 
 - **Hard:** sharp nations. They pick their moments, strike where you're weakest, deal shrewdly, and invest heavily in armies and fortresses. Advanced ones run their own central computers.
 - **Murder mode:** as sharp as Hard, but every nation dislikes you, they seldom fight each other, and they readily ally against you.
 
+## Multiplayer
+Play with one friend: **New map → 🎮 Multiplayer**. Pick how you play, then copy the link and send it however you like (text, chat, email). The game waits until your friend opens the link, then starts for both of you.
+- **Rivals:** your friend runs a computer nation of about your size, somewhere else on the map. They can expand, build, attack, and offer you war, peace or trades. You answer their offers like any nation's.
+- **Co-op:** you both command one shared empire. Either of you can give any order, and you both see the news.
+- The two browsers connect directly, through the free PeerJS matchmaking service (bundled, no game server). The host's game runs the world, so the host keeps the tab open (in a hidden tab the game keeps going, but slower). If the friend drops out, the same link brings them back. In Rivals their realm is run by the computer until they do.
+- **Limits:** a rival friend has a simpler set of orders than the host: no vehicles, links, walls, space programme or computers of their own. They see stocks and land every couple of seconds, so things on the move can jump a little. Only the host can change the game mode or switch on creative mode.
+
+## Creative mode
+**Do not touch** (Command menu) switches creative mode on: every resource is infinite and every technology is researched. Press it again and choose **Off, keep this map**: your stock goes back to exactly what it was before (the technologies stay researched). Or switch it off and start a new map.
+
 ## What's new compared with the original prototype
 
 ### 1. Technology research
@@ -37,12 +47,15 @@ Pick one when you start a new map, and change it any time from the Command menu 
 - **Heavy loads:** a full car, cart or boat is 30% slower than an empty one. A full train burns twice the fuel (or power), and full planes and rockets burn more too.
 - **Where the goods are:** each settlement holds part of its domain's stock (shown on its card). The total is spendable anywhere: haulers fetch from whichever town holds it. Goods drift toward safe, well-defended towns, busy crossroads (stations, ports, roads), and towns near the mines and farms that make them. Capture a settlement and you take what's stored there; lose one and so do they.
 - **Overland goods stay on land:** porters, carts, wagons and trucks go round water rather than across it, unless they're taking goods to a boat.
-- **Upgrades** happen only when you order them (from a settlement, port or airport card): each vehicle is refitted when it next calls at a hub, and you see the total price up front. Out of fuel, vehicles drop back a tier and refit by themselves when fuel returns.
+- **New vehicles as you learn:** electric trucks (Batteries) and autonomous haulers (C.A.I.S.); diesel freighters (Petroleum) and container ships (Computing); cargo jets (Computing). A vehicle one tier behind the newest is refitted **for free and by itself** the next time it calls at a hub. Techs also tune vehicles with no upgrade at all: Masonry speeds cars, Metallurgy adds cargo room to carts and boats, Steam speeds boats, Electricity speeds trains, Electronics speeds road, sea and air vehicles, M.C.C.S. speeds every vehicle, and Computing adds 15% cargo room to every vehicle.
+- **Fields grow in:** a new farm's wheat doesn't appear all at once. The tiles around it are sown one at a time, in a random order.
+- **Upgrades** of more than one tier happen only when you order them (from a settlement, port or airport card): each vehicle is refitted when it next calls at a hub, and you see the total price up front. Out of fuel, vehicles drop back a tier and refit by themselves when fuel returns.
 - **Bridges:** pick your coast, then the land across the water. Roads, cars, rail and troops cross them.
 - **Workers you can watch:** builders and scaffolding on construction sites (with a cloud of dust when they finish), lumberjacks, miners and farmers walking out to the tiles they work, and mining rigs hammering away.
 
 ### 4. Military
 - **Bases and fortresses** train and hold units; capacity grows with tech. Helmets beside troop counts change with your tech.
+- **Troops modernise by themselves** as you research: Warband → … → Airborne infantry (Flight) → Tanks → Mechanized infantry (Electronics) → Networked brigades (Computing) → Drone squadrons (C.A.I.S.). Electronics, Computing and C.A.I.S. also make every unit hit harder and last longer.
 - **Walls** between two fortresses you pick (paid in stone) make the land harder to take and speed up marching. Picking the second fortress is forgiving: anywhere near a glowing fortress counts (a bigger area on phones), and a miss no longer cancels the wall. Click the first fortress again, or press Esc, to cancel.
 - **Damage and repair:** each stretch of wall between two fortresses has its own health. Battered walls and forts show cracks, then a breach. A breached stretch or fort shelters no one, but it stays until the war ends. Only if the war ends with that land still lost is it gone for good. Soldiers mend them: in a lull in a war they fetch the stone themselves (more soldiers work faster and carry more, more with better tech); in peacetime haulers bring the stone and the garrison builds.
 - **Wall upgrades** (click anywhere on a wall): your techs make walls tougher by themselves. You can also buy fort turrets, air defenses and an iron wall for the whole wall at once. An iron wall stops planes and missiles that cross it, and makes troops on it far harder to beat.
@@ -89,7 +102,8 @@ Pick one when you start a new map, and change it any time from the Command menu 
 ### 8. Other worlds
 - **The sky from other worlds:** zoom out on the Moon or Aries and you see the Sun, your home world and the other planets where they really are. Click one of your worlds to go there.
 - **The Moon and Aries are full maps.** With Bubble Habitats, a launch pad can send a **colony ship**: you pick the landing spot on that world's map.
-- Colonies live under **domes**: the land outside holds few people. **Terraformers** slowly turn the dust green so it holds people like home does.
+- Colonies live under **glass domes** (yours and the nations'): the land outside holds few people. **Terraformers** slowly turn the dust around them green so it holds people like home does.
+- **Terraforming a whole world:** once enough terraformers stand on a world and are well powered (the terraformer card shows how many: about 10 on the Moon and 9 on Aries), the whole planet starts turning green, a little at a time and in random places. More than enough makes it go faster. When the whole world is green, its air is breathable: the domes come down.
 - Switch worlds from **Command → Worlds**, or lock onto the Moon or Aries from home and double-click (double-tap) it. Every world keeps running while you look at another.
 - Off home, wheat grows only on land the terraformers have turned green (a landing colony brings a small greenhouse patch).
 - Advanced nations found outposts on the worlds you reach, and wars can be fought on any world.
@@ -122,4 +136,4 @@ Each nation is dealt a personality, varied a little on every map: **Warlord**, *
 
 ## Files
 
-`index.html`, `style.css` and `game.js`: no build step, so it runs straight from GitHub Pages. Every tuning number is in `CFG` at the top of `game.js`.
+`index.html`, `style.css` and `game.js` (plus `peerjs.min.js`, the MIT-licensed PeerJS library, for multiplayer): no build step, so it runs straight from GitHub Pages. Every tuning number is in `CFG` at the top of `game.js`.

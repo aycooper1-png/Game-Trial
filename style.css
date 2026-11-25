@@ -429,3 +429,23 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
 .md-box { max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
 #md-text { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
 @media (max-width: 640px) { .tech-vals { flex-wrap: wrap; font-size: 11px !important; row-gap: 0; } .tech-vals svg { width: 10px; height: 10px; } }
+/* multiplayer */
+.mode-btn.mp { border-color: #5b8bd8; background: #1b2840; }
+.mode-btn.small { padding: 5px 10px; }
+.mode-btn.small b { font-size: 13px; }
+.mode-list:has(.small) { flex-direction: row; flex-wrap: wrap; }
+.mp-link { display: flex; gap: 6px; margin: 10px 0 6px; }
+.mp-link input { flex: 1; min-width: 0; padding: 7px 8px; border-radius: 7px; border: 1px solid #3a4658; background: #121821; color: #eef2f8; font: 12px ui-monospace, monospace; }
+.mp-link button { padding: 7px 14px; border-radius: 7px; border: 1px solid #7bd389; background: #23402c; color: #eef2f8; cursor: pointer; font-family: inherit; font-weight: 600; }
+/* a full top bar (every resource known) on a mid-sized screen: tighten it so nothing overlaps */
+@media (min-width: 641px) and (max-width: 1560px) {
+  #topbar { padding: 0 8px; gap: 2px; }
+  #topbar .res { min-width: 0; padding: 0 7px 0 3px; gap: 5px; flex-shrink: 1; }
+  #topbar .res.country { min-width: 0; }
+  #val-country { max-width: 150px; }
+  .store { min-width: 40px; }
+  #topbar .capn { display: none; }
+}
+@media (min-width: 641px) and (max-width: 1360px) {
+  #topbar .res .ic { display: none; }
+}
