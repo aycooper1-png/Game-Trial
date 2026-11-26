@@ -6691,6 +6691,7 @@ function pill(x, y, text, { bg = 'rgba(20,26,37,0.9)', fg = '#eef2f8', border = 
   ctx.font = `${bold} ${size}px 'Segoe UI', Inter, Arial, sans-serif`;
   const tw = ctx.measureText(text).width;
   const w = tw + (dot ? 30 : 20), h = size + 10;
+  if (w < cw - 12) x = clamp(x, w / 2 + 6, cw - w / 2 - 6);   // a label near the edge slides in, so none is cut off (narrow phones)
   const left = x - w / 2, top = y - h / 2;
   ctx.beginPath();
   ctx.roundRect(left, top, w, h, h / 2);
@@ -11151,9 +11152,11 @@ function initUI() {
   $('cmdmenu').addEventListener('click', e => {
     const b = e.target.closest('button');
     if (!b) return;
-    if (b.dataset.cmd) setCmd(b.dataset.cmd);
+    // on a phone the panel covers the map: once you've picked what a tap does, it gets out of the way
+    const covers = () => { const r = $('cmdmenu').getBoundingClientRect(); return r.width * r.height > innerWidth * innerHeight * 0.35; };
+    if (b.dataset.cmd) { setCmd(b.dataset.cmd); if (covers()) toggleCmdMenu(false); }
     const act = b.dataset.act;
-    if (act === 'fire') setAiming(!game.aiming);
+    if (act === 'fire') { setAiming(!game.aiming); if (game.aiming && covers()) toggleCmdMenu(false); }
     else if (act === 'next') nextCountry(1);
     else if (act === 'map') toggleMapView();
     else if (act === 'home') goHome();
