@@ -56,6 +56,7 @@ canvas#game.building { cursor: copy; }
 #topbar .res.country { min-width: 190px; cursor: pointer; }
 .flag { width: 14px; height: 18px; border-radius: 2px; background: linear-gradient(180deg, #2f7de1 0 50%, #f2c14e 50% 100%); box-shadow: 0 0 0 1.5px #1c62d6; flex: none; }
 #val-country { max-width: 210px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.terrn { font-size: 10px; font-weight: 700; opacity: 0.8; color: #9fd0ff; line-height: 1.1; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
 .incoming { font-size: 11px; font-weight: 700; color: var(--accent); margin-left: 5px; }
 
 /* ---------- bottom row ---------- */
@@ -483,3 +484,5 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
 .tt-world { margin: 8px 0 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.75; }
 .tt-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .tt-list .mode-btn { min-width: 130px; }
+
+#diplo .dp-result.top { margin: 4px 0 2px; font-size: 12px; }

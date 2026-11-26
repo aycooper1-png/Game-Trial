@@ -267,15 +267,15 @@ const CFG = {
   // before Petroleum). Out of fuel, a vehicle drops to the tier below until it calls in somewhere that has fuel again.
   fleet: {
     car: { name: 'cars', hub: 'settlement', offRoad: 0.2, start: 3, store: 80, tiers: [
-      { id: 'porter',   name: 'Porters',     tech: null,         cargo: 10, speed: 4,  cost: { wood: 8 } },
-      { id: 'handcart', name: 'Handcarts',   tech: 'wheel',      cargo: 16, speed: 5,  cost: { wood: 12 } },
-      { id: 'horse',    name: 'Pack horses', tech: 'horses',     cargo: 22, speed: 7,  cost: { wood: 10, wheat: 20 } },
-      { id: 'carriage', name: 'Carriages',   tech: 'carriages',  cargo: 36, speed: 8,  cost: { wood: 25, iron: 5 } },
-      { id: 'caravan',  name: 'Caravans',    tech: 'caravans',   cargo: 50, speed: 8.5, cost: { wood: 30, iron: 8, wheat: 20 } },
-      { id: 'truck',    name: 'Trucks',      tech: 'automobile', cargo: 60, speed: 15, cost: { iron: 25, oil: 5 }, fuel: 0.03 },
+      { id: 'porter',   name: 'Porters',     tech: null,         cargo: 10, speed: 4,  cost: { wood: 8 }, stick: 1 },
+      { id: 'handcart', name: 'Handcarts',   tech: 'wheel',      cargo: 16, speed: 5,  cost: { wood: 12 }, stick: 1.3 },
+      { id: 'horse',    name: 'Pack horses', tech: 'horses',     cargo: 22, speed: 7,  cost: { wood: 10, wheat: 20 }, stick: 1.6 },
+      { id: 'carriage', name: 'Carriages',   tech: 'carriages',  cargo: 36, speed: 8,  cost: { wood: 25, iron: 5 }, stick: 2.2 },
+      { id: 'caravan',  name: 'Caravans',    tech: 'caravans',   cargo: 50, speed: 8.5, cost: { wood: 30, iron: 8, wheat: 20 }, stick: 3 },
+      { id: 'truck',    name: 'Trucks',      tech: 'automobile', cargo: 60, speed: 15, cost: { iron: 25, oil: 5 }, stick: 5, fuel: 0.03 },
       // later tiers come by themselves (auto): a truck is refitted for free next time it calls in, once you know how
-      { id: 'etruck',   name: 'Electric trucks', tech: 'batteries', cargo: 75, speed: 17, cost: {}, auto: true },
-      { id: 'autohauler', name: 'Self-driving haulers', tech: 'cais', cargo: 95, speed: 22, cost: {}, auto: true } ] },
+      { id: 'etruck',   name: 'Electric trucks', tech: 'batteries', cargo: 75, speed: 17, cost: {}, stick: 9, auto: true },
+      { id: 'autohauler', name: 'Self-driving haulers', tech: 'cais', cargo: 95, speed: 22, cost: {}, stick: 30, auto: true } ] },
     boat: { name: 'boats', hub: 'port', tiers: [
       { id: 'sailboat',  name: 'Sailboats',  tech: 'sailing',      cargo: 30, speed: 6,  cost: { wood: 30 } },
       { id: 'galleon',   name: 'Galleons',   tech: 'shipbuilding', cargo: 60, speed: 7.5, cost: { wood: 40, iron: 10 } },
@@ -3224,6 +3224,75 @@ function makeLine(a, b, side, follow, maxExp) {
   const cost = netCost(side, false);
   return smoothLine(path, i => cost(i) <= 1.5 || i === a || i === b);
 }
+// A road between two of your settlements is laid to serve the collectors (camps, cabins, derricks...) along the way.
+// Where it costs little, it swings over to run right past one, so haulers load at the roadside; where reaching it
+// would mean a long detour, the road runs straight and leaves it be. A real road bends gently, never doubling back:
+// each swing turns at most 50 degrees from the way it was going, and all of them add at most a third to its length.
+function roadLine(a, b, side) {
+  const base = () => makeLine(a, b, side, side > 0, 12000);
+  if (side <= 0) return base();
+  const C = t => [t % W + 0.5, ((t / W) | 0) + 0.5];
+  const [ax, ay] = C(a), [bx, by] = C(b), dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy, len = Math.sqrt(L2);
+  if (len < 6) return base();
+  const ok = i => isLand(i) && sideOf(i) === side && !building[i] && depositOf[i] < 0;
+  const cand = [];
+  for (const q of game.buildings) {
+    if (!HARVESTS[q.type] || sideOf(q.i) !== side || underway(q)) continue;
+    const [qx, qy] = C(q.i), t = ((qx - ax) * dx + (qy - ay) * dy) / L2;
+    if (t < 0.08 || t > 0.92) continue;
+    const off = Math.abs((qx - ax) * dy - (qy - ay) * dx) / len;
+    if (off < 1.6 || off > 9) continue;            // already beside the line, or too far to be worth a swing
+    // the tile beside it nearest the straight line: the road passes there
+    let w = -1, wd = Infinity;
+    for (const [ex, ey] of D8) {
+      const x = (q.i % W) + ex, y = ((q.i / W) | 0) + ey;
+      if (!inb(x, y) || !ok(idx(x, y))) continue;
+      const d = Math.abs((x + 0.5 - ax) * dy - (y + 0.5 - ay) * dx) / len;
+      if (d < wd) { wd = d; w = idx(x, y); }
+    }
+    if (w >= 0) cand.push({ w, t, off, load: 1 + Math.min(2, boxSum(q.buf || {}) / 40) });
+  }
+  if (!cand.length) return base();
+  const turnOk = pts => {                          // gentle bends only, and not too much longer than straight
+    let tot = 0;
+    for (let k = 1; k < pts.length; k++) tot += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+    if (tot > len * 1.33) return false;
+    for (let k = 1; k < pts.length - 1; k++) {
+      const a1 = Math.atan2(pts[k][1] - pts[k - 1][1], pts[k][0] - pts[k - 1][0]), a2 = Math.atan2(pts[k + 1][1] - pts[k][1], pts[k + 1][0] - pts[k][0]);
+      let d = Math.abs(a2 - a1); if (d > Math.PI) d = 2 * Math.PI - d;
+      if (d > 0.87) return false;
+    }
+    return true;
+  };
+  const way = [{ t: 0, p: [ax, ay], w: a }, { t: 1, p: [bx, by], w: b }];
+  // the most worthwhile first: close to the line, and busy
+  cand.sort((p, q) => p.off / p.load - q.off / q.load);
+  for (const c of cand) {
+    const k = way.findIndex(x => x.t > c.t), P = way[k - 1].p, N = way[k].p, Q = C(c.w);
+    const extra = Math.hypot(Q[0] - P[0], Q[1] - P[1]) + Math.hypot(N[0] - Q[0], N[1] - Q[1]) - Math.hypot(N[0] - P[0], N[1] - P[1]);
+    if (extra > c.off * 1.2 * c.load) continue;     // a hauler's trips off-road would cost less than the swing
+    const trial = [...way.slice(0, k), { t: c.t, p: Q, w: c.w }, ...way.slice(k)];
+    if (!turnOk(trial.map(x => x.p))) continue;
+    way.splice(k, 0, { t: c.t, p: Q, w: c.w });
+  }
+  if (way.length === 2) return base();
+  // each stretch between swings laid like any road, then the corners rounded off a little
+  const cost = netCost(side, false), okS = i => cost(i) <= 1.5;
+  let pts = [];
+  for (let k = 0; k < way.length - 1; k++) {
+    const path = tilePath(way[k].w, way[k + 1].w, netCost(side, true), 12000);
+    if (!path) return base();
+    const seg = smoothLine(path, i => okS(i) || i === way[k].w || i === way[k + 1].w).pts;
+    pts.push(...(k ? seg.slice(1) : seg));
+  }
+  for (let it = 0; it < 3; it++) pts = pts.map((p, k) => (k === 0 || k === pts.length - 1 ? p : [(pts[k - 1][0] + 2 * p[0] + pts[k + 1][0]) / 4, (pts[k - 1][1] + 2 * p[1] + pts[k + 1][1]) / 4]));
+  const cum = [0];
+  for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+  const tiles = [];
+  for (const p of pts) { const t = idx(Math.floor(p[0]), Math.floor(p[1])); if (tiles[tiles.length - 1] !== t) tiles.push(t); }
+  if (tiles.some(t => !isLand(t) && !bridgeAt[t])) return base();
+  return { pts, cum, len: cum[cum.length - 1], tiles };
+}
 // Roads: each settlement to its nearest neighbours of the same side (a domain of yours, or a nation), within reach.
 // A road is worked out once, when it's first needed, and then stays put. Only an enemy takes it away: the stretches
 // on land they conquer are torn up. If both ends are still yours, a work crew relays the gap after a while.
@@ -3287,7 +3356,7 @@ function buildRoads() {
       const a = list[k].i, b = list[j].i, key = Math.min(a, b) + ':' + Math.max(a, b);
       if (have.has(key)) continue;
       if (budget-- <= 0) { roadsDirty = true; continue; }
-      const L = makeLine(a, b, side, side > 0, 12000);
+      const L = roadLine(a, b, side);
       if (L) { roads.push({ ...L, key, side, kind: 'road', a, b }); have.set(key, [roads[roads.length - 1]]); changed = true; }
     }
     // 3. repairs: a road cut by an enemy whose two ends are both back in our hands is relaid after a while
@@ -3295,7 +3364,7 @@ function buildRoads() {
       const r0 = rs[0];
       if (r0.side !== side || !rs.every(r => r.cut != null) || game.time - Math.max(...rs.map(r => r.cut)) < RC.repair) continue;
       if (sideOf(r0.a) !== side || sideOf(r0.b) !== side || budget-- <= 0) continue;
-      const L = makeLine(r0.a, r0.b, side, side > 0, 12000);
+      const L = roadLine(r0.a, r0.b, side);
       if (!L || L.tiles.some(t => roadEnemy(side, t))) continue;
       roads = roads.filter(r => r.key !== key);
       roads.push({ ...L, key, side, kind: 'road', a: r0.a, b: r0.b });
@@ -3345,6 +3414,7 @@ function netGraph() {
   const lines = [...roads.filter(r => r.side > 0 && !roadWorks(r)), ...game.connects.map(c => ({ ...c, kind: 'road' })), ...game.walls.map(w => ({ ...w, kind: 'wall' }))];
   const ends = new Set();
   for (const L of lines) { ends.add(L.tiles[0]); ends.add(L.tiles[L.tiles.length - 1]); }
+  const edges = [];
   const nodes = new Map(), node = (t, p) => { if (!nodes.has(t)) nodes.set(t, { t, x: p[0], y: p[1], adj: [] }); return nodes.get(t); };
   for (const L of lines) {
     let k0 = 0;
@@ -3355,11 +3425,14 @@ function netGraph() {
       if (A !== B) {
         const len = L.cum[k] - L.cum[k0];
         A.adj.push({ to: B, len, L, k0, k1: k, kind: L.kind }); B.adj.push({ to: A, len, L, k0: k, k1: k0, kind: L.kind });
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (let m = k0; m <= k; m++) { const p = L.pts[m]; x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+        edges.push({ A, B, L, lo: k0, hi: k, kind: L.kind, x0, y0, x1, y1 });
       }
       k0 = k;
     }
   }
-  graphNet = { nodes: [...nodes.values()], lines };
+  graphNet = { nodes: [...nodes.values()], lines, edges };
   return graphNet;
 }
 // The quickest way from (ax, ay) to (bx, by) for something that moves at prof.off off-road, prof.road on roads
@@ -3435,14 +3508,37 @@ function findRoute(ax, ay, bx, by, prof) {
   return prof.land ? keepOnLand(r, prof) : r;
 }
 function findRoute0(ax, ay, bx, by, prof) {
-  const direct = offTime(ax, ay, bx, by, prof.off);
+  // `avoid`: how much a vehicle dislikes leaving the road when it picks its way (porters 1: they cut across freely;
+  // self-driving haulers stay on the road to the point nearest where they're going). It sways the choice, not the speed.
+  const av = prof.avoid || 1, offW = (x0, y0, x1, y1) => offTime(x0, y0, x1, y1, prof.off) * av;
+  const direct = offW(ax, ay, bx, by);
   const G = netGraph();
   const plain = { pts: [[ax, ay], [bx, by]], spd: [prof.off], len: direct };
   if (!G.nodes.length || Math.hypot(bx - ax, by - ay) < 1.5) return plain;
-  const near = (x, y) => G.nodes.map(n => [Math.hypot(n.x - x, n.y - y), n]).sort((p, q) => p[0] - q[0]).slice(0, 5).map(([, n]) => [offTime(x, y, n.x, n.y, prof.off), n]);
+  const spOf = e => (e.kind === 'wall' ? prof.wall : prof.road);
+  // the nearest point of each line close by: a road passing near is joined right there, not only at its ends
+  const project = (x, y) => {
+    const out = [];
+    for (const e of G.edges) {
+      if (!spOf(e) || x < e.x0 - 25 || x > e.x1 + 25 || y < e.y0 - 25 || y > e.y1 + 25) continue;
+      let bk = -1, bd = Infinity;
+      for (let k = e.lo; k <= e.hi; k++) { const p = e.L.pts[k], d = (p[0] - x) ** 2 + (p[1] - y) ** 2; if (d < bd) { bd = d; bk = k; } }
+      if (bk >= 0 && bd < 625) out.push({ e, k: bk, d: Math.sqrt(bd) });
+    }
+    return out.sort((p, q) => p.d - q.d).slice(0, 6);
+  };
+  const along = (e, k0, k1) => Math.abs(e.L.cum[k1] - e.L.cum[k0]) / spOf(e);
+  const near = (x, y) => G.nodes.map(n => [Math.hypot(n.x - x, n.y - y), n]).sort((p, q) => p[0] - q[0]).slice(0, 5);
+  // segments: ['off', x0, y0, x1, y1] straight across country; ['line', e, k0, k1] along a road or wall
   const dist = new Map(), prev = new Map(), done = new Set();
-  for (const [d, n] of near(ax, ay)) { dist.set(n, d); prev.set(n, null); }
-  const exits = near(bx, by);
+  const relax = (n, d, p) => { if (d < (dist.get(n) ?? Infinity)) { dist.set(n, d); prev.set(n, p); } };
+  for (const [, n] of near(ax, ay)) relax(n, offW(ax, ay, n.x, n.y), { segs: [['off', ax, ay, n.x, n.y]] });
+  const PA = project(ax, ay), PB = project(bx, by);
+  for (const P of PA) {
+    const [px, py] = P.e.L.pts[P.k], o = offW(ax, ay, px, py);
+    relax(P.e.A, o + along(P.e, P.k, P.e.lo), { segs: [['off', ax, ay, px, py], ['line', P.e, P.k, P.e.lo]] });
+    relax(P.e.B, o + along(P.e, P.k, P.e.hi), { segs: [['off', ax, ay, px, py], ['line', P.e, P.k, P.e.hi]] });
+  }
   for (let guard = 0; guard < 5000; guard++) {
     let u = null, ud = Infinity;
     for (const [n, d] of dist) if (!done.has(n) && d < ud) { ud = d; u = n; }
@@ -3451,25 +3547,42 @@ function findRoute0(ax, ay, bx, by, prof) {
     for (const e of u.adj) {
       const sp = e.kind === 'wall' ? prof.wall : prof.road;
       if (!sp) continue;
-      const nd = ud + e.len / sp;
-      if (nd < (dist.get(e.to) ?? Infinity)) { dist.set(e.to, nd); prev.set(e.to, { from: u, e }); }
+      relax(e.to, ud + e.len / sp, { from: u, e });
     }
   }
+  // the way off at the far end: from a junction, or from the point of a line nearest the goal
   let best = null, bt = direct;
-  for (const [d, n] of exits) { const t = (dist.get(n) ?? Infinity) + d; if (t < bt) { bt = t; best = n; } }
-  if (!best) return plain;
-  const legs = [];
-  for (let n = best; prev.get(n); n = prev.get(n).from) legs.push(prev.get(n).e);
-  legs.reverse();
-  let first = best;
-  for (let n = best; prev.get(n); n = prev.get(n).from) first = prev.get(n).from;
-  const pts = [[ax, ay], [first.x, first.y]], spd = [prof.off];
-  for (const e of legs) {
-    const st = e.k1 > e.k0 ? 2 : -2, sp = e.kind === 'wall' ? prof.wall : prof.road;
-    for (let k = e.k0 + st; st > 0 ? k < e.k1 : k > e.k1; k += st) { pts.push(e.L.pts[k]); spd.push(sp); }
-    pts.push(e.L.pts[e.k1]); spd.push(sp);
+  for (const [, n] of near(bx, by)) { const t = (dist.get(n) ?? Infinity) + offW(n.x, n.y, bx, by); if (t < bt) { bt = t; best = { n, tail: [['off', n.x, n.y, bx, by]] }; } }
+  for (const Q of PB) {
+    const [qx, qy] = Q.e.L.pts[Q.k], o = offW(qx, qy, bx, by);
+    for (const [n, k] of [[Q.e.A, Q.e.lo], [Q.e.B, Q.e.hi]]) {
+      const t = (dist.get(n) ?? Infinity) + along(Q.e, k, Q.k) + o;
+      if (t < bt) { bt = t; best = { n, tail: [['line', Q.e, k, Q.k], ['off', qx, qy, bx, by]] }; }
+    }
+    for (const P of PA) if (P.e === Q.e) {        // on and off the same stretch of road
+      const [px, py] = P.e.L.pts[P.k], t = offW(ax, ay, px, py) + along(P.e, P.k, Q.k) + o;
+      if (t < bt) { bt = t; best = { head: [['off', ax, ay, px, py], ['line', P.e, P.k, Q.k], ['off', qx, qy, bx, by]] }; }
+    }
   }
-  pts.push([bx, by]); spd.push(prof.off);
+  if (!best) return plain;
+  let segs;
+  if (best.head) segs = best.head;
+  else {
+    const mid = [];
+    let n = best.n;
+    for (; prev.get(n) && prev.get(n).from; n = prev.get(n).from) { const p = prev.get(n); mid.push(['line', p.e, p.e.k0, p.e.k1]); }
+    mid.reverse();
+    segs = [...prev.get(n).segs, ...mid, ...best.tail];
+  }
+  const pts = [[ax, ay]], spd = [];
+  for (const g of segs) {
+    if (g[0] === 'off') { if (Math.hypot(g[3] - pts[pts.length - 1][0], g[4] - pts[pts.length - 1][1]) > 0.05) { pts.push([g[3], g[4]]); spd.push(prof.off); } continue; }
+    const [, e, k0, k1] = g, L = e.L || e, sp = spOf(e), st = k1 > k0 ? 2 : -2;
+    if (k0 === k1) continue;
+    for (let k = k0 + st; st > 0 ? k < k1 : k > k1; k += st) { pts.push(L.pts[k]); spd.push(sp); }
+    pts.push(L.pts[k1]); spd.push(sp);
+  }
+  if (pts.length < 2) return plain;
   return { pts, spd, len: bt };
 }
 // what each kind of vehicle is right now, by tech (and, for the ones that burn oil, fuel)
@@ -3752,7 +3865,7 @@ function unloadAt(V, C, hub = -1) {
     for (const r of CARGO_RES) if (cg[r]) goods[r] = cg[r];
     if (boxSum(goods) > 0) toYard(C, hub, goods, { type: 'stock' });
     C.people += cg.people || 0;
-    for (const q of cg.req || []) { if (q.intra) intraArrive(C, hub, q); else deliver(q, C); }
+    for (const q of cg.req || []) { if (q.intra) intraArrive(C, hub, q); else deliver(q, C, hub); }
   }
   V.cargo = null; V.to = -1;
 }
@@ -3775,29 +3888,90 @@ function toYard(C, hub, res, then) {
   game.hubJobs.push({ c: C.id, at: hub, res: { ...res }, then: then || { type: 'stock' }, car: null, since: game.time });
 }
 function yardDone(C, res, then) {
+  if (then && then.type === 'site' && then.imp) return impArrive(C, then.site, res);
+  if (then && then.type === 'board') return boardLink(C, then, null);
   if (then && then.type === 'site') {
     const b = buildingAt(then.site);
     if (b && b.site) { const dur = 2 + Math.min(6, boxSum(b.site.cost || {}) / 40); b.site.crew = game.time + dur; b.site.crewDur = dur; return; }
   }
   storeIn(C, res);
 }
-// a consignment has reached domain C: hand it to its site, or send it on toward its domain
-function deliver(q, C) {
+// ---------- goods sent between your territories ----------
+// They never change shape on the way. A hauler of the sending territory carries them from its stock out to its port
+// (or station, or airport) and sets them down there; the boat (train, plane) takes them across; at the far end they
+// wait in the yard until a hauler of that territory takes them on to the building site. A territory with no haulers
+// of its own gets one: a hauler boards the boat with the goods and stays there. Haulers ride only when they must.
+const linkByEnds = (a, b) => game.links.find(L => L.a === a && L.b === b);
+const hasCarOn = (C, t) => game.cars.some(v => v.country === C.id && carReach(v, t));
+// a load split into cartloads (at most six of them)
+function cartloads(res) {
+  const tot = boxSum(res), per = Math.max(haulProf().cargo, tot / 6), out = [];
+  if (tot <= per * 1.05) return [{ ...res }];
+  const n = Math.ceil(tot / per);
+  for (let k = 0; k < n; k++) { const part = {}; for (const r in res) part[r] = res[r] / n; out.push(part); }
+  return out;
+}
+// consignment q ({ dest, site, res, imp? }) leaves D: from D's stock (at < 0), or from the hub of D it came in at
+function sendConsignment(D, q, at = -1) {
   const dest = liveCountry(q.dest);
-  const dump = () => { for (const r in q.res) C.res[r] += q.res[r]; };
-  if (!dest) return dump();
-  if (dest === C) {
-    const b = buildingAt(q.site);
-    if (!b || !b.site) return dump();
-    for (const r in q.res) {
-      const give = Math.min(q.res[r], b.site.need[r] || 0);
-      b.site.need[r] = (b.site.need[r] || 0) - give; C.res[r] += q.res[r] - give;
-    }
-    return;
+  if (!dest) return at >= 0 ? toYard(D, at, q.res, { type: 'stock' }) : storeIn(D, q.res);
+  if (dest === D) {                                // it's home: on to its site
+    if (at >= 0) return toYard(D, at, q.res, { type: 'site', site: q.site, imp: true });
+    return impArrive(D, q.site, q.res);
   }
-  const hop = routesTo(dest).get(C.id);
-  if (!hop) return dump();                         // the way on is gone: it waits here, and the site asks again
-  hop.L.req[hop.end].push(q);
+  const hop = routesTo(dest).get(D.id);
+  if (!hop) return at >= 0 ? toYard(D, at, q.res, { type: 'stock' }) : storeIn(D, q.res);   // the way on is gone
+  const hub = hop.end === 'a' ? hop.L.a : hop.L.b, then = { type: 'board', a: hop.L.a, b: hop.L.b, end: hop.end };
+  // the hauler's leg: from where the goods are now out to the hub
+  let from = at;
+  if (from < 0) { const S = nearestSettlement(D, ...tileCenter(hub)); from = S && sameLand(S.i, hub) ? S.i : -1; }
+  if (from < 0 || from === hub || !hasCarOn(D, from)) return boardLink(D, then, q);
+  const parts = cartloads(q.res);
+  parts.forEach((res, k) => { const q2 = { ...q, res }; if (k) delete q2.rider; game.hubJobs.push({ c: D.id, at: from, res, then: { ...then, q: q2 }, car: null, since: game.time }); });
+}
+// a consignment set down at a hub's quay: it goes aboard the next boat (train, plane). If the territory it's for has
+// no hauler of its own, the one that brought it (or one from this territory) goes along, and stays there.
+function boardLink(C, then, q, v = null) {
+  q = q || then.q;
+  const L = linkByEnds(then.a, then.b), dest = liveCountry(q.dest);
+  if (!L) return storeIn(C, q.res);
+  if (dest && dest !== C && !game.cars.some(c => c.country === dest.id) && !dest.riderComing && !q.rider) {
+    let rider = v;
+    if (!rider) { const hub = then.end === 'a' ? L.a : L.b; rider = game.cars.filter(c => c.country === C.id && !c.job && carReach(c, hub)).sort((p, q2) => Math.hypot(p.x - hub % W, p.y - hub / W) - Math.hypot(q2.x - hub % W, q2.y - hub / W))[0]; }
+    if (rider && game.cars.filter(c => c.country === C.id && !c.gone).length > 1) {   // never the last one a territory has
+      dropCarJob(rider);
+      q.rider = { tier: rider.tier };
+      rider.gone = true; rider.boarded = true;
+      dest.riderComing = true;
+      floatText(rider.x, rider.y - 1, `A ${FLEET.car.tiers[rider.tier].name.toLowerCase().replace(/s$/, '')} boards for ${dest.short}`, '#9fd0ff');
+    }
+  }
+  (L.req || (L.req = { a: [], b: [] }))[then.end].push(q);
+}
+// goods reach the site they were sent for: what it still needs, it takes; anything over goes into the stock
+function impArrive(C, site, res) {
+  const b = buildingAt(site), C2 = (b && countryAt(b.i)) || C;
+  if (!b || !b.site) return storeIn(C2, res);
+  const S = b.site;
+  S.imported = S.imported || {};
+  for (const r in res) {
+    const give = Math.min(res[r], Math.max(0, S.need[r] || 0));
+    S.need[r] = (S.need[r] || 0) - give;
+    S.imported[r] = (S.imported[r] || 0) + res[r];
+    if (res[r] - give > 0) C2.res[r] += res[r] - give;
+  }
+  if (boxSum(res) >= 1) floatText(site % W + 0.5, ((site / W) | 0) - 0.6, `+${costText(res)}`, '#7bd389');
+}
+// a consignment has reached domain C at one of its hubs: its hauler (if one came along) gets off, and the goods go on
+function deliver(q, C, hub = -1) {
+  if (q.rider) {
+    const at = hub >= 0 ? hub : (nearestSettlement(C, C.lx, C.ly) || {}).i;
+    const D = liveCountry(q.dest) || C;
+    if (at != null) { const v = addCar(C, { i: at }, q.rider.tier); floatText(v.x, v.y - 1, `A ${FLEET.car.tiers[v.tier].name.toLowerCase().replace(/s$/, '')} arrives to work in ${C.short}`, '#9fd0ff'); }
+    D.riderComing = false; C.riderComing = false;
+    delete q.rider;
+  }
+  return sendConsignment(C, q, hub);
 }
 // what share of `from`'s output goes to `to` over one link
 function outputShare(from, to) {
@@ -3909,6 +4083,16 @@ function dispatchSupplies() {
     if (L.req) for (const e of ['a', 'b']) for (const q of L.req[e]) count(q);
     for (const V of L.ships) if (V.cargo && V.cargo.req) for (const q of V.cargo.req) count(q);
   }
+  for (const H of game.hubJobs) {                  // waiting in a yard, or on a hauler's back
+    if (H.done) continue;
+    if (H.then.type === 'board' && H.then.q) count(H.then.q);
+    else if (H.then.imp) count({ site: H.then.site, res: H.res });
+  }
+  for (const v of game.cars) {
+    const J = v.job;
+    if (J && J.type === 'board' && J.then && J.then.q) count(J.then.q);
+    else if (J && J.type === 'impSite') count({ site: J.site, res: v.cargo });
+  }
   for (const b of sites) {
     const C = liveCountry(b.site.country);
     if (!C) continue;
@@ -3933,7 +4117,7 @@ function dispatchSupplies() {
         if (spare < 0.5) continue;
         const amt = Math.min(spare, want);
         D.res[r] -= amt; want -= amt;
-        hop.L.req[hop.end].push({ dest: C.id, site: b.i, res: { [r]: amt } });
+        sendConsignment(D, { dest: C.id, site: b.i, res: { [r]: amt } });
         if (want < 0.05) break;
       }
       if (want >= 0.05 && !(mv[r] > 0)) S.waiting = r;   // nobody linked to it has any: it waits for production
@@ -4401,8 +4585,15 @@ function rocketPorts(w, cid) {                      // a territory's launch pad 
 const hasAI = (w, cid) => worldBuildings(w, 'computer').some(x => x.c === cid && (x.b.lvl || 0) >= 3);
 // ---------- importing from your other territories on this world ----------
 // Nearest first, each giving what it can spare (it keeps a little and what its own building sites need).
-function importPlan(C, short) {
-  const doms = game.countries.filter(D => D.alive && D !== C && D.tiles).sort((a, b) => Math.hypot(a.lx - C.lx, a.ly - C.ly) - Math.hypot(b.lx - C.lx, b.ly - C.ly));
+// How it can get there: over land (the two share a landmass, or a bridge), or by a sea route, rail line or air route
+// between them (through your other territories if need be). Across water with none of those, it can't.
+function importWay(D, C, site) {
+  const S = nearestSettlement(D, ...tileCenter(site));
+  if (S && sameLand(S.i, site)) return 'land';
+  return routesTo(C).get(D.id) ? 'link' : null;
+}
+function importPlan(C, short, site = -1) {
+  const doms = game.countries.filter(D => D.alive && D !== C && D.tiles && (site < 0 || importWay(D, C, site))).sort((a, b) => Math.hypot(a.lx - C.lx, a.ly - C.ly) - Math.hypot(b.lx - C.lx, b.ly - C.ly));
   const left = { ...short }, from = [];
   for (const D of doms) {
     const give = {};
@@ -4419,7 +4610,7 @@ function askImport(i, type, P) {
   if (buildAuto === 'ai') return go();             // the domain's AI decides for itself
   if (buildAuto === 'remote') return false;
   showModal(`<div class="md-title">Import from your other territories?</div><div class="md-body">${C.short} doesn't have the materials for a ${def.name.toLowerCase()}: it's short of <b>${what}</b>.
-    <br><br>Your nearest territories have it: ${srcs}. It goes over by road, boat or plane, whichever way is open, and the ${def.name.toLowerCase()} is built when it arrives.</div>`,
+    <br><br>Your nearest territories have it: ${srcs}. Their haulers carry it over land, or out to their port, station or airport for the boat, train or plane across; ${C.short}'s haulers take it from there. The ${def.name.toLowerCase()} is built when it arrives.</div>`,
     [{ label: `Import ${what}`, cls: 'go', act: go }, { label: 'No', act: () => {} }]);
   return false;
 }
@@ -4434,7 +4625,14 @@ function importAndBuild(i, type, P) {
   for (const f of P.from) {                        // take it now and send it on its way
     const D = game.countries[f.id];
     for (const r in f.res) D.res[r] -= f.res[r];
-    shipGoods({ side: 'P', C: D }, { side: 'P', C }, f.res);
+    const way = importWay(D, C, i);
+    if (way === 'land') {                          // overland: a hauler of the sender's (or else the builder's) walks it over
+      const S = nearestSettlement(D, ...tileCenter(i)), by = hasCarOn(D, S.i) ? D : hasCarOn(C, S.i) ? C : null;
+      for (const res of cartloads(f.res)) {
+        if (by) game.hubJobs.push({ c: by.id, at: S.i, res, then: { type: 'site', site: i, imp: true }, car: null, since: game.time });
+        else impArrive(C, i, res);
+      }
+    } else sendConsignment(D, { dest: C.id, site: i, res: { ...f.res }, imp: true });
   }
   toast(`Importing ${costText(P.short)} into ${C.short} from ${P.from.map(f => game.countries[f.id].short).join(', ')}.`);
   return true;
@@ -4511,8 +4709,10 @@ function tryBuild(i, type) {
   if (Object.keys(short).length && buildAuto !== 'imported') {
     // short here: first your other territories on this world (asked, then carried over by truck, boat or plane),
     // and only if none of them has it, another world's (asked, then flown in by reusable rocket)
-    const here = importPlan(C, short);
+    const here = importPlan(C, short, i);
     if (here) return askImport(i, type, here);
+    const cut = importPlan(C, short);              // the goods are there, but no way to bring them over
+    if (cut) { toast(`${C.short} is short of ${costText(short)}. ${cut.from.map(f => game.countries[f.id].short).join(', ')} ${cut.from.length > 1 ? 'have' : 'has'} it, but across the water: link them with ports (or stations, or airports) and their haulers can send it.`); return false; }
     const fromWorld = shipInPlan(C, i, short, {});
     if (fromWorld) return askShipIn(i, type, fromWorld);
     const lack = Object.keys(short)[0], all = game.countries.filter(D => D.alive).reduce((a, D) => a + Math.max(0, D.res[lack] || 0), 0);
@@ -4900,7 +5100,7 @@ function scaledTier(kind, t) {
 const tierOf = v => scaledTier(v.kind, workTier(v));
 function carProf(v) {
   const T = tierOf(v);
-  return { off: T.speed * FLEET.car.offRoad, road: T.speed, wall: 0, cargo: T.cargo, land: true };
+  return { off: T.speed * FLEET.car.offRoad, road: T.speed, wall: 0, cargo: T.cargo, land: true, avoid: T.stick || 1 };
 }
 // a domain's settlement nearest a spot, or null if it has none
 function nearestSettlement(C, x, y) {
@@ -4954,6 +5154,8 @@ function carRideRoute(v, x, y, walk) {
   return { pts, spd, ride, len: bt };
 }
 function carGo(v, x, y, act) {
+  const ti = tileAt(x, y);
+  if (building[ti] && buildingAt(ti) && buildingAt(ti).type !== 'settlement') { const p = roadStop(ti); if (p) [x, y] = p; }   // pull up on the road beside it
   let r = findRoute(v.x, v.y, x, y, carProf(v));
   const byTrain = carRideRoute(v, x, y, r);
   if (byTrain) r = byTrain;
@@ -4975,8 +5177,15 @@ function carNextJob(v, C) {
   const here = t => carReach(v, t);
   // a settlement of C on the same land as tile t (goods are only ever carried over land, or across a bridge)
   const landSettlement = t => { const S = nearestSettlement(C, ...tileCenter(t)); return S && sameLand(S.i, t) ? S : null; };
-  // 1) construction: its materials are fetched from the settlement that holds the most of them (not too far off)
-  for (const b of game.buildings) {
+  // 1) construction: its materials are fetched from the settlement that holds the most of them (not too far off).
+  // The nearest site first; a car just bought sees to the sites around its own settlement before anything else.
+  const near = v.local != null && game.time < (v.localUntil || 0) ? tileCenter(v.local) : [v.x, v.y];
+  if (v.local != null && game.time >= (v.localUntil || 0)) v.local = null;
+  const sites = game.buildings.filter(b => b.site && b.site.car == null && b.site.ready).sort((p, q) => Math.hypot(p.i % W + 0.5 - near[0], ((p.i / W) | 0) + 0.5 - near[1]) - Math.hypot(q.i % W + 0.5 - near[0], ((q.i / W) | 0) + 0.5 - near[1]));
+  for (const b of sites) {
+    if (b.site.imported && countryAt(b.i) === C && boxSum(b.site.need) < 0.01 && boxSum(siteHaul(b.site)) < 0.5) {   // all of it was brought in: the crew starts
+      const dur = 2 + Math.min(6, boxSum(b.site.cost || {}) / 40); b.site.crew = game.time + dur; b.site.crewDur = dur; b.site.car = -1; continue;
+    }
     if (!b.site || b.site.car != null || !b.site.ready || countryAt(b.i) !== C || boxSum(b.site.need) >= 0.01) continue;
     const main = Object.entries(b.site.cost || {}).sort((p, q) => q[1] - p[1])[0];
     let S = main ? sourceSettlement(C, main[0], ...tileCenter(b.i), nearestSettlement(C, ...tileCenter(b.i))) : nearestSettlement(C, ...tileCenter(b.i));
@@ -5069,6 +5278,12 @@ function carNextJob(v, C) {
   if (S && here(S.i) && Math.hypot(S.i % W + 0.5 - v.x, ((S.i / W) | 0) + 0.5 - v.y) > 1.5) { v.job = { type: 'park' }; return carGo(v, ...tileCenter(S.i), 'park'); }
   v.job = null;
 }
+// what a site's crew still needs carried out from the settlement: its cost, less what was brought in from elsewhere
+function siteHaul(S) {
+  const out = {};
+  for (const [r, n] of Object.entries(S.cost || {})) { const k = n - ((S.imported || {})[r] || 0); if (k >= 0.5) out[r] = k; }
+  return out;
+}
 // a car has reached the end of its route: do what it came for, then pick its next leg
 function carArrive(v, C) {
   const act = v.act;
@@ -5077,7 +5292,7 @@ function carArrive(v, C) {
   if (act === 'loadSite') {
     const b = buildingAt(J.site);
     if (!b || !b.site) { v.job = null; return; }
-    v.cargo = { ...(b.site.cost || {}) };
+    v.cargo = siteHaul(b.site);
     const via = viaLink(C, v.x, v.y, ...tileCenter(b.i), carProf(v));   // far away? the train (or plane) takes it most of the way
     if (via) { v.job = { type: 'toLink', via, then: { type: 'site', site: b.i } }; return carGo(v, ...tileCenter(via.from), 'toLink'); }
     return carGo(v, ...tileCenter(b.i), 'deliver');
@@ -5093,6 +5308,17 @@ function carArrive(v, C) {
     const H = J.h;
     H.done = true;
     v.cargo = { ...H.res };
+    if (H.then.type === 'board') {                 // out to the port (station, airport) to go aboard
+      const L = linkByEnds(H.then.a, H.then.b);
+      if (!L) { storeIn(C, v.cargo); v.cargo = {}; v.job = null; return; }
+      v.job = { type: 'board', then: H.then };
+      return carGo(v, ...tileCenter(H.then.end === 'a' ? L.a : L.b), 'board');
+    }
+    if (H.then.type === 'site' && H.then.imp) {    // goods sent for a building site: straight there
+      if (!buildingAt(H.then.site)) { storeIn(C, v.cargo); v.cargo = {}; v.job = null; return; }
+      v.job = { type: 'impSite', site: H.then.site };
+      return carGo(v, ...tileCenter(H.then.site), 'deliverImp');
+    }
     if (H.then.type === 'site' && buildingAt(H.then.site)) { v.job = { type: 'site', site: H.then.site }; return carGo(v, ...tileCenter(H.then.site), 'deliver'); }
     const S = nearestSettlement(C, v.x, v.y);
     if (!S) { storeIn(C, v.cargo); v.cargo = {}; v.job = null; return; }
@@ -5142,6 +5368,17 @@ function carArrive(v, C) {
     const L = J.L;
     if (game.links.includes(L)) for (const r in v.cargo) L.out[J.e][r] = (L.out[J.e][r] || 0) + v.cargo[r];
     else storeIn(C, v.cargo);
+    v.cargo = {}; v.job = null;
+    return;
+  }
+  if (act === 'board') {                          // set down on the quay: aboard the next boat it goes
+    const T = J.then;
+    v.cargo = {}; v.job = null;
+    if (T) boardLink(C, T, T.q, v);
+    return;
+  }
+  if (act === 'deliverImp') {
+    impArrive(C, J.site, v.cargo);
     v.cargo = {}; v.job = null;
     return;
   }
@@ -5204,9 +5441,9 @@ function trainTier(C, cur = -1, cap = 99) {
 function atHub(v, C) {
   if (v.kind === 'rail') {                         // the upgrade you ordered, paid as it pulls in; then the best its fuel allows
     const tgt = fleetTarget('rail');
-    if ((v.paid ?? 0) < tgt && !missingFor(FLEET.rail.tiers[tgt].cost, C)) {
-      for (const [r, n] of Object.entries(FLEET.rail.tiers[tgt].cost)) C.res[r] -= n;
-      v.paid = tgt;
+    while ((v.paid ?? 0) < tgt && !missingFor(FLEET.rail.tiers[(v.paid ?? 0) + 1].cost, C)) {   // each model in turn
+      for (const [r, n] of Object.entries(FLEET.rail.tiers[(v.paid ?? 0) + 1].cost)) C.res[r] -= n;
+      v.paid = (v.paid ?? 0) + 1;
     }
     const t = trainTier(C, v.tier, v.paid ?? 0);
     if (t !== v.tier && t >= 0) { const up = t > v.tier; v.tier = t; floatText(v.x ?? (C.lx), v.y ?? (C.ly), `${up ? '▲' : '▼'} ${FLEET.rail.tiers[t].name.replace(/s$/, '')}`, up ? '#9fd0ff' : '#f0a64a'); }
@@ -5221,13 +5458,12 @@ function atHub(v, C) {
   const T = FLEET[v.kind].tiers[v.tier];
   if (v.down && T.fuel && C.res.oil >= 2) v.down = false;
   const tgt = fleetTarget(v.kind);
-  if (v.tier < tgt && !v.down) {
-    const cost = FLEET[v.kind].tiers[tgt].cost;
-    if (!missingFor(cost, C)) {
-      for (const [r, n] of Object.entries(cost)) C.res[r] -= n;
-      v.tier = tgt; v.wait = 2;                    // a couple of seconds in the workshop
-      floatText(v.x, v.y - 1, `${FLEET[v.kind].tiers[tgt].name.replace(/s$/, '')}`, '#9fd0ff');
-    }
+  while (v.tier < tgt && !v.down) {                // each model in turn, never skipping one: each step paid for
+    const nx = v.tier + 1, cost = FLEET[v.kind].tiers[nx].cost;
+    if (missingFor(cost, C)) break;
+    for (const [r, n] of Object.entries(cost)) C.res[r] -= n;
+    v.tier = nx; v.wait = (v.wait || 0) + 2;       // a couple of seconds in the workshop for each
+    floatText(v.x ?? C.lx, (v.y ?? C.ly) - 1, `${FLEET[v.kind].tiers[nx].name.replace(/s$/, '')}`, '#9fd0ff');
   }
 }
 // a long haul inside one domain: is it quicker to take it to a station (or airport, or port) and let the train carry it?
@@ -5345,16 +5581,17 @@ function carNeed(C) {
 function buyVehicle(kind, from) {
   const tgt = Math.max(0, fleetTarget(kind)), cost = FLEET[kind].tiers[tgt].cost;
   if (kind === 'car') {
-    const opts = game.countries.filter(c => c.alive && nearestSettlement(c, c.lx, c.ly) && !missingFor(cost, c)).sort((p, q) => carNeed(q) - carNeed(p));
-    const C = opts[0];
-    if (!C) return toast(`Not enough ${missingFor(cost, countryAt(from)) || 'resources'} for a car (${costText(cost)})`);
-    // the settlement nearest the biggest waiting pile
-    let pile = null, pb = 0;
-    for (const b of game.buildings) if (countryAt(b.i) === C && boxSum(b.buf || {}) > pb) { pb = boxSum(b.buf); pile = b; }
-    const S = pile ? nearestSettlement(C, ...tileCenter(pile.i)) : nearestSettlement(C, C.lx, C.ly);
+    // it rolls out of the very settlement you bought it at, paid by that territory. It works there first
+    // (anything for the building sites nearby), then goes wherever goods are waiting.
+    const B = from != null ? buildingAt(from) : null, C = B ? countryAt(B.i) : activeCountry();
+    const S = B && B.type === 'settlement' ? B : C && nearestSettlement(C, C.lx, C.ly);
+    if (!C || !S) return toast('Buy carts and trucks at one of your settlements.');
+    const miss = missingFor(cost, C);
+    if (miss) return toast(`${C.short} doesn't have enough ${miss} for a ${FLEET.car.tiers[tgt].name.toLowerCase().replace(/s$/, '')} (${costText(cost)})`);
     for (const [r, n] of Object.entries(cost)) C.res[r] -= n;
-    addCar(C, S, tgt);
-    toast(`New ${FLEET.car.tiers[tgt].name.toLowerCase().replace(/s$/, '')} in ${C.short}, where the most goods were waiting (${costText(cost)})`);
+    const v = addCar(C, S, tgt);
+    v.local = S.i; v.localUntil = game.time + 60;  // its own settlement's sites come first
+    toast(`New ${FLEET.car.tiers[tgt].name.toLowerCase().replace(/s$/, '')} at ${C.short}'s settlement (${costText(cost)})`);
     return;
   }
   // boats and planes join the route (of that kind) with the most goods waiting per vehicle
@@ -5372,16 +5609,20 @@ function buyVehicle(kind, from) {
 // your whole fleet of a kind: how many, at what tier, and the cost of upgrading them all
 function fleetSummary(kind) {
   const list = kind === 'car' ? game.cars : game.links.flatMap(L => L.ships.filter(v => v.kind === kind));
-  const open = tierOpen(kind), tgt = fleetTarget(kind);
+  const open = tierOpen(kind), tgt = fleetTarget(kind), T = FLEET[kind].tiers;
   const lvl = v => (kind === 'rail' ? v.paid ?? 0 : v.tier);   // a train's tier is the one paid for (it may run lower, short of fuel)
-  const behind = open >= 0 ? list.filter(v => lvl(v) < open).length : 0;
-  const up = open > tgt || behind ? FLEET[kind].tiers[open] : null;
-  return { list, count: list.length, open, tgt, up, upCost: up ? multCost(up.cost, list.filter(v => lvl(v) < open).length) : null };
+  // upgrades go one model at a time: the next one up from what you've ordered (each vehicle pays every step it climbs)
+  const nxt = tgt < open ? tgt + 1 : -1, up = nxt >= 0 ? T[nxt] : null;
+  const stepsTo = (v, to) => { let c = {}; for (let k = Math.max(0, lvl(v)) + 1; k <= to; k++) c = addCost(c, T[k].cost); return c; };
+  const sumTo = to => list.reduce((c, v) => addCost(c, stepsTo(v, to)), {});
+  const behind = list.filter(v => lvl(v) < tgt).length;
+  return { list, count: list.length, open, tgt, nxt, up, upCost: up ? sumTo(nxt) : null, behind, leftCost: behind ? sumTo(tgt) : null };
 }
 const costText = cost => Object.entries(cost).map(([r, n]) => `${Math.ceil(n)} ${r}`).join(', ') || 'free';
 const multCost = (cost, k) => Object.fromEntries(Object.entries(cost).map(([r, n]) => [r, n * k]));
 function orderUpgrade(kind) {
-  const open = tierOpen(kind);
+  // one step at a time: the next model up (never skipping one). Once ordered, the one after can be ordered at once.
+  const open = game.debug ? tierOpen(kind) : Math.min(tierOpen(kind), (game.fleetTarget[kind] ?? 0) + 1);
   game.fleetTarget[kind] = open;
   toast(`Upgrading your ${FLEET[kind].name} to ${FLEET[kind].tiers[open].name.toLowerCase()}: each one is refitted when it next ${kind === 'rail' ? 'pulls in at a station' : 'calls in at a ' + FLEET[kind].hub}, paid as it goes`);
 }
@@ -5846,6 +6087,7 @@ function tickAll(dt) {
   for (let w = 1; w < WORLDS.length; w++) if (worldData[w]) { useWorld(w); tick(dt, false); }
   if (MP.role === 'host') { useWorld(0); mpHostTick(dt); }
   if (MP.role) { useWorld(0); rivTick(dt); }
+  useWorld(0); stepEnvoys();
   let g = 0;                                       // the treasury: every domain's gold, on every world
   for (const P of WORLDS) { const cs = P.id === WORLD ? game.countries : worldData[P.id] ? worldData[P.id].g.countries : []; for (const c of cs) if (c.alive) g += Math.max(0, c.res.gold || 0); }
   game.goldStock = g;
@@ -7915,6 +8157,10 @@ function strokeRoute(path, kind, z, ghost = false) {
 }
 
 function vehiclePos(L, V) {
+  if (L.kind === 'air') {                          // a plane flies dead straight, at whatever angle (not along the tiles)
+    const [x0, y0] = tileCenter(L.path[0]), [x1, y1] = tileCenter(L.path[L.path.length - 1]), u = clamp(V.t / Math.max(1, L.path.length - 1), 0, 1);
+    return [lerp(x0, x1, u), lerp(y0, y1, u), Math.atan2(y1 - y0, x1 - x0)];
+  }
   const k = Math.min(Math.floor(V.t), L.path.length - 2), f = V.t - k;
   const [x0, y0] = tileCenter(L.path[Math.max(0, k)]), [x1, y1] = tileCenter(L.path[Math.min(L.path.length - 1, k + 1)]);
   return [lerp(x0, x1, f), lerp(y0, y1, f), Math.atan2(y1 - y0, x1 - x0)];
@@ -11376,7 +11622,21 @@ function updateCmdMenu() {
 }
 
 // ---------- one of your buildings: tap it (in Command mode) to see it and act on it ----------
-const isConnected = b => b.type === 'settlement' || game.connects.some(c => c.a === b.i);
+// a road running over (or right beside) a building joins it to the network as surely as a road built to it: haulers
+// stop on the road there, as long as it takes to load or unload, and drive on
+const roadTouch = i => { const x = i % W, y = (i / W) | 0; for (const [dx, dy] of D8) if (inb(x + dx, y + dy) && (NET[idx(x + dx, y + dy)] & 1)) return true; return !!(NET[i] & 1); };
+const isConnected = b => b.type === 'settlement' || game.connects.some(c => c.a === b.i) || roadTouch(b.i);
+// where a hauler stops for a building on a road: the nearest point of the road (null if no road touches it)
+function roadStop(i) {
+  if (!roadTouch(i)) return null;
+  const [cx, cy] = tileCenter(i), G = netGraph();
+  let best = null, bd = 2.6;                       // within about a tile and a half
+  for (const e of G.edges) {
+    if (e.kind === 'wall' || cx < e.x0 - 2 || cx > e.x1 + 2 || cy < e.y0 - 2 || cy > e.y1 + 2) continue;
+    for (let k = e.lo; k <= e.hi; k++) { const p = e.L.pts[k], d = (p[0] - cx) ** 2 + (p[1] - cy) ** 2; if (d < bd) { bd = d; best = p; } }
+  }
+  return best;
+}
 // a road out to building b: to the nearest road (or settlement) of its domain within reach. { line, to, cost } or a reason
 function connectPlan(b, own = null) {
   const C = countryAt(b.i), R = CFG.roads.connectReach, bx = b.i % W, by = (b.i / W) | 0;
@@ -12563,22 +12823,17 @@ function showBuildingCard(b) {
     for (const v of F.list) { const n = FLEET[fk].tiers[workTier(v)].name; tiers[n] = (tiers[n] || 0) + 1; }
     lines.push(`<b>${F.count} ${FLEET[fk].name}</b>${F.count ? ` (${Object.entries(tiers).map(([n, k]) => `${k} ${n.toLowerCase()}`).join(', ')}) · ${busy} busy` : ''}${fk === 'car' ? ` · carrying ${T.cargo} each` : ''}`);
     btns.push({ label: `Buy ${T.name.toLowerCase().replace(/s$/, '')} · ${costText(T.cost)}`, cls: 'go', act: () => { buyVehicle(fk, b.i); showBuildingCard(b); } });
-    if (F.up) {
-      const pending = game.fleetTarget[fk] >= F.open;
-      btns.push({ label: pending ? `Upgrading to ${F.up.name.toLowerCase()}… (${costText(F.upCost)} left)` : `Upgrade all to ${F.up.name.toLowerCase()} · ${costText(F.upCost)}`,
-        act: () => { orderUpgrade(fk); showBuildingCard(b); }, off: pending });
-    }
+    if (F.behind && F.tgt > 0) lines.push(`<span class="a">Upgrading to ${FLEET[fk].tiers[F.tgt].name.toLowerCase()}: ${F.behind} still to refit (${costText(F.leftCost)} left), each as it next calls in.</span>`);
+    if (F.up) btns.push({ label: `Upgrade all to ${F.up.name.toLowerCase()} · ${costText(F.upCost)}`, act: () => { orderUpgrade(fk); showBuildingCard(b); } });
   }
   // a rail station: upgrade every train (steam, diesel, electric bullet trains)
   if (b.type === 'station' && !underway(b) && tierOpen('rail') >= 0) {
     const F = fleetSummary('rail'), T = FLEET.rail.tiers, tiers = {};
     for (const v of F.list) { const n = T[Math.max(0, v.tier)].name; tiers[n] = (tiers[n] || 0) + 1; }
     lines.push(`<b>${F.count} train${F.count === 1 ? '' : 's'}</b>${F.count ? ` (${Object.entries(tiers).map(([n, k]) => `${k} ${n.toLowerCase()}`).join(', ')})` : ': each rail line comes with one'}`);
-    if (F.up) {
-      const pending = game.fleetTarget.rail >= F.open;
-      btns.push({ label: pending ? `Upgrading to ${F.up.name.toLowerCase()}… (${costText(F.upCost)} left)` : `Upgrade all trains to ${F.up.name.toLowerCase()} · ${costText(F.upCost)}`,
-        cls: pending ? '' : 'go', act: () => { orderUpgrade('rail'); showBuildingCard(b); }, off: pending });
-    } else {
+    if (F.behind && F.tgt > 0) lines.push(`<span class="a">Upgrading to ${T[F.tgt].name.toLowerCase()}: ${F.behind} still to refit (${costText(F.leftCost)} left).</span>`);
+    if (F.up) btns.push({ label: `Upgrade all trains to ${F.up.name.toLowerCase()} · ${costText(F.upCost)}`, cls: 'go', act: () => { orderUpgrade('rail'); showBuildingCard(b); } });
+    else if (!F.behind) {
       const nx = T.find(t => t.tech && !game.research.done.has(t.tech));
       lines.push(`<span class="d">Your trains are the best you can build${nx ? `. Next: ${nx.name.toLowerCase()} (${TECH[nx.tech].name})` : ''}.</span>`);
     }
@@ -12883,7 +13138,16 @@ function sendSurrender(list) {
 }
 // ---------- asking every nation at once ----------
 const knownNations = () => game.nations.filter(n => n.alive && n.tiles);
+// put to every nation at once: envoys go out to all of them, and their answers come back together as a notification
 function askAll(kind, opt = {}) {
+  const label = { peace: 'Asking every nation at war with you for peace', truce: 'Proposing a ceasefire to every nation at war with you', trade: 'Offering the same trade to every nation', joint: 'Asking every nation to join your war' }[kind] || `Proposing to every nation: ${(TREATY[kind] || { name: kind }).name.toLowerCase()}`;
+  if ((game.envoys || []).some(e => e.all && e.label === label)) { dipResult([[null, { accept: false, why: 'Your envoys are already out about this: wait for the answers.' }]]); return; }
+  const draft = JSON.parse(JSON.stringify(dipDraft));
+  (game.envoys || (game.envoys = [])).push({ all: true, n: -1, label, at: game.time + 5, decide: () => askAllNow(kind, opt, draft) });
+  notify('✉ Envoys sent to every nation', `${label}. Their answers come back in a few seconds.`);
+  dipResult([[null, { accept: true, why: 'Envoys sent: the answers will come as a notification.' }]]);
+}
+function askAllNow(kind, opt, draft) {
   const out = [];
   for (const n of knownNations()) {
     if (kind === 'peace') { if (n.hostile) out.push([n, aiPeace(n)]); continue; }
@@ -12891,7 +13155,7 @@ function askAll(kind, opt = {}) {
     if (kind === 'joint' && (n.id === opt.foe || n.hostile)) continue;
     if (kind !== 'truce' && kind !== 'trade' && n.hostile) continue;
     if (kind === 'trade') {
-      const C = nearestDomain(n.lx, n.ly), offer = JSON.parse(JSON.stringify(dipDraft));
+      const C = nearestDomain(n.lx, n.ly), offer = JSON.parse(JSON.stringify(draft));
       offer.give.towns = []; offer.ask.towns = [];
       let short = null;
       for (const r in offer.give.res) if (offer.give.res[r] > C.res[r]) short = `${C.short} is out of ${r}`;
@@ -12903,7 +13167,7 @@ function askAll(kind, opt = {}) {
     if (r.accept) signTreaty(n, kind, opt);
     out.push([n, r]);
   }
-  dipResult(out.length ? out : [[null, { accept: false, why: 'No nation this applies to.' }]]);
+  return out;
 }
 function dipResult(rows) {
   dipMsg = rows.map(([n, r]) => `<div class="${r.accept ? 'g' : 'r'}">${r.accept ? '✓' : '✕'} ${n ? `<b>${n.short}</b>: ` : ''}${r.why}</div>`).join('');
@@ -13005,6 +13269,8 @@ function renderDiplomacy() {
       <div class="dp-sub">${n.pers.name} · ${fmtNum(n.people)} people · ${fmtNum(n.units)} ${us.type.name} · ${n.R.size} techs${al ? ` · in ${al.name}` : ''}</div></div>
       <button class="x" id="dp-close">✕</button></div>
     <div class="dp-status">${st}${wars.length ? ` <span class="d">· at war with ${wars.join(', ')}</span>` : ''}</div>
+    ${dipMsg ? `<div class="dp-result top">${dipMsg}</div>` : ''}
+    ${(game.envoys || []).filter(e => e.n === n.id).map(e => `<div class="dp-result top"><span class="d">✉ Waiting for their answer: ${e.label.toLowerCase()}</span></div>`).join('')}
     <div class="lbl">THEIR OPINION OF YOU: ${opWord(op).toUpperCase()} (${Math.round(op)})</div>
     <div class="op-bar"><i style="left:${(op + 100) / 2}%"></i></div>
     <div class="dp-row">
@@ -13066,7 +13332,15 @@ function dipAction(n, act, tx, ty) {
     }
     if (!['war', 'attack', 'expand'].includes(act)) return say2({ accept: false, why: `${n.short} is another player: offer peace or a trade, or go to war.` });
   }
-  if (act === 'peace') return say2(aiPeace(n));
+  // a proposal goes by envoy: it's sent now, and their answer comes back as a notification a few seconds later
+  const envoy = (label, decide) => {
+    if ((game.envoys || []).some(e => e.n === n.id && e.label === label)) return say2({ accept: false, why: `Your envoy is already on the way to ${n.short} about this: wait for their answer.` });
+    const C = nearestDomain(n.lx, n.ly), delay = clamp(2 + Math.hypot(n.lx - C.lx, n.ly - C.ly) / 60, 2, 8);
+    (game.envoys || (game.envoys = [])).push({ n: n.id, label, at: game.time + delay, decide });
+    notify(`✉ Envoy sent to ${n.short}`, `${label}. Their answer comes back in a few seconds.`);
+    return say2({ accept: true, why: `Envoy sent: ${label.toLowerCase()}. Their answer will come as a notification.` });
+  };
+  if (act === 'peace') return envoy('Asking for peace', () => aiPeace(n));
   if (act === 'all') return openDiplomacyAll();
   if (act === 'surrender') return surrenderDialog([n]);
   const opt = { gold: Math.max(0, Math.floor(game.dipSweet || 0)), amt: Math.max(1, Math.floor(game.dipTrib || 10)) };
@@ -13074,13 +13348,17 @@ function dipAction(n, act, tx, ty) {
   if (act === 'truce' || act.startsWith('t:') || act.startsWith('joint:')) {
     const kind = act === 'truce' ? 'truce' : act.startsWith('joint:') ? 'joint' : act.slice(2);
     if (kind === 'joint') opt.foe = +act.slice(6);
-    const r = aiTreaty(n, kind, opt);
-    if (r.accept) signTreaty(n, kind, opt);
-    return say2(r);
+    const label = kind === 'truce' ? 'Proposing a ceasefire' : kind === 'joint' ? `Asking them to join your war on ${game.nations[opt.foe].short}` : `Proposing: ${TREATY[kind].name.toLowerCase()}`;
+    return envoy(label, () => {
+      if (opt.gold > goldOf(nearestDomain(n.lx, n.ly))) return { accept: false, why: `You no longer have ${opt.gold} gold to add.` };
+      const r = aiTreaty(n, kind, opt);
+      if (r.accept) signTreaty(n, kind, opt);
+      return r;
+    });
   }
-  if (act === 'ally') return say2(aiAlly(n, 'new'));
-  if (act === 'invite') return say2(aiAlly(n, 'invite'));
-  if (act === 'join') return say2(aiAlly(n, 'join'));
+  if (act === 'ally') return envoy('Proposing an alliance', () => aiAlly(n, 'new'));
+  if (act === 'invite') return envoy('Inviting them into your alliance', () => aiAlly(n, 'invite'));
+  if (act === 'join') return envoy('Asking to join their alliance', () => aiAlly(n, 'join'));
   if (act === 'kick') { const al = allianceOf('P'); al.members = al.members.filter(m => m !== n.id); addOp('P', n.id, -20); if (al.members.length < 2) game.alliances = game.alliances.filter(a => a !== al); return say2({ accept: true, why: `${n.short} is no longer in ${al.name}.` }); }
   if (act === 'trade') {
     const offer = JSON.parse(JSON.stringify(dipDraft));
@@ -13088,12 +13366,36 @@ function dipAction(n, act, tx, ty) {
     for (const r in offer.give.res) if (offer.give.res[r] > C.res[r]) return say2({ accept: false, why: `${C.short} only has ${fmtNum(C.res[r])} ${r}.` });
     if (!offerValue(offer.give) && !offerValue(offer.ask)) return say2({ accept: false, why: 'Put something in the offer first.' });
     const gift = !offerValue(offer.ask);
-    const r = gift ? { accept: true, why: `They gladly accept your gift (opinion up).` } : aiConsider(n, offer);
-    if (r.accept) { doTrade(n, offer); dipDraft = { give: { res: {}, towns: [] }, ask: { res: {}, towns: [] } }; }
-    return say2(r);
+    dipDraft = { give: { res: {}, towns: [] }, ask: { res: {}, towns: [] } };
+    const what = [boxSum(offer.give.res) ? `you give ${costText(offer.give.res)}` : '', boxSum(offer.ask.res) ? `you ask for ${costText(offer.ask.res)}` : '', offer.give.towns.length || offer.ask.towns.length ? 'settlements' : ''].filter(Boolean).join('; ');
+    return envoy(gift ? `Sending a gift (${what})` : `Proposing a trade (${what})`, () => {
+      for (const r in offer.give.res) if (offer.give.res[r] > C.res[r]) return { accept: false, why: `${C.short} no longer has ${fmtNum(offer.give.res[r])} ${r}.` };
+      const r = gift ? { accept: true, why: `They gladly accept your gift (opinion up).` } : aiConsider(n, offer);
+      if (r.accept) doTrade(n, offer);
+      return r;
+    });
   }
 }
 // attacking an ally is a betrayal: ask first
+function stepEnvoys() {
+  if (!game.envoys || !game.envoys.length) return;
+  for (const e of game.envoys) {
+    if (game.time < e.at) continue;
+    e.done = true;
+    if (e.all) {                                   // every nation's answer, in one notification
+      const rows = e.decide(), yes = rows.filter(([, r]) => r.accept).length;
+      notify(rows.length ? `✉ ${yes} of ${rows.length} nations agree` : '✉ No nation this applies to', rows.map(([n, r]) => `${r.accept ? '✓' : '✕'} <b>${n.short}</b>: ${r.why}`).join('<br>') || e.label);
+      if (dipOf === -2) dipResult(rows.length ? rows : [[null, { accept: false, why: 'No nation this applies to.' }]]);
+      continue;
+    }
+    const n = game.nations[e.n];
+    if (!n || !n.alive) continue;
+    const r = e.decide();
+    notify(`${r.accept ? '✓' : '✕'} ${n.short} ${r.accept ? 'agrees' : 'refuses'}`, `${e.label}: ${r.why}`, null, null, () => openDiplomacy(n));
+    if (dipOf === n.id) { dipMsg = `<span class="${r.accept ? 'g' : 'r'}">${r.accept ? '✓' : '✕'} ${r.why}</span>`; renderDiplomacy(); }
+  }
+  game.envoys = game.envoys.filter(e => !e.done);
+}
 function guardedAttack(n, tx, ty) {
   if (!allied('P', n.id)) return launchAttack(n, tx, ty);
   const al = allianceOf('P');
@@ -13199,6 +13501,12 @@ function updateHud() {
     gold += c.goldRate || 0; eat += c.eat || 0; hungry = hungry || c.hungry;
   }
   for (const L of game.links) for (const V of L.ships) if (V.cargo) for (const r of RESOURCES) inc[r] += V.cargo[r] || 0;
+  // zoomed in on one territory: its own stock, small, under each total
+  let here = null;
+  if (live.length > 1 && cam.zoom >= CFG.cityZoom) {
+    const [wx, wy] = toWorld(cw / 2, ch / 2), t = tileAt(wx, wy);
+    here = (owner[t] && countryAt(t)) || C;
+  }
   $('res-oil').hidden = !oilKnown();
   $('res-uranium').hidden = !uraniumKnown();
   for (const r of RESOURCES) {
@@ -13206,6 +13514,7 @@ function updateHud() {
     const f = game.debug ? 1 : clamp(tot[r] / cap[r], 0, 1);
     $('val-' + r).innerHTML = (game.debug ? '∞' : fmtNum(tot[r]) + `<span class="capn"> / ${fmtCap(cap[r])}</span>`) +
       (inc[r] >= 1 ? `<span class="incoming" title="on its way between your domains">+${fmtNum(inc[r])}</span>` : '') +
+      (here ? `<div class="terrn" title="${here.full}'s own stock">${here.short}: ${game.debug ? '∞' : fmtNum(Math.max(0, here.res[r]))}</div>` : '') +
       `<div class="store"><div style="width:${(f * 100).toFixed(0)}%;background:${f >= 0.999 ? '#f2c14e' : { wood: '#56963f', stone: '#9aa1a8', iron: '#bd7b56', oil: '#59616b', wheat: '#e0bc4e', uranium: '#7ee05a', gold: '#f2c14e' }[r]}"></div></div>`;
     const el = $('rate-' + r), v = rate[r];
     el.textContent = `${v < 0 ? '' : '+'}${v.toFixed(Math.abs(v) < 1 && v !== 0 ? 2 : 1)}/s`;
