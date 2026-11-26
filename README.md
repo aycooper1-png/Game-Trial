@@ -21,6 +21,9 @@ Play with one friend: **New map → 🎮 Multiplayer**. Pick how you play, then 
 - The two browsers connect directly, through the free PeerJS matchmaking service (bundled, no game server). The host's game runs the world, so the host keeps the tab open (in a hidden tab the game keeps going, but slower). If the friend drops out, the same link brings them back. In Rivals their realm is run by the computer until they do.
 - **Limits:** a rival friend has a simpler set of orders than the host: no vehicles, links, walls, space programme or computers of their own. They see stocks and land every couple of seconds, so things on the move can jump a little. Only the host can change the game mode or switch on creative mode.
 
+## Your domain's flag
+Tap the flag at the top left to give the domain you're viewing a sign (12 designs) and a colour (12 colours): its land on the map, its border and its settlement labels take the colour.
+
 ## Creative mode
 **Do not touch** (Command menu) switches creative mode on: every resource is infinite and every technology is researched. Press it again and choose **Off, keep this map**: your stock goes back to exactly what it was before (the technologies stay researched). Or switch it off and start a new map.
 
@@ -47,6 +50,10 @@ Play with one friend: **New map → 🎮 Multiplayer**. Pick how you play, then 
 - **Heavy loads:** a full car, cart or boat is 30% slower than an empty one. A full train burns twice the fuel (or power), and full planes and rockets burn more too.
 - **Where the goods are:** each settlement holds part of its domain's stock (shown on its card). The total is spendable anywhere: haulers fetch from whichever town holds it. Goods drift toward safe, well-defended towns, busy crossroads (stations, ports, roads), and towns near the mines and farms that make them. Capture a settlement and you take what's stored there; lose one and so do they.
 - **Overland goods stay on land:** porters, carts, wagons and trucks go round water rather than across it, unless they're taking goods to a boat.
+- **Haulers don't swim:** porters, carts and trucks only go over land and bridges. Goods across water go by boat, plane or rocket; a building whose materials are across the water with no bridge, port or airport waits, and its card says why.
+- **Cars ride trains:** on a long trip inside a domain, a hauler drives to a rail station, rides the train on a flatcar, and drives on from the far station. Trains still carry goods and troops of their own.
+- **Road works:** when your AI (C.A.I.S.) reroutes a road, that stretch shows road-works signs and barriers and is closed to haulers until it's done (a countdown shows on it).
+- **Shipping between worlds:** territories on different worlds can't be linked by ports, rail or airports, only by reusable rockets, and only when each has a launch pad and a landing pad. Build something a territory can't afford and another world's territory has the materials: you're asked whether to ship them in, and a reusable rocket from the nearest such world brings them. Two territories that both have a C.A.I.S. AI order from each other by themselves.
 - **Road haulers, in order:** porters, handcarts (the Wheel), pack horses (Equestrianism), carriages (Carriages), caravans (Trade Caravans: big covered wagons that carry far more each trip), trucks (Automobiles), electric trucks (Batteries), self-driving haulers (Artificial Intelligence). Order an upgrade at a settlement.
 - **New vehicles as you learn:** electric trucks (Batteries) and autonomous haulers (C.A.I.S.); diesel freighters (Petroleum) and container ships (Computing); cargo jets (Computing). A vehicle one tier behind the newest is refitted **for free and by itself** the next time it calls at a hub. Techs also tune vehicles with no upgrade at all: Masonry speeds cars, Metallurgy adds cargo room to carts and boats, Steam speeds boats, Electricity speeds trains, Electronics speeds road, sea and air vehicles, M.C.C.S. speeds every vehicle, and Computing adds 15% cargo room to every vehicle.
 - **Fields grow in:** a new farm's wheat doesn't appear all at once. The tiles around it are sown one at a time, in a random order.
@@ -73,6 +80,8 @@ Play with one friend: **New map → 🎮 Multiplayer**. Pick how you play, then 
 
 ### 5b. Silicon, cobalt and computing
 - **Silicon and cobalt** appear with Electronics. They're rare at home (a few small deposits, if any) and common on the Moon and Aries. Silicon refineries dig and refine silicon; miner's camps dig cobalt. You can also buy them at the market.
+- **Cobalt is hard rock:** a miner's camp digs it at a quarter speed; upgrade the camp to a mining rig (Electricity) and it comes 24 times as fast.
+- **Settlement stock:** a settlement's card shows what's stored there laid out like the stock at the top of the screen: an icon, the amount and a bar for each resource.
 - **Chip factories** turn silicon and a little gold into computer chips. Solar panels, launch pads, reusable rockets, the Dyson swarm and more now need silicon, cobalt or chips.
 - **Batteries** (Build menu, Crafting) store spare power and cover shortfalls. Electric trains draw on them too.
 - **Central computer** (one per domain, 30 MW): everything else in the domain uses 25% less power, wheat +10%, troops train 30% faster, research 25% faster. Every rocket that flies itself (freighters, supply rockets, colony ships, the Dyson swarm, interplanetary missiles) needs one somewhere in your empire. The first space station's rocket doesn't. **Data centers** add 1% each.
