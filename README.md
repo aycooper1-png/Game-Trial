@@ -29,6 +29,13 @@ Every building, upgrade, vehicle, troop badge and worker was redrawn in round 9.
 ## Your domain's flag
 Tap the flag at the top left to give the domain you're viewing a sign (12 designs) and a colour (12 colours): its land on the map, its border and its settlement labels take the colour.
 
+## Sound
+The game starts muted: tap the small speaker next to **Do not touch** in the Command panel to turn sound on. You only hear what you're zoomed in on, at full volume when fully zoomed in, fading as you zoom out and silent before buildings turn into map icons.
+- **Haulers on the move:** porters, handcarts, pack horses, carriages and caravans, trucks and self-driving haulers each have their own sound (electric trucks are silent).
+- **Land battles** fought by troops, yours or the nations', when you're zoomed in on them. Nothing in space, and missiles are silent.
+- **Builders:** zoom right in on a construction site and tap one of the builders while they work. Each one has a few things to say, in order, and then he's had enough.
+- With lots going on, only the few nearest the middle of the screen are heard for each kind of sound, so it never turns into a din.
+
 ## Creative mode
 **Do not touch** (Command menu) switches creative mode on: every resource is infinite and every technology is researched. Press it again and choose **Off, keep this map**: your stock goes back to exactly what it was before (the technologies stay researched). Or switch it off and start a new map.
 

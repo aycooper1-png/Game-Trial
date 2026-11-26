@@ -366,6 +366,8 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
 }
 #cmdmenu button.debug { border-color: rgba(255,122,107,0.55); color: #ff9a8a; }
 #cmdmenu button.debug.on { background: rgba(255,122,107,0.18); color: #ffb3a8; }
+#cmdmenu button.mute { min-width: 0 !important; flex: 0 0 auto !important; width: auto !important; padding-left: 10px; padding-right: 10px; font-size: 15px; line-height: 1; }
+#cmdmenu button.mute.on { border-color: rgba(123,211,137,0.6); }
 @media (max-width: 420px) {
   #topbar .res .lbl { letter-spacing: 0.02em; white-space: nowrap; }
   #res-uranium .lbl { font-size: 0.86em; }

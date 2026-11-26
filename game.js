@@ -9154,6 +9154,7 @@ function aiBattles() {
       const x = t % W, y = (t / W) | 0;
       if (L.length > 2 && !DIRS4.some(([dx, dy]) => inb(x + dx, y + dy) && aiOf[idx(x + dx, y + dy)] === win.id + 1)) continue;
       aiSeize(win, lose, t); got++;
+      if (got === 1) sndClash(x + 0.5, y + 0.5);   // fighting here (heard if you're zoomed in on it)
       for (const [dx, dy] of DIRS4) {               // and push on a little past it
         if (got >= take || !inb(x + dx, y + dy)) continue;
         const nb = idx(x + dx, y + dy);
@@ -10652,6 +10653,14 @@ function drawWorkers(x0, y0, x1, y1, z) {
   }
 }
 // ---------- construction crews: scaffolding and builders at every site, a cloud of dust when it's done ----------
+// where builder k of a site stands on screen (also used to tap one)
+function crewPos(b, k, z) {
+  const [sx, sy] = toScreen(...tileCenter(b.i)), u = z, busy = b.site && b.site.crew != null;
+  const ang = k * 2.1 + (busy ? 0 : game.time * 0.6), r = u * 0.62;
+  const bx = sx + Math.cos(ang) * r, by = sy + Math.sin(ang) * r * 0.45 + u * 0.3;
+  const bob = busy ? Math.abs(Math.sin(game.time * 9 + k * 1.7)) * u * 0.1 : 0, size = u * 0.5;
+  return { bx, by, bob, size, ang };
+}
 function drawCrew(b, z) {
   const [sx, sy] = toScreen(...tileCenter(b.i)), u = z, busy = b.site && b.site.crew != null;
   // scaffolding: a timber frame that rises as the work goes on
@@ -10662,9 +10671,8 @@ function drawCrew(b, z) {
   for (let k = 0; k <= 2; k++) { const yy = sy + 0.45 * u - h * k / 2; ctx.beginPath(); ctx.moveTo(sx - 0.5 * u, yy); ctx.lineTo(sx + 0.5 * u, yy); ctx.stroke(); }
   if (!RAS.builder) return;
   for (let k = 0; k < (busy ? 3 : 1); k++) {      // waiting for materials: one builder pacing; building: three hammering
-    const ang = k * 2.1 + (busy ? 0 : game.time * 0.6), r = u * 0.62;
-    const bx = sx + Math.cos(ang) * r, by = sy + Math.sin(ang) * r * 0.45 + u * 0.3;
-    const bob = busy ? Math.abs(Math.sin(game.time * 9 + k * 1.7)) * u * 0.1 : 0, size = u * 0.5;
+    const { bx, by, bob, size, ang } = crewPos(b, k, z);
+    if (busy && sndTalking(b, k)) { ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.font = `${Math.max(10, size * 0.45)}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText('💬', bx, by - bob - size * 1.05); }   // talking (tapped)
     ctx.save(); ctx.translate(bx, by - bob); if (Math.cos(ang) > 0) ctx.scale(-1, 1);
     ctx.drawImage(RAS.builder[1], -size / 2, -size, size, size);
     ctx.restore();
@@ -11251,6 +11259,7 @@ function clickAt(btn, x, y) {
   if (btn === 0 && game.aiming) { const t = hoverTile(); if (t) fireMissile(t.x, t.y); return; }
   if (bombing) { const t = tileAtScreen(x, y); if (btn === 0 && t >= 0) sendBomber(t % W, (t / W) | 0); else setBombing(false); return; }
   if (btn === 2 && game.aiming) { setAiming(false); return; }
+  if (btn === 0 && !game.ghost && sndTapBuilder(x, y)) return;   // a builder, tapped: he talks
   if (game.ghost && game.ghost.type === 'bridge') {   // a bridge: first your coast, then the land across
     const t = tileAtScreen(x, y), g = game.ghost;
     if (btn !== 0 || t < 0) { setTool(null); return; }
@@ -11658,6 +11667,7 @@ function initUI() {
     else if (act === 'new') askNewGame();
     else if (act === 'mode') modePicker('Game mode', `Now: <b>${modeName()}</b>. Change how the other nations play, from now on.`, setGameMode);
     else if (act === 'debug') toggleDebug();
+    else if (act === 'mute') toggleMute();
     else if (act === 'bomber') { toggleCmdMenu(false, true); setBombing(!bombing); }
     updateCmdMenu();
   });
@@ -11849,6 +11859,8 @@ function updateCmdMenu() {
   }
   const dbg = document.querySelector('#cmdmenu [data-act="debug"]');
   dbg.textContent = game.debug ? '⚠ Creative mode: ON' : '⚠ Do not touch'; dbg.classList.toggle('on', !!game.debug);
+  const mb = document.querySelector('#cmdmenu button[data-act="mute"]');
+  if (mb) { mb.textContent = SND.muted ? '🔇' : '🔊'; mb.title = SND.muted ? 'Sound is off: tap to turn it on' : 'Sound is on: tap to mute'; mb.classList.toggle('on', !SND.muted); }
   const anyOut = game.expeditions.some(e => !e.auto && !e.done) || game.flights.some(f => !f.done);
   document.querySelector('#cmdmenu [data-act="drive"]').hidden = !(anyOut && !game.driving && !game.flying);
   document.querySelector('#cmdmenu [data-act="next"]').hidden = game.countries.filter(c => c.alive && c.tiles).length < 2;
@@ -13766,6 +13778,149 @@ function allianceRow() {
     [{ label: al.leader === 'P' ? 'Disband' : 'Leave', cls: 'danger', act: () => { leaveAlliance('P'); updateCmdMenu(); } }, { label: 'Cancel', act: () => {} }]);
 }
 
+// =====================================================================================================
+// ---------- sound: the owner's own recordings (sounds/*.mp3) ----------
+// You hear a thing only when you're zoomed in on it: full volume only fully zoomed in, fading as you zoom out, and
+// silent before the buildings turn into map icons. Moving haulers (each model its own sound; electric trucks are
+// silent), land battles fought by troops (yours and the nations', when you're zoomed in on them), and the builders at
+// a construction site, who talk when you tap them. No sound in space; missiles make none.
+// To keep it from turning into a din, each kind of sound is one voice: the few nearest the middle of the screen set
+// how loud it is and where it sits left to right. The game starts muted every time it's opened.
+// =====================================================================================================
+const SND = { muted: true, ctx: null, master: null, buf: {}, loops: {}, ready: false, loading: false, clashes: [], crews: new WeakMap(), talking: null };
+const SND_ZOOM = { silent: 13, full: CFG.zoomMax, tap: 25, curve: 1.6 };   // silent at or below `silent` (map icons start at detailZoom 10); taps from `tap`
+const SND_KIND = { porter: 'porter', handcart: 'handcart', horse: 'horse', carriage: 'wagon', caravan: 'wagon', truck: 'truck', etruck: null, autohauler: 'autohauler' };
+const SND_LOOPS = ['porter', 'handcart', 'horse', 'wagon', 'truck', 'autohauler', 'fight'];
+const SND_LEVEL = { porter: 0.8, handcart: 0.8, horse: 0.85, wagon: 0.85, truck: 0.7, autohauler: 0.7, fight: 0.9 };
+const SND_NEAREST = 3;                             // at most this many of one kind count towards its loudness
+const SND_WORKER1 = [1, 2, 3, 4, 5, 6].map(k => 'worker1-' + k);   // a first tap: one of these short replies, at random
+const SND_FILES = [...SND_LOOPS, ...SND_WORKER1, 'worker2', 'worker3', 'worker4'];
+const sndZoom = z => (z <= SND_ZOOM.silent ? 0 : Math.pow(clamp((z - SND_ZOOM.silent) / (SND_ZOOM.full - SND_ZOOM.silent), 0, 1), SND_ZOOM.curve));
+// a seamless loop: the end of the sound is faded into its start, so there's no gap or click where it repeats
+function sndLoopify(buf) {
+  const ctx = SND.ctx, xf = Math.min(0.35, buf.duration * 0.12), n = Math.floor(xf * buf.sampleRate), len = buf.length - n;
+  if (n < 32 || len < n * 2) return buf;
+  const out = ctx.createBuffer(buf.numberOfChannels, len, buf.sampleRate);
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const a = buf.getChannelData(c), o = out.getChannelData(c);
+    o.set(a.subarray(0, len));
+    for (let i = 0; i < n; i++) { const t = i / n; o[i] = a[i] * Math.sqrt(t) + a[len + i] * Math.sqrt(1 - t); }
+  }
+  return out;
+}
+function sndInit() {                               // on the first unmute (a tap: browsers, iPhones above all, need one)
+  if (SND.ctx || SND.loading) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  SND.ctx = new AC();
+  const comp = SND.ctx.createDynamicsCompressor();  // several sounds at once never get harsh
+  SND.master = SND.ctx.createGain(); SND.master.gain.value = 0.9;
+  SND.master.connect(comp); comp.connect(SND.ctx.destination);
+  document.addEventListener('visibilitychange', () => { if (!SND.ctx) return; if (document.hidden) SND.ctx.suspend(); else if (!SND.muted) SND.ctx.resume(); });   // a hidden tab is silent
+  SND.loading = true;
+  const v = (document.querySelector('script[src*="game.js"]') || {}).src?.split('?v=')[1] || '1';
+  Promise.all(SND_FILES.map(f => fetch(`sounds/${f}.mp3?v=${v}`).then(r => r.arrayBuffer()).then(d => new Promise((ok, no) => SND.ctx.decodeAudioData(d, ok, no))).then(b => { SND.buf[f] = SND_LOOPS.includes(f) ? sndLoopify(b) : b; }).catch(() => {})))
+    .then(() => { SND.ready = true; SND.loading = false; });
+}
+function toggleMute(on) {
+  SND.muted = on ?? !SND.muted;
+  if (!SND.muted) { sndInit(); if (SND.ctx && SND.ctx.state !== 'running') SND.ctx.resume(); }
+  else if (SND.ctx) { for (const k in SND.loops) sndStopLoop(k); if (SND.talking) { try { SND.talking.src.stop(); } catch (e) {} SND.talking = null; } }
+  toast(SND.muted ? 'Sound off' : 'Sound on: zoom in close to hear haulers, battles and builders (tap a builder)');
+  if (typeof updateCmdMenu === 'function') updateCmdMenu();
+}
+function sndStartLoop(kind) {
+  const b = SND.buf[kind];
+  if (!b) return null;
+  const src = SND.ctx.createBufferSource(), gain = SND.ctx.createGain(), pan = SND.ctx.createStereoPanner ? SND.ctx.createStereoPanner() : null;
+  src.buffer = b; src.loop = true;
+  src.playbackRate.value = 0.97 + Math.random() * 0.06;   // a little variety
+  gain.gain.value = 0;
+  src.connect(gain); if (pan) { gain.connect(pan); pan.connect(SND.master); } else gain.connect(SND.master);
+  src.start(0, Math.random() * b.duration);         // from a random point, so the same sound doesn't always start the same way
+  return (SND.loops[kind] = { src, gain, pan, quiet: 0 });
+}
+function sndStopLoop(kind) {
+  const L = SND.loops[kind];
+  if (!L) return;
+  try { L.gain.gain.setTargetAtTime(0, SND.ctx.currentTime, 0.05); L.src.stop(SND.ctx.currentTime + 0.3); } catch (e) {}
+  delete SND.loops[kind];
+}
+// nations fighting each other: where, and when (heard only if you're zoomed in on it)
+function sndClash(x, y) {
+  SND.clashes.push({ x, y, t: game.time, w: WORLD });
+  if (SND.clashes.length > 60) SND.clashes.splice(0, SND.clashes.length - 60);
+}
+function stepSound() {
+  if (SND.muted || !SND.ready || !SND.ctx || document.hidden) return;
+  const z = cam.zoom, zg = sndZoom(z), want = {};
+  if (zg > 0.002 && !game.flying) {
+    const cx = cw / 2, cy = ch / 2, R = Math.hypot(cw, ch) / 2;
+    const add = (kind, wx, wy) => {
+      const [sx, sy] = toScreen(wx, wy);
+      if (sx < -30 || sy < -30 || sx > cw + 30 || sy > ch + 30) return;   // only what's on screen
+      const w = 1 - 0.65 * Math.min(1, Math.hypot(sx - cx, sy - cy) / R);   // the middle of the screen is loudest
+      (want[kind] || (want[kind] = [])).push({ w, p: clamp((sx - cx) / (cw / 2), -1, 1) });
+    };
+    for (const v of game.cars) {                   // haulers on the move (not parked, not loading, not riding a train)
+      if (!v.moving || (v.ride && v.ride[v.k])) continue;
+      const k = SND_KIND[tierOf(v).id];
+      if (k) add(k, v.x, v.y);
+    }
+    for (const at of game.attacks) if (at.units >= 0.5 && at.lx != null) add('fight', at.lx, at.ly);   // your troops attacking
+    for (const r of game.raids) if (r.lx != null && !r.done && r.budget >= 0.5) add('fight', r.lx, r.ly);   // theirs, in your land
+    for (const c of SND.clashes) if (c.w === WORLD && game.time - c.t < 3) add('fight', c.x, c.y);   // nations against each other
+  }
+  const now = SND.ctx.currentTime;
+  for (const kind of SND_LOOPS) {
+    const list = (want[kind] || []).sort((p, q) => q.w - p.w).slice(0, SND_NEAREST);
+    let g = 0, pan = 0;
+    for (const e of list) { g += e.w; pan += e.p * e.w; }
+    if (g > 0) pan /= g;
+    g = Math.min(1, g * 0.6) * zg * (SND_LEVEL[kind] || 0.8);
+    let L = SND.loops[kind];
+    if (g > 0.003 && !L) L = sndStartLoop(kind);
+    if (!L) continue;
+    L.gain.gain.setTargetAtTime(g, now, 0.12);
+    if (L.pan) L.pan.pan.setTargetAtTime(pan * 0.7, now, 0.15);
+    L.quiet = g > 0.003 ? 0 : L.quiet + 1;
+    if (L.quiet > 120) sndStopLoop(kind);          // quiet for a couple of seconds: let it go
+  }
+}
+// builders: tapped (zoomed in, sound on) while they're building, each says his lines in turn: one of the short replies
+// at random each tap until all have been said, then the next three clips, then nothing more. Each builder counts his
+// own taps; a builder at another site starts again from the beginning.
+function sndTalking(b, k) { const T = SND.talking; return !!(T && T.site === b.site && T.k === k && SND.ctx && SND.ctx.currentTime < T.until); }
+function sndTapBuilder(x, y) {
+  if (SND.muted || !SND.ready || cam.zoom < SND_ZOOM.tap) return false;
+  const z = cam.zoom;
+  for (const b of game.buildings) {
+    if (!b.site || b.site.crew == null) continue;  // only while they're building
+    for (let k = 0; k < 3; k++) {
+      const { bx, by, bob, size } = crewPos(b, k, z);
+      if (Math.hypot(x - bx, y - (by - bob - size * 0.5)) > Math.max(18, size * 0.65)) continue;
+      sndBuilderSays(b, k);
+      return true;
+    }
+  }
+  return false;
+}
+function sndBuilderSays(b, k) {
+  if (sndTalking(b, k)) return;                    // still talking: let him finish
+  let st = SND.crews.get(b.site);
+  if (!st) SND.crews.set(b.site, (st = [0, 1, 2].map(() => ({ left: [...SND_WORKER1], next: 0 }))));
+  const me = st[k];
+  let clip = null;
+  if (me.left.length) clip = me.left.splice((Math.random() * me.left.length) | 0, 1)[0];
+  else if (me.next < 3) clip = ['worker2', 'worker3', 'worker4'][me.next++];
+  if (!clip || !SND.buf[clip]) return;             // he's said all he has to say
+  if (SND.talking) { try { SND.talking.src.stop(); } catch (e) {} }
+  const src = SND.ctx.createBufferSource(), gain = SND.ctx.createGain();
+  src.buffer = SND.buf[clip]; gain.gain.value = 0.7 + 0.3 * sndZoom(cam.zoom);
+  src.connect(gain); gain.connect(SND.master); src.start();
+  SND.talking = { site: b.site, k, src, until: SND.ctx.currentTime + SND.buf[clip].duration };
+}
+
 // ---------- notifications and questions ----------
 function notify(title, body, buttons = null, onExpire = null, onClick = null) {
   const el = document.createElement('div');
@@ -14829,6 +14984,7 @@ function start() {
     guard(stepCamAnim, dt);
     guard(applyFollow);
     guard(render);
+    guard(stepSound);
     hudT += dt;
     if (hudT > 0.1) { guard(updateHud); hudT = 0; }
   }
@@ -14842,5 +14998,5 @@ window.__game = { TOUCH, mouse, game, cam, CFG, SEED, tick: tickAll, tickOne: ti
   render, followBody, stopFollow, sunPos, wallGarrisons, buildDysonRocket, launchDyson, sendBomber, fireIPBM, setBombing, dysonPower, buildBridge, bridgePlan, POLAR, claim, isLand, launchRocket, makeStation, buyShuttle, toggleEngine, orbitOf, DISK, keys, showBuildingCard, refreshCard, openDiplomacy, aiConsider, doTrade, aiPeace, aiAlly, allianceOf, getOp, addOp, atWar, setWar, settlementLand, guardedAttack, autoDefend, buyVehicle, orderUpgrade, fleetSummary, tierOpen, addCar, seaCrossing, settleExpedition, takeWheel, completeTech, setPct, setTroopPct, roadsList: () => roads, buildRoads, netGraph, findRoute, connectPlan, connectToRoad, wallPlan, pickWallEnd, strikePlan, strikeReach, techIn, goldBoost, haulProf, NET, defenseMult, nextVehicle, driveStep: (e, dt) => driveStep(e, dt), removeBuilding, TECH, unitStats, garrisons, totalUnits, launchAttack, frontWith, setTool, confirmGhost, setCmd, clickAt, commandClick,
   routesTo, dispatchSupplies, linkStats, techCost, pickTech, playerTechScore, resourceProfile, research: () => game.research, hasDep, oilKnown, W, frontier, tileCenter,
   stopSaving: () => { noSave = true; }, scanAiBorders, dbgAI: () => ({ borders: [...aiBorders.keys()], gaps: [...aiGap.entries()].map(([k, v]) => k + ':' + Math.round(v.d)), dipTimer, borderTimer, offerTimer }), aiOffers, aiRelations, driftOpinions, SVG, RAS, SPR, debugOff, terraOf, planetTerra, poweredTerraformers, terraNeed, stepPlanetTerraform, compFx, compOf, bestComputer, upgradeComputer, researchPeople, SHUTTLE_MK, upgradeShuttle, shRange, canReachWorld, craft, CRAFTS, aiCompute, aiState, showAIPanel, stepAIs, aiDoRoads, aiDoGambit, aiDoWar, aiDoBuild, aiDoTrade, roadsList2: () => roads, invPull, invOf, lootSettlement, lootNation, sourceSettlement, stepInventories, skyWorldPos, foreignSkyClick, setGameMode, MODE, modePicker, aiUnitCap, aiTreaty, signTreaty, treaty, aiSurrender, doSurrender, warLosing, nationWorth, termsValue, askAll, openDiplomacyAll, aiNeeds, surrenderDialog, fearOf, showMarket, marketTrade, rushSite, rushCost, hireTroops, mercCost, treasury, orderStation, padBusy, myStations, wallState, fortState, damageWall, damageFort, wallMax, fortMax, showWallCard, wallNear, fortNear, buyWallUpgrade, upgradeCost, wallGroupOf, wallsAfterWar, stepRepairs, ironWallCross, viaLink, landWay, keepOnLand, shipGoods, crossesWater, tradePath, shoreOf, landGroup, overland, wet, tradeEnd, tilePath, intraArrive, stationNearSettlement, carProf };
-Object.assign(window.__game, { startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, mpSnapshot, toGuestView, mpApply, RIV, rivWorldMsg, rivRealmMsg, buildWall, sowFields, stepSowing });
+Object.assign(window.__game, { SND, toggleMute, stepSound, sndTapBuilder, crewPos, sndZoom, startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, mpSnapshot, toGuestView, mpApply, RIV, rivWorldMsg, rivRealmMsg, buildWall, sowFields, stepSowing });
 init();

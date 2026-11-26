@@ -138,13 +138,14 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 | `game.js` | **The whole game**: about 14,800 lines of plain JavaScript in one file (`'use strict'`, no modules, no build step, no frameworks). |
 | `style.css` | All styling, including the phone layout. |
 | `peerjs.min.js` | Bundled PeerJS library for multiplayer. **Do not edit.** |
+| `sounds/` | The game's sounds (mp3, mono, 22 kHz), cut from the owner's own recording (see section 4, Sound). |
 | `README.md` | Player-facing feature list. Update it when features change. |
 | `tests/` | Playwright test scripts (section 5). Not loaded by the game. |
 | `CLAUDE.md` | This file. `AGENTS.md` points here (other AI tools look for that name). |
 | `.nojekyll` | Makes GitHub Pages serve files as they are. Keep it. |
 
 **Cache tag:** `index.html` loads `style.css?v=N` and `game.js?v=N`. **Increase N by one on every push**, in both
-places, or phones keep running the old code. Look in `index.html` for the current N (it was 25 on 2026-11-26).
+places, or phones keep running the old code. Look in `index.html` for the current N (it was 26 on 2026-11-26).
 
 ---
 
@@ -226,6 +227,16 @@ lines). The order of sections in the file:
 - **Top bar:** `updateHud()` (totals, each territory's own stock line `.terrn`, the people bar with upkeep).
 - **Saving:** `saveGame()` / `loadGame(sv)` in the browser's localStorage (key `SAVE_KEY`), automatically every
   10 s. **A new field that must survive a reload has to be added to both.** (Envoys are not saved.)
+- **Sound** (just before "notifications and questions"): `SND` (state: `muted`, `ctx`, `buf`, `loops`, `clashes`,
+  `crews`, `talking`), `SND_ZOOM` (fade: silent at or below zoom 13, full only at `CFG.zoomMax` 40, curve 1.6;
+  builder taps from zoom 25), `SND_KIND` (hauler model → sound; `etruck` is `null` = silent), `SND_LOOPS`,
+  `SND_LEVEL`, `SND_NEAREST`, `SND_WORKER1`, `SND_FILES`, `sndZoom(z)`, `sndLoopify` (crossfades a loop's end into
+  its start so it repeats without a gap), `sndInit` (makes the Web Audio context on the first unmute and loads
+  `sounds/*.mp3`), `toggleMute`, `stepSound` (called every frame from `frame()` after `render`), `sndClash(x, y)`
+  (called where nations fight each other), `crewPos(b, k, z)` (where builder k of a site stands; used by `drawCrew`
+  and for taps), `sndTapBuilder(x, y)` (called from `clickAt`), `sndBuilderSays`, `sndTalking`. The mute button is
+  `#cmdmenu button[data-act="mute"]` in `index.html` (handled in the `#cmdmenu` click handler; its icon is set in
+  `updateCmdMenu`).
 - **Multiplayer** (end of file): `MP` (role, style, connection), PeerJS (or `tr=bc`, a test channel inside one
   browser), `MP_ORDERS` (player orders, wrapped by `mpWrap`), `MP_HOST_ONLY`.
   - **Co-op:** the host's browser runs the world; the guest's shows it (`mpSnapshot`, `mpApply`, `toGuestView`) and
@@ -343,6 +354,35 @@ AI** (the owner gave only the rule), it is marked *(AI's number)*: you may sugge
 - **Spur roads** (short roads out to buildings that no road can be bent to reach): only if the player switches on the
   setting under that command. **Off by default**, and paid in stone.
 
+### Sound
+- The sounds are the owner's own recording, cut into `sounds/` (files: `porter`, `handcart`, `horse`, `wagon`,
+  `truck`, `autohauler`, `fight`, `worker1-1` … `worker1-6`, `worker2`, `worker3`, `worker4`). The owner approved the
+  cuts. `handcart` is the second half of the wagon sound (owner's choice).
+- **Which sound where** (owner's choices): porter → porter; handcart → second half of the wagon sound; pack horse →
+  horse; carriage and caravan → wagon; truck → truck; **electric truck → silent**; self-driving hauler ("highest
+  level truck") → autohauler. Boats, trains and planes: silent for now.
+- **Only moving vehicles** make sound (not parked, loading or riding a train).
+- **Fighting:** only land battles fought by troops, and only when you're zoomed in on them: your attacks, raids on
+  you, and computer nations fighting each other. **No sound in space; missiles make none.** One fighting sound for
+  every troop type, for now.
+- **Zoom:** full volume only when fully zoomed in; fades more and more as you zoom out; inaudible before buildings turn
+  into map icons (owner's rule). *(AI's numbers: silent at or below zoom 13 (icons begin below 10), full at 40, curve
+  1.6.)*
+- **Clutter** (owner: "great idea, feel free to add other ideas"): one voice per kind of sound; the 3 nearest the
+  middle of the screen set its loudness and left-right position; a compressor keeps several kinds at once from
+  getting harsh; loops start at a random point with a tiny random speed change. *(AI's numbers: 3 nearest; middle of
+  screen loudest, edges 35%.)*
+- **Builders** (the little animated workers at a construction site): they talk **only while building** (not while
+  waiting for materials) and **only when tapped** while you're **mostly or fully zoomed in** *(AI's number: zoom 25
+  or more)*. Each builder keeps his own count: each tap plays one of the six short replies at random until all six
+  are used, then `worker2`, then `worker3`, then `worker4`; after that he is silent. The count never resets for that
+  builder; another builder starts from the beginning; when the building is finished the builders are gone. A tap
+  while he's still talking is ignored. A 💬 shows over a builder while he talks.
+- **Mute:** a small speaker icon next to "Do not touch" in the Command panel. **The game starts muted every time it
+  is opened** (the setting isn't saved). No volume slider (owner: the phone's volume is enough).
+- Gaps between loop repeats are minimised (owner's request) by crossfading each loop's end into its start.
+- Multiplayer: each player hears only their own screen and has their own mute.
+
 ### Multiplayer
 - **Rivals:** the second player has a full realm of their own, with everything the host has except creative mode.
 - **Co-op:** both players command one shared empire.
@@ -388,6 +428,10 @@ cd <repo folder>/tests && node r13.mjs                # run any test
   - Space: `r5pad`, `shut4`, `late4`, `ipbm4`.
   - Multiplayer: `r7mp` (run as `node r7mp.mjs coop`), `r12riv` (Rivals: the second player's farms, research,
     expansion, wars, losing land, trades, reload). `r7mp2` needs a real internet connection and fails offline.
+  - Sound: `r15snd` (starts muted, the mute button, the zoom fade, a moving porter's loop, a nations' battle on and off
+    screen, a builder's tap sequence, taps ignored when zoomed out), `phone_mute` (the speaker button on a phone
+    screen). Chrome is started with `--autoplay-policy=no-user-gesture-required` for these. Nobody has listened to
+    the result: tests check volumes and which clip plays, not how it sounds.
   - Saving: `r5save`. Other files are older one-off checks.
 - **Timing:** tests give the game a fixed amount of time. Since real loads, building takes longer, and some loops were
   lengthened. An error like "Cannot read properties of undefined" right after a build loop usually means the building
@@ -418,6 +462,9 @@ End commit messages with whatever attribution lines your own environment require
 - Envoys are not saved: reloading the game drops proposals still on the way.
 - Computer nations trading with each other have no counter-offers (out of sight).
 - Top bar: at about 1500 px width a few items overflow slightly (old, minor).
+- Sound was never heard by an AI (they can't listen): it was checked by volumes, timings and which clip plays. Sound
+  on a real iPhone was not tested (Safari needs the first tap, which the mute button provides).
+- Boats, trains, planes, the electric truck, buildings and missiles have no sound yet (owner's choice for now).
 
 ## 8. Code style
 

@@ -1,0 +1,12 @@
+import { chromium } from '/opt/npm-tools/node_modules/playwright/index.mjs';
+const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=swiftshader'] });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+const page = await ctx.newPage();
+await page.goto('http://localhost:8765/?seed=42');
+await page.waitForFunction(() => !document.getElementById('loading'), null, { timeout: 60000 });
+await page.evaluate(() => { window.__game.toggleCmdMenu(true); document.querySelector('#cmdmenu button[data-act="mute"]').scrollIntoView(); });
+await page.waitForTimeout(300);
+const r = await page.evaluate(() => { const a = document.querySelector('#cmdmenu button[data-act="debug"]').getBoundingClientRect(), b = document.querySelector('#cmdmenu button[data-act="mute"]').getBoundingClientRect(); return [Math.round(a.right), Math.round(a.top), Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; });
+console.log('debug right/top, mute left/top/w/h', r);
+await page.screenshot({ path: '/tmp/phone_mute.png' });
+await browser.close();
