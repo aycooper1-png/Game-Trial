@@ -132,7 +132,7 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 
 | File | What it is |
 |---|---|
-| `index.html` | The page: canvas, HUD markup, panels, and a hidden note for AIs. Loads `style.css?v=N`, `peerjs.min.js`, `game.js?v=N`. |
+| `index.html` | The page: canvas, HUD markup, panels, and an off-screen note for AIs (`#ai-notes`, plus the meta description). Loads `style.css?v=N`, `peerjs.min.js`, `game.js?v=N`. |
 | `game.js` | **The whole game**: about 14,800 lines of plain JavaScript in one file (`'use strict'`, no modules, no build step, no frameworks). |
 | `style.css` | All styling, including the phone layout. |
 | `peerjs.min.js` | Bundled PeerJS library for multiplayer. **Do not edit.** |
@@ -142,7 +142,7 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 | `.nojekyll` | Makes GitHub Pages serve files as they are. Keep it. |
 
 **Cache tag:** `index.html` loads `style.css?v=N` and `game.js?v=N`. **Increase N by one on every push**, in both
-places, or phones keep running the old code. Look in `index.html` for the current N (it was 23 on 2026-11-26).
+places, or phones keep running the old code. Look in `index.html` for the current N (it was 24 on 2026-11-26).
 
 ---
 
@@ -432,4 +432,6 @@ After every request, in the same commit:
 - update section 3 if you added or renamed important functions;
 - update section 7 (fixed gaps out, new gaps in);
 - update the date at the top of this file and the cache tag in section 2;
-- if you change what an AI needs to know first, update the hidden note at the top of `<body>` in `index.html` too.
+- if you change what an AI needs to know first, update the off-screen `#ai-notes` block at the top of `<body>` in
+  `index.html` too. Keep it off-screen with CSS, **not** with the `hidden` attribute: AI page-readers skip hidden
+  elements and HTML comments.

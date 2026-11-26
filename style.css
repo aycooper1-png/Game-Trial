@@ -486,3 +486,6 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
 .tt-list .mode-btn { min-width: 130px; }
 
 #diplo .dp-result.top { margin: 4px 0 2px; font-size: 12px; }
+
+/* notes for AI page-readers: kept off-screen, never shown to players */
+.ai-notes { position: absolute !important; left: -10000px !important; top: 0; width: 1px; height: 1px; overflow: hidden; }
