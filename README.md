@@ -4,6 +4,8 @@ A remake of the [Map Factory prototype](https://yclen.github.io/map-factory/prot
 
 **▶ Play:** https://aycooper1-png.github.io/Game-Trial/
 
+**Working on the code (people or AI):** read [CLAUDE.md](CLAUDE.md) first: how the code is organised, how to test and publish, and the design decisions already made.
+
 The game works on phones as well as on desktops. It autosaves in your browser every 10 seconds. Add `?seed=123` to the address to play a specific map.
 
 ## Game modes
@@ -19,7 +21,7 @@ Play with one friend: **New map → 🎮 Multiplayer**. Pick how you play, then 
 - **Rivals:** your friend plays a full realm of their own (taking over a nation's land), with everything you have: farms and industry, research, vehicles, armies, colonies and space. Each browser runs its own realm and the two stay in sync every couple of seconds; you see each other as a nation and can go to war, make peace or trade. Their game saves on their own device, so the same link brings their realm back.
 - **Co-op:** you both command one shared empire. Either of you can give any order, and you both see the news.
 - The two browsers connect directly, through the free PeerJS matchmaking service (bundled, no game server). The host's game runs the world, so the host keeps the tab open (in a hidden tab the game keeps going, but slower). If the friend drops out, the same link brings them back. In Rivals their realm waits, unchanged, until they do.
-- **Limits:** a rival friend has a simpler set of orders than the host: no vehicles, links, walls, space programme or computers of their own. They see stocks and land every couple of seconds, so things on the move can jump a little. Only the host can change the game mode or switch on creative mode.
+- **Limits:** the two realms sync every couple of seconds, so the other player's land and buildings can jump a little. Computer nations raid only the host, and their offers go only to the host. Only the host can change the game mode or switch on creative mode.
 
 ## The art
 Every building, upgrade, vehicle, troop badge and worker was redrawn in round 9. Three artists each took a group, and an independent reviewer checked every new sprite against the old one at map size (22 and 40 px) on grass, sand, moon dust and water, sending back the ones that weren't clearly better. Upgrade ladders step up visibly: farm, irrigated farm, mechanized farm; the central computer's four levels (each upgrade has its own look); settlement houses from hut to city block; helmets from a leather cap to a drone; haulers from a porter to a self-driving hauler; boats from a rowboat to a container ship.

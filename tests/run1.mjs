@@ -1,0 +1,17 @@
+import { chromium } from '/opt/npm-tools/node_modules/playwright/index.mjs';
+const url = process.argv[2] || 'http://localhost:8765/?seed=42';
+const mobile = process.argv[3] === 'mobile';
+const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=swiftshader'] });
+const ctx = await browser.newContext(mobile ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1500, height: 900 } });
+const page = await ctx.newPage();
+const errs = [];
+page.on('pageerror', e => errs.push('PAGEERROR ' + e.message + '\n' + e.stack));
+page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') errs.push(m.type() + ' ' + m.text()); });
+await page.goto(url);
+await page.waitForFunction(() => !document.getElementById('loading'), null, { timeout: 60000 }).catch(e => errs.push('loading timeout'));
+await page.waitForTimeout(2500);
+await page.screenshot({ path: `shot-${mobile ? 'm' : 'd'}-1.png` });
+const info = await page.evaluate(() => { const G = window.__game; const C = G.activeCountry(); return { people: C.people, cap: C.cap, res: C.res, prod: C.prod, research: G.game.research.cur, pts: G.game.research.pts, nations: G.game.nations.map(n => [n.short, n.pers.name, Math.round(n.units), n.people|0]) }; });
+console.log(JSON.stringify(info));
+console.log(errs.join('\n') || 'no errors');
+await browser.close();

@@ -1,0 +1,26 @@
+import { chromium } from '/opt/npm-tools/node_modules/playwright/index.mjs';
+const mobile = process.argv[2] === 'mobile';
+const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=swiftshader'] });
+const ctx = await browser.newContext(mobile ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1500, height: 900 } });
+const page = await ctx.newPage();
+const errs = [];
+page.on('pageerror', e => errs.push('PAGEERROR ' + e.message + '\n' + e.stack));
+await page.goto('http://localhost:8765/?seed=42');
+await page.waitForFunction(() => !document.getElementById('loading'), null, { timeout: 60000 });
+const tag = mobile ? 'm' : 'd';
+const camp = await page.evaluate(() => { const G = window.__game, g = G.game; G.stopSaving(); for (const t of ['warrior', 'wheel', 'masonry', 'horses']) G.completeTech(t); for (let k = 0; k < 300; k++) G.tick(0.05);
+  document.querySelectorAll('.note').forEach(n => n.remove());
+  const b = g.buildings.find(b => b.type === 'camp' && G.owner[b.i]); G.cam.x = b.i % G.W + 0.5; G.cam.y = ((b.i / G.W) | 0) + 0.5; G.cam.zoom = 16; G.toggleCmdMenu(false); return b.i; });
+await page.waitForTimeout(600);
+const sc = await page.evaluate(i => window.__game.toScreen(...window.__game.tileCenter(i)), camp);
+if (mobile) await page.touchscreen.tap(sc[0], sc[1]); else await page.mouse.click(sc[0], sc[1]);
+await page.waitForTimeout(500);
+await page.screenshot({ path: `ui2-${tag}-card.png` });
+console.log('card', await page.evaluate(() => document.getElementById('bcard').innerText.replace(/\n/g, ' | ')));
+const btn = page.locator('#bc-btns button.go');
+if (await btn.count()) { await btn.click(); await page.waitForTimeout(400); console.log('after connect', await page.evaluate(() => window.__game.game.connects.length)); }
+await page.evaluate(() => { for (let k = 0; k < 200; k++) window.__game.tick(0.05); });
+await page.waitForTimeout(600);
+await page.screenshot({ path: `ui2-${tag}-roads.png` });
+console.log(errs.join('\n') || 'no errors');
+await browser.close();

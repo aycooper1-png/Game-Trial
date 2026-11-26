@@ -1,0 +1,34 @@
+import { chromium } from '/opt/npm-tools/node_modules/playwright/index.mjs';
+const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=swiftshader'] });
+const page = await (await browser.newContext({ viewport: { width: 1300, height: 820 } })).newPage();
+const errs = []; page.on('pageerror', e => errs.push('PAGEERROR ' + e.message)); page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') errs.push('CONSOLE ' + m.text()); });
+await page.goto('http://localhost:8765/?seed=42');
+await page.waitForFunction(() => !document.getElementById('loading'), null, { timeout: 60000 });
+await page.evaluate(() => localStorage.clear()); await page.reload();
+await page.waitForFunction(() => !document.getElementById('loading'), null, { timeout: 60000 });
+const a = await page.evaluate(() => {
+  const G = window.__game, g = G.game, run = s => { for (let k = 0; k < s * 20; k++) G.tick(0.05); };
+  const A = G.activeCountry(), cx = Math.floor(A.lx), cy = Math.floor(A.ly);
+  for (const t of ['warrior', 'wheel', 'masonry', 'metallurgy', 'gunpowder']) G.completeTech(t, true);
+  for (let k = 0; k < 4; k++) { A.people = A.cap + 200; G.setPct(100); G.startPush(cx + (k % 2 ? 30 : -30), cy + 10); run(12); }
+  const spotNear = (x, y, type) => { for (let r = 0; r < 12; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const i = G.idx(x + dx, y + dy); if (!G.canBuild(i, type) && G.countryAt(i) === A) return i; } return -1; };
+  A.res.stone = 900; A.res.wood = 900; A.res.iron = 600; A.res.gold = 123;
+  const f = [spotNear(cx - 10, cy + 6, 'fort'), spotNear(cx + 10, cy + 6, 'fort')];
+  for (const i of f) G.tryBuild(i, 'fort');
+  for (let k = 0; k < 160 && f.some(i => G.buildingAt(i)?.site); k++) run(1);
+  const P = G.wallPlan(G.buildingAt(f[0]), G.buildingAt(f[1])); g.walls.push({ a: f[0], b: f[1], ...P.line, dmg: 0, up: {} }); G.buildRoads();
+  G.buildingAt(f[0]).units = 20;
+  G.buyWallUpgrade(g.walls[0], 'turret'); G.damageWall(g.walls[0], 5);
+  const n = g.nations.find(n => n.alive); G.addOp('P', n.id, 80); G.signTreaty(n, 'research');
+  run(2);
+  G.saveGame();
+  return { walls: g.walls.map(w => [Math.round(w.dmg * 10) / 10, JSON.stringify(w.up)]), tr: g.treaties.length, gold: Math.round(A.res.gold), saved: !!localStorage.getItem(G.SAVE_KEY) };
+});
+console.log('before', JSON.stringify(a));
+await page.reload();
+await page.waitForFunction(() => !document.getElementById('loading'), null, { timeout: 60000 });
+await page.waitForTimeout(500);
+const b = await page.evaluate(() => { const G = window.__game, g = G.game; return { walls: g.walls.map(w => [Math.round(w.dmg * 10) / 10, JSON.stringify(w.up)]), tr: g.treaties.length, gold: Math.round(G.activeCountry().res.gold) }; });
+console.log('after', JSON.stringify(b));
+console.log(errs.join('\n') || 'no errors');
+await browser.close();

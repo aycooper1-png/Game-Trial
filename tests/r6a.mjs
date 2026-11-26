@@ -1,0 +1,46 @@
+import { chromium } from '/opt/npm-tools/node_modules/playwright/index.mjs';
+const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=swiftshader'] });
+const page = await (await browser.newContext({ viewport: { width: 1300, height: 820 } })).newPage();
+const errs = []; page.on('pageerror', e => errs.push('PAGEERROR ' + e.message + '\n' + e.stack)); page.on('console', m => { if (m.type() === 'error') errs.push('CONSOLE ' + m.text()); });
+await page.goto('http://localhost:8765/?seed=42&mode=murder');
+await page.waitForFunction(() => !document.getElementById('loading'), null, { timeout: 60000 });
+const out = await page.evaluate(() => {
+  const G = window.__game, g = G.game, log = [];
+  G.stopSaving();
+  const run = s => { for (let k = 0; k < s * 20; k++) G.tick(0.05); };
+  log.push(['mode', g.gmode, G.MODE().name]);
+  run(60);
+  log.push(['opinions of you', g.nations.filter(n => n.alive).map(n => Math.round(G.getOp('P', n.id))).join(',')]);
+  G.setGameMode('peaceful');
+  const n = g.nations.find(n => n.alive);
+  G.setWar('P', n.id, true);
+  log.push(['peaceful: war possible?', n.hostile, 'attack', G.launchAttack(n, n.lx, n.ly)]);
+  G.setGameMode('easy'); run(30);
+  log.push(['easy ok']);
+  // wall pick: two forts, click 40px off the second
+  const A = G.activeCountry(), cx = Math.floor(A.lx), cy = Math.floor(A.ly);
+  for (const t of ['warrior', 'masonry', 'metallurgy']) G.completeTech(t, true);
+  A.res.stone = 900; A.res.wood = 900; A.res.iron = 400;
+  const spotNear = (x, y, type) => { for (let r = 0; r < 12; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const i = G.idx(x + dx, y + dy); if (!G.canBuild(i, type) && G.countryAt(i) === A) return i; } return -1; };
+  const f = [spotNear(cx - 7, cy + 5, 'fort'), spotNear(cx + 7, cy + 5, 'fort')];
+  for (const i of f) G.tryBuild(i, 'fort');
+  for (let k = 0; k < 160 && f.some(i => G.buildingAt(i)?.site); k++) run(1);
+  g.wallFrom = f[0];
+  G.cam.follow = null; G.cam.anim = null; G.cam.zoom = 4; G.cam.x = cx; G.cam.y = cy;
+  const [sx, sy] = G.toScreen(f[1] % G.W + 0.5, (f[1] / G.W | 0) + 0.5);
+  G.clickAt(0, sx + 30, sy - 25);
+  log.push(['wall prompt opened', !!document.querySelector('#modal.show'), document.querySelector('#modal.show .md-title')?.textContent]);
+  return log;
+});
+for (const l of out) console.log(JSON.stringify(l));
+await page.evaluate(() => { const b = [...document.querySelectorAll('#md-btns button')].pop(); b && b.click(); });
+// sky from the moon
+await page.evaluate(() => { const G = window.__game; G.viewWorld(1); G.cam.x = 500; G.cam.y = 500; G.cam.zoom = 0.012; });
+await page.waitForTimeout(700);
+await page.screenshot({ path: 'r6-sky.png' });
+const back = await page.evaluate(() => { const G = window.__game, p = G.skyWorldPos(0); const [sx, sy] = G.toScreen(...p); G.clickAt(0, sx, sy); return G.WORLD_ID ? G.WORLD_ID() : document.getElementById('val-view').textContent; });
+await page.waitForTimeout(400);
+console.log('after clicking home in the sky:', await page.evaluate(() => document.getElementById('val-view').textContent));
+await page.screenshot({ path: 'r6-back.png' });
+console.log(errs.join('\n') || 'no errors');
+await browser.close();
