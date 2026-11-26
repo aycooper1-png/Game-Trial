@@ -491,3 +491,24 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
 
 /* notes for AI page-readers: kept off-screen, never shown to players */
 .ai-notes { position: absolute !important; left: -10000px !important; top: 0; width: 1px; height: 1px; overflow: hidden; }
+
+/* the tutorial: a card with pictures, and a glowing ring around what it's talking about */
+#tut { position: fixed; left: 50%; transform: translateX(-50%); width: min(440px, calc(100vw - 24px)); z-index: 60;
+  padding: 14px 16px 12px; border-radius: 16px; background: rgba(22, 26, 44, 0.97); border: 1.5px solid #f2c14e;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.55); color: #e8ecf8; }
+#tut.bottom { bottom: calc(150px + env(safe-area-inset-bottom)); }
+#tut.top { top: calc(70px + env(safe-area-inset-top)); }
+#tut .tut-pic { display: flex; gap: 6px; justify-content: center; margin-bottom: 6px; }
+#tut .tut-pic img { width: 52px; height: 52px; image-rendering: auto; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5)); }
+#tut .tut-title { font-weight: 800; font-size: 18px; text-align: center; margin-bottom: 6px; color: #f2c14e; }
+#tut .tut-text { font-size: 14.5px; line-height: 1.45; }
+#tut .tut-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 12px; color: #9aa3c0; }
+#tut .tut-skip { background: none; border: none; color: #9aa3c0; text-decoration: underline; font-size: 12.5px; padding: 4px 0; cursor: pointer; }
+#tut .tut-btns { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+#tut .tut-btns button { padding: 9px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: rgba(255,255,255,0.06); color: #e8ecf8; font-weight: 700; font-size: 14px; cursor: pointer; }
+#tut .tut-btns button.go { background: #f2c14e; color: #1b1b28; border-color: #f2c14e; }
+#tut .tut-btns button[disabled] { opacity: 0.35; cursor: default; }
+#tut .tut-ask { margin-right: auto; font-weight: 700; }
+#tut-hl { position: fixed; z-index: 59; pointer-events: none; border: 3px solid #f2c14e; box-shadow: 0 0 0 4px rgba(242,193,78,0.25), 0 0 22px rgba(242,193,78,0.8); animation: tutpulse 1.2s ease-in-out infinite; }
+@keyframes tutpulse { 50% { box-shadow: 0 0 0 8px rgba(242,193,78,0.12), 0 0 30px rgba(242,193,78,1); } }
+@media (max-width: 600px) { #tut .tut-pic img { width: 42px; height: 42px; } #tut .tut-text { font-size: 14px; } #tut.bottom { bottom: calc(160px + env(safe-area-inset-bottom)); } }

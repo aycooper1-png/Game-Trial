@@ -11668,6 +11668,7 @@ function initUI() {
     else if (act === 'mode') modePicker('Game mode', `Now: <b>${modeName()}</b>. Change how the other nations play, from now on.`, setGameMode);
     else if (act === 'debug') toggleDebug();
     else if (act === 'mute') toggleMute();
+    else if (act === 'tutorial') { tutStart(); return; }
     else if (act === 'bomber') { toggleCmdMenu(false, true); setBombing(!bombing); }
     updateCmdMenu();
   });
@@ -13921,6 +13922,146 @@ function sndBuilderSays(b, k) {
   SND.talking = { site: b.site, k, src, until: SND.ctx.currentTime + SND.buf[clip].duration };
 }
 
+// =====================================================================================================
+// ---------- the tutorial: a guided tour, step by step ----------
+// Offered whenever a new world starts (and to the second player when they join). Each step is a card (a picture,
+// a few plain and slightly silly sentences) and, where it helps, a glowing ring around the real button or spot on the
+// map it's talking about. Next, Back, and Skip tutorial (which asks first) on every step. The core tour covers the
+// early game; at its end you're offered the Advanced part. The 📖 button in the Command panel starts it again from
+// step 1. In single player the game is paused while the tutorial is open; in multiplayer it keeps running.
+// =====================================================================================================
+const TUT = { on: false, part: 'core', i: 0, asking: false };
+const tutPic = (...names) => names.map(n => SVG[n] ? `<img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(SVG[n])}" alt="">` : '').join('');
+const tutHome = () => { const C = activeCountry(); const S = C && nearestSettlement(C, C.lx, C.ly); return S ? tileCenter(S.i) : C ? [C.lx, C.ly] : null; };
+const tutLook = (p, z) => { if (!p) return; stopFollow(); cam.anim = { x0: cam.x, y0: cam.y, z0: cam.zoom, x1: p[0], y1: p[1] + (ch * 0.2) / z, z1: z, t: 0 }; };   // the spot sits in the upper part of the screen, clear of the card
+const TUT_STEPS = {
+  core: [
+    { title: 'Welcome, Your Majesty', pic: ['settle1', 'person', 'farm'], first: true,
+      text: `This is your realm: one small settlement, a handful of people, and big dreams. Want a quick tour? It's short, and mostly painless.`,
+      cam: () => tutLook(tutHome(), 16) },
+    { title: 'Getting around', pic: ['tree', 'rock'],
+      text: say('<b>Drag</b> to move the map. <b>Scroll</b> to zoom in and out. The top-right corner says how close you are (Map, Region, Town, Detail).', '<b>Drag one finger</b> to move the map. <b>Pinch</b> to zoom in and out. The top-right corner says how close you are (Map, Region, Town, Detail).'),
+      el: '#val-view' },
+    { title: 'Your territory', pic: ['settle1'],
+      text: `The land inside the coloured border is yours. Everything starts at your settlement: people live near it, and goods end up there. Treat it nicely.`,
+      map: () => tutHome(), cam: () => tutLook(tutHome(), 14) },
+    { title: 'Growing your border', pic: ['person'],
+      text: `Open <b>Command</b>, pick <b>Expand</b>, then ${say('click', 'tap')} just past your border: some of your people walk out and claim the land. The <b>People per click</b> buttons decide how many go. More land = more room for people.`,
+      el: '#btn-cmd' },
+    { title: 'People', pic: ['person', 'house'],
+      text: `This bar shows your people and your limit. The limit comes from your land, but only land within 12 tiles of a settlement counts (grass holds the most, mountains and ice hardly any). People regrow by themselves, fastest when you're about half full. So spend them, they'll be back.`,
+      el: '#people' },
+    { title: 'Food', pic: ['farm', 'wheat'],
+      text: `Everyone eats wheat, and so do your haulers and soldiers. <b>Farms</b> grow it. If the stores run dry, nobody new is born and hungry people wander off. Nobody likes a hungry kingdom.`,
+      el: '#val-wheat' },
+    { title: 'Your stock', pic: ['tree', 'rock', 'ore'],
+      text: `Up here: how much wood, stone, iron, wheat and gold you have, and how fast it's coming in (the green numbers). With more than one territory, the small numbers underneath are the one you're looking at.`,
+      el: '#topbar' },
+    { title: 'Building', pic: ['farm', 'cabin', 'camp'],
+      text: `Open <b>Build</b>, pick something, ${say('click', 'tap')} where it should go, then <b>Confirm</b>. Builders show up, hammer away, and it's done. Start with a <b>farm</b> or two: see "Food".`,
+      el: '#btn-build' },
+    { title: 'Collecting resources', pic: ['cabin', 'lumberjack', 'camp', 'miner'],
+      text: `A <b>Logger's cabin</b> goes in a forest, a <b>Miner's camp</b> on stone, iron or gold. They fill up with goods, and your haulers carry them home. Put them close to a settlement or a road: walking is slow.`,
+      el: '#btn-build' },
+    { title: 'Settlements', pic: ['settle1', 'house2', 'house3'],
+      text: `A new <b>settlement</b> unlocks the land around it, so your people limit goes up. Settlements are joined by roads automatically, and haulers love roads.`,
+      el: '#btn-build' },
+    { title: 'Haulers', pic: ['porter', 'handcart', 'horse', 'truck'],
+      text: `Porters carry everything: from your settlement to building sites, and from cabins and camps back home. Each one carries only so much, so big jobs take several trips. ${say('Click', 'Tap')} a settlement to <b>buy more</b> or <b>upgrade</b> them (one model at a time: handcarts, horses, carriages... trucks). Better haulers stick to the roads.`,
+      map: () => { const v = game.cars.find(v => countryAt(tileAt(v.x, v.y)) === activeCountry()) || game.cars[0]; return v ? [v.x, v.y] : tutHome(); }, cam: () => tutLook(tutHome(), 20) },
+    { title: 'Research', pic: ['research', 'gear'],
+      text: `Your people invent things all by themselves as they grow. The <b>Build</b> button shows what they're working on. Open it to see what's next. New tech unlocks buildings, better haulers, soldiers and much more.`,
+      el: '#rb-label' },
+    { title: 'Power', pic: ['burner', 'bolt'],
+      text: `A settlement holds its first 170 people for free. Past that, the extra room only works with power: build a <b>Steam plant</b> once you've researched it. No power, no big city.`,
+      el: '#val-power' },
+    { title: 'Soldiers', pic: ['base', 'soldier', 'fort'],
+      text: `Research <b>Warrior Code</b> to build <b>military bases</b>, which train troops. Forts (later) defend your border on their own. To attack, open <b>Command</b>, pick <b>Attack</b>, and ${say('click', 'tap')} a nation's land. <b>Troops per attack</b> sets how many go. Be brave, not reckless.`,
+      el: '#btn-cmd' },
+    { title: 'Neighbours', pic: ['person', 'goldI'],
+      text: `Other nations share your world. ${say('Click', 'Tap')} their land (in Expand) to open their panel: ask for peace, sign treaties, trade, or form alliances. Your envoy carries the message, and their answer arrives later as a notification: yes, no, or a counter-offer you can accept, reject or counter back.`,
+      cam: () => { const C = activeCountry(), n = game.nations.filter(n => n.alive).sort((p, q) => Math.hypot(p.lx - C.lx, p.ly - C.ly) - Math.hypot(q.lx - C.lx, q.ly - C.ly))[0]; if (n) tutLook([n.lx, n.ly], 6); },
+      map: () => { const C = activeCountry(), n = game.nations.filter(n => n.alive).sort((p, q) => Math.hypot(p.lx - C.lx, p.ly - C.ly) - Math.hypot(q.lx - C.lx, q.ly - C.ly))[0]; return n ? [n.lx, n.ly] : null; } },
+    { title: "That's the basics!", pic: ['settle1', 'house3', 'rocket'], last: true,
+      text: `You now know enough to build a realm (and probably to lose one). There's an <b>Advanced</b> part about new territories, ports, moving troops, the central computer and space. Want it now? You can always come back: the 📖 book in the Command panel starts the tour again.`,
+      cam: () => tutLook(tutHome(), 14) },
+  ],
+  adv: [
+    { title: 'New territories', pic: ['settle1', 'boat'],
+      text: `<b>Command → Expedition</b> sends people off to found a brand-new territory somewhere else, even across the sea. Each territory has its own people, stock and limit. ${say('Click', 'Tap')} one to look after it.`,
+      el: '#btn-cmd' },
+    { title: 'Sending goods between territories', pic: ['porter', 'port', 'sailboat', 'porter'],
+      text: `Short of something? Your nearest territory can send it. Over land, haulers walk it over. Across water you need a <b>port</b> (or rail station, or airport) at both ends: haulers carry the goods to the quay, a boat takes them across, and the other side's haulers bring them in. No ports, no deliveries. Porters do not swim.` },
+    { title: 'Boats, trains and planes', pic: ['port', 'station', 'airport'],
+      text: `Build two ports (stations, airports) and they're linked: buy a boat (train, plane) at either one. They keep a timetable, but wait a few seconds for goods that are on the way. Upgrade them like haulers.` },
+    { title: 'Moving troops', pic: ['fort', 'soldier', 'boat'],
+      text: `${say('Click', 'Tap')} a base or fort and choose <b>Transfer troops</b> to move them to another territory. Over water they march to the port and take a boat. Modern mechanised troops can cross on their own if no boat is free: slowly, and a bit green.` },
+    { title: 'Busy roads and upkeep', pic: ['truck', 'wheat'],
+      text: `Too many haulers on one road and they slow down; a road that stays jammed gets a second lane (it costs stone). Haulers and soldiers have upkeep: wheat for people and horses, oil for trucks, power for electric ones.` },
+    { title: 'The central computer', pic: ['computer', 'computerAI', 'datacenter'],
+      text: `Later on, a <b>central computer</b> speeds up research and saves power. Upgrade it far enough and it becomes an AI that can run things for you: building, trade, war, even reshaping roads. Data centers and power make it smarter. Keep an eye on it.` },
+    { title: 'Missiles and walls', pic: ['silo', 'mortar', 'fort'],
+      text: `Cannons and machine guns fire by themselves. Missile silos you aim: <b>Command → Fire</b>. With Masonry you can build walls between two fortresses (${say('click', 'tap')} a fortress and choose <b>Build a wall</b>).` },
+    { title: 'Space', pic: ['pad', 'rocket', 'lpad'],
+      text: `Far up the research tree: launch pads, rockets and colonies on the Moon and beyond, each its own territory with its own landing pad. Getting things there takes rockets, patience, and fuel.` },
+    { title: 'Playing with a friend', pic: ['person', 'person'],
+      text: `<b>New map → Multiplayer</b> sends a friend a link. <b>Rivals</b>: you each run your own realm, as neighbours (friendly or not). <b>Co-op</b>: you run one empire together.` },
+    { title: 'All done!', pic: ['rocket', 'settle1'], last: true,
+      text: `That's everything. Go forth and rule wisely (or at least loudly). The 📖 book in the Command panel brings this tour back any time.` },
+  ],
+};
+function tutStart(part = 'core', i = 0) {
+  TUT.on = true; TUT.part = part; TUT.i = i; TUT.asking = false;
+  toggleBuildMenu(false); toggleCmdMenu(false, true); showBuildingCard(null);
+  tutShow();
+}
+function tutEnd() {
+  TUT.on = false; TUT.asking = false;
+  $('tut').hidden = true; $('tut-hl').hidden = true;
+}
+function tutShow() {
+  const steps = TUT_STEPS[TUT.part], S = steps[TUT.i], box = $('tut');
+  if (S.cam) S.cam();
+  const n = steps.length, part = TUT.part === 'adv' ? 'Advanced · ' : '';
+  let btns;
+  if (TUT.asking) btns = `<span class="tut-ask">Skip the tutorial?</span><button data-t="noskip">Keep going</button><button data-t="skip" class="go">Yes, skip</button>`;
+  else if (S.first) btns = `<button data-t="skipnow">No thanks</button><button data-t="next" class="go">Start the tour</button>`;
+  else if (S.last && TUT.part === 'core') btns = `<button data-t="back">Back</button><button data-t="end">Finish</button><button data-t="adv" class="go">Advanced part</button>`;
+  else if (S.last) btns = `<button data-t="back">Back</button><button data-t="end" class="go">Finish</button>`;
+  else btns = `<button data-t="back"${TUT.i ? '' : ' disabled'}>Back</button><button data-t="next" class="go">Next</button>`;
+  box.innerHTML = `<div class="tut-pic">${tutPic(...(S.pic || []))}</div>
+    <div class="tut-title">${S.title}</div><div class="tut-text">${S.text}</div>
+    <div class="tut-foot"><span class="tut-n">${part}${TUT.i + 1} / ${n}</span>${S.first || S.last || TUT.asking ? '' : '<button data-t="ask" class="tut-skip">Skip tutorial</button>'}</div>
+    <div class="tut-btns">${btns}</div>`;
+  box.hidden = false;
+  box.querySelectorAll('button[data-t]').forEach(b => b.onclick = e => { e.stopPropagation(); tutAct(b.dataset.t); });
+  tutFrame();
+}
+function tutAct(t) {
+  const steps = TUT_STEPS[TUT.part];
+  if (t === 'next') { if (TUT.i < steps.length - 1) TUT.i++; }
+  else if (t === 'back') { if (TUT.i > 0) TUT.i--; else if (TUT.part === 'adv') { TUT.part = 'core'; TUT.i = TUT_STEPS.core.length - 1; } }
+  else if (t === 'ask') TUT.asking = true;
+  else if (t === 'noskip') TUT.asking = false;
+  else if (t === 'skip' || t === 'skipnow') { tutEnd(); toast('Tutorial skipped. The 📖 book in the Command panel brings it back.'); return; }
+  else if (t === 'adv') { TUT.part = 'adv'; TUT.i = 0; }
+  else if (t === 'end') { tutEnd(); toast('Have fun! The 📖 book in the Command panel brings the tour back.'); return; }
+  tutShow();
+}
+// every frame: the ring around what the step is about, and the card out of its way
+function tutFrame() {
+  if (!TUT.on) return;
+  const S = TUT_STEPS[TUT.part][TUT.i], hl = $('tut-hl'), box = $('tut');
+  let r = null;
+  if (S.el) { const el = document.querySelector(S.el); if (el) { const b = el.getBoundingClientRect(); if (b.width && b.height) r = { x: b.left - 6, y: b.top - 6, w: b.width + 12, h: b.height + 12 }; } }
+  else if (S.map) { const p = S.map(); if (p) { const [sx, sy] = toScreen(p[0], p[1]), d = clamp(cam.zoom * 2.2, 46, 120); r = { x: sx - d / 2, y: sy - d / 2, w: d, h: d, round: true }; } }
+  if (r) { Object.assign(hl.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px', borderRadius: r.round ? '50%' : '12px' }); hl.hidden = false; }
+  else hl.hidden = true;
+  // the card goes to the half of the screen away from the ring
+  const low = r && (S.map ? r.y + r.h / 2 > innerHeight * 0.62 : r.y + r.h / 2 > innerHeight / 2);
+  box.classList.toggle('top', !!low); box.classList.toggle('bottom', !low);
+}
+
 // ---------- notifications and questions ----------
 function notify(title, body, buttons = null, onExpire = null, onClick = null) {
   const el = document.createElement('div');
@@ -14067,7 +14208,7 @@ function updateHud() {
   // research on the Build button
   const f = researchFrac(), t = game.research.cur && TECH[game.research.cur];
   $('rb-fill').style.width = (f * 100).toFixed(1) + '%';
-  $('rb-label').textContent = t ? `${t.name} ${Math.floor(f * 100)}%` : 'All researched';
+  $('rb-label').textContent = t ? `${t.name} ${Math.floor(f * 100)}%` : Object.keys(TECH).every(id => game.research.done.has(id)) ? 'All researched' : 'Research starting…';
   $('cmd-label').textContent = game.aiming ? 'Fire' : game.mode === 'build' ? 'Back' : { expand: 'Expand', attack: 'Attack', expedition: 'Expedition' }[game.cmd];
   $('send-n').textContent = `= ${sendFrom(C)} people`;
   const avail = garrisons().reduce((a, b) => a + Math.floor(b.units || 0), 0);
@@ -14776,6 +14917,7 @@ function mpOnMsg(m) {
     MP.joined = true; MP.style = m.style; MP.nid = m.nid;
     if (mpRival()) rivStart(m.sv); else mpApply(m.sv, true);
     closeModal();
+    if (!(mpRival() && RESUME && game.mpNid === MP.nid)) setTimeout(() => tutStart(), 600);   // a newcomer gets the tour too (not when coming back to their realm)
     notify('🎮 Joined', mpRival() ? 'Your own realm: every building, vehicle, technology and space programme, as in any game. The other human and the computer nations are your neighbours.' : 'You share this empire with the host: your orders count as theirs.');
     return;
   }
@@ -14967,7 +15109,7 @@ function start() {
   if (ld) ld.remove();
   if (MP.role) { /* the waiting room or the join screen says hello */ }
   else if (RESUME && !noSave) toast(`Welcome back: game loaded (seed ${SEED}, ${fmtTime(game.time)} played). It autosaves every 10 s.`);
-  else notify('Welcome', `Map seed ${SEED}. ${say('Click', 'Tap')} past your border to expand. Your people research technology as they grow: open <b>Build</b> to see what's coming. Farms feed your people.`);
+  else tutStart();                                 // a new world: the tutorial offers itself (one tap to say no thanks)
 
   const step = 1 / CFG.tickHz;
   let last = performance.now(), acc = 0, hudT = 0;
@@ -14979,12 +15121,14 @@ function start() {
     const dt = Math.min(0.25, (now - last) / 1000);
     last = now;
     acc += dt;
+    if (TUT.on && !MP.role && game.time > 0.5) acc = 0;   // the tutorial pauses a single-player game (multiplayer keeps going); a new world gets its first moment so the numbers are filled in
     while (acc >= step) { guard(tickAll, step); acc -= step; }
     guard(panKeys, dt);
     guard(stepCamAnim, dt);
     guard(applyFollow);
     guard(render);
     guard(stepSound);
+    guard(tutFrame);
     hudT += dt;
     if (hudT > 0.1) { guard(updateHud); hudT = 0; }
   }
@@ -14998,5 +15142,5 @@ window.__game = { TOUCH, mouse, game, cam, CFG, SEED, tick: tickAll, tickOne: ti
   render, followBody, stopFollow, sunPos, wallGarrisons, buildDysonRocket, launchDyson, sendBomber, fireIPBM, setBombing, dysonPower, buildBridge, bridgePlan, POLAR, claim, isLand, launchRocket, makeStation, buyShuttle, toggleEngine, orbitOf, DISK, keys, showBuildingCard, refreshCard, openDiplomacy, aiConsider, doTrade, aiPeace, aiAlly, allianceOf, getOp, addOp, atWar, setWar, settlementLand, guardedAttack, autoDefend, buyVehicle, orderUpgrade, fleetSummary, tierOpen, addCar, seaCrossing, settleExpedition, takeWheel, completeTech, setPct, setTroopPct, roadsList: () => roads, buildRoads, netGraph, findRoute, connectPlan, connectToRoad, wallPlan, pickWallEnd, strikePlan, strikeReach, techIn, goldBoost, haulProf, NET, defenseMult, nextVehicle, driveStep: (e, dt) => driveStep(e, dt), removeBuilding, TECH, unitStats, garrisons, totalUnits, launchAttack, frontWith, setTool, confirmGhost, setCmd, clickAt, commandClick,
   routesTo, dispatchSupplies, linkStats, techCost, pickTech, playerTechScore, resourceProfile, research: () => game.research, hasDep, oilKnown, W, frontier, tileCenter,
   stopSaving: () => { noSave = true; }, scanAiBorders, dbgAI: () => ({ borders: [...aiBorders.keys()], gaps: [...aiGap.entries()].map(([k, v]) => k + ':' + Math.round(v.d)), dipTimer, borderTimer, offerTimer }), aiOffers, aiRelations, driftOpinions, SVG, RAS, SPR, debugOff, terraOf, planetTerra, poweredTerraformers, terraNeed, stepPlanetTerraform, compFx, compOf, bestComputer, upgradeComputer, researchPeople, SHUTTLE_MK, upgradeShuttle, shRange, canReachWorld, craft, CRAFTS, aiCompute, aiState, showAIPanel, stepAIs, aiDoRoads, aiDoGambit, aiDoWar, aiDoBuild, aiDoTrade, roadsList2: () => roads, invPull, invOf, lootSettlement, lootNation, sourceSettlement, stepInventories, skyWorldPos, foreignSkyClick, setGameMode, MODE, modePicker, aiUnitCap, aiTreaty, signTreaty, treaty, aiSurrender, doSurrender, warLosing, nationWorth, termsValue, askAll, openDiplomacyAll, aiNeeds, surrenderDialog, fearOf, showMarket, marketTrade, rushSite, rushCost, hireTroops, mercCost, treasury, orderStation, padBusy, myStations, wallState, fortState, damageWall, damageFort, wallMax, fortMax, showWallCard, wallNear, fortNear, buyWallUpgrade, upgradeCost, wallGroupOf, wallsAfterWar, stepRepairs, ironWallCross, viaLink, landWay, keepOnLand, shipGoods, crossesWater, tradePath, shoreOf, landGroup, overland, wet, tradeEnd, tilePath, intraArrive, stationNearSettlement, carProf };
-Object.assign(window.__game, { SND, toggleMute, stepSound, sndTapBuilder, crewPos, sndZoom, startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, mpSnapshot, toGuestView, mpApply, RIV, rivWorldMsg, rivRealmMsg, buildWall, sowFields, stepSowing });
+Object.assign(window.__game, { TUT, tutStart, tutAct, TUT_STEPS, SND, toggleMute, stepSound, sndTapBuilder, crewPos, sndZoom, startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, mpSnapshot, toGuestView, mpApply, RIV, rivWorldMsg, rivRealmMsg, buildWall, sowFields, stepSowing });
 init();

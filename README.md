@@ -29,6 +29,9 @@ Every building, upgrade, vehicle, troop badge and worker was redrawn in round 9.
 ## Your domain's flag
 Tap the flag at the top left to give the domain you're viewing a sign (12 designs) and a colour (12 colours): its land on the map, its border and its settlement labels take the colour.
 
+## Tutorial
+Every new world starts by offering a short guided tour (tap **No thanks** to skip it). It walks you through the basics step by step, pointing at the real buttons, with **Next**, **Back** and **Skip tutorial** on every step. At the end you can carry on with an **Advanced** part (new territories, ports, moving troops, the central computer, space, multiplayer). The game waits while you read (in multiplayer it keeps going). The 📖 book in the Command panel starts the tour again from the beginning.
+
 ## Sound
 The game starts muted: tap the small speaker next to **Do not touch** in the Command panel to turn sound on. You only hear what you're zoomed in on, at full volume when fully zoomed in, fading as you zoom out and silent before buildings turn into map icons.
 - **Haulers on the move:** porters, handcarts, pack horses, carriages and caravans, trucks and self-driving haulers each have their own sound (electric trucks are silent).

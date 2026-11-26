@@ -145,7 +145,7 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 | `.nojekyll` | Makes GitHub Pages serve files as they are. Keep it. |
 
 **Cache tag:** `index.html` loads `style.css?v=N` and `game.js?v=N`. **Increase N by one on every push**, in both
-places, or phones keep running the old code. Look in `index.html` for the current N (it was 26 on 2026-11-26).
+places, or phones keep running the old code. Look in `index.html` for the current N (it was 27 on 2026-11-26).
 
 ---
 
@@ -237,6 +237,16 @@ lines). The order of sections in the file:
   and for taps), `sndTapBuilder(x, y)` (called from `clickAt`), `sndBuilderSays`, `sndTalking`. The mute button is
   `#cmdmenu button[data-act="mute"]` in `index.html` (handled in the `#cmdmenu` click handler; its icon is set in
   `updateCmdMenu`).
+- **Tutorial** (just before "notifications and questions", after Sound): `TUT` (state: `on`, `part` = `'core'` or
+  `'adv'`, `i` = step, `asking` = the skip question is showing), `TUT_STEPS.core` / `TUT_STEPS.adv` (each step:
+  `title`, `text`, `pic` (sprite names drawn from `SVG`), and optionally `el` (a CSS selector to ring), `map` (a
+  function giving a map spot to ring), `cam` (moves the camera), `first`, `last`), `tutStart(part, i)`, `tutEnd`,
+  `tutShow`, `tutAct`, `tutFrame` (every frame from `frame()`: places the ring `#tut-hl` and moves the card `#tut`
+  to the half of the screen away from it), `tutLook(p, z)`, `tutHome`, `tutPic`. The pause is one line in `frame()`
+  (`if (TUT.on && !MP.role && game.time > 0.5) acc = 0`). Offered from `init()` on a new world (in place of the old
+  "Welcome" note) and in `mpOnMsg` on `hello` for a joining player (not when a Rivals guest comes back to their own
+  realm). The 📖 button is `#cmdmenu button[data-act="tutorial"]`. **If you change a feature the tutorial
+  describes, update its text too.**
 - **Multiplayer** (end of file): `MP` (role, style, connection), PeerJS (or `tr=bc`, a test channel inside one
   browser), `MP_ORDERS` (player orders, wrapped by `mpWrap`), `MP_HOST_ONLY`.
   - **Co-op:** the host's browser runs the world; the guest's shows it (`mpSnapshot`, `mpApply`, `toGuestView`) and
@@ -383,6 +393,20 @@ AI** (the owner gave only the rule), it is marked *(AI's number)*: you may sugge
 - Gaps between loop repeats are minimised (owner's request) by crossfading each loop's end into its start.
 - Multiplayer: each player hears only their own screen and has their own mute.
 
+### Tutorial
+- **Offered on every new world** (including someone's very first visit) and to the **second player when they join**.
+  No "don't ask again" option: the owner wants it simply very easy to skip. The first card offers **Start the tour**
+  or **No thanks** (No thanks closes at once; *AI's choice*: declining the offer isn't treated as skipping mid-way).
+- **Style** (owner's choice): guided steps that ring the real button or map spot, on cards with pictures (the game's
+  own sprites). **Next** and **Back** on every step.
+- **Skip tutorial** is on every step and **asks first** ("Skip the tutorial?" Keep going / Yes, skip).
+- **Pausing:** single player pauses while the tutorial is open; **multiplayer keeps running**.
+- **Content:** a **core** tour of the early game (16 steps), then an optional **Advanced** part (10 steps) offered at
+  the end of the core. Written **simply and humorously** (owner). **Creative mode and sound/mute are not in it**
+  (owner excluded them).
+- **The 📖 book button** sits next to the speaker and "Do not touch" in the Command panel and always **starts again
+  from step 1** (owner's choice).
+
 ### Multiplayer
 - **Rivals:** the second player has a full realm of their own, with everything the host has except creative mode.
 - **Co-op:** both players command one shared empire.
@@ -432,6 +456,10 @@ cd <repo folder>/tests && node r13.mjs                # run any test
     screen, a builder's tap sequence, taps ignored when zoomed out), `phone_mute` (the speaker button on a phone
     screen). Chrome is started with `--autoplay-policy=no-user-gesture-required` for these. Nobody has listened to
     the result: tests check volumes and which clip plays, not how it sounds.
+  - Tutorial: `r16tut` (offered on a fresh visit, pauses single player, every core step and its ring, Back, the
+    Advanced part, skip asks and can be cancelled, the game runs again after skipping, the 📖 button restarts from
+    step 1, "No thanks" closes at once). Run `node r16tut.mjs` and `node r16tut.mjs phone`. It must start with a fresh
+    browser (no saved game), because a saved game skips the offer.
   - Saving: `r5save`. Other files are older one-off checks.
 - **Timing:** tests give the game a fixed amount of time. Since real loads, building takes longer, and some loops were
   lengthened. An error like "Cannot read properties of undefined" right after a build loop usually means the building
@@ -465,6 +493,8 @@ End commit messages with whatever attribution lines your own environment require
 - Sound was never heard by an AI (they can't listen): it was checked by volumes, timings and which clip plays. Sound
   on a real iPhone was not tested (Safari needs the first tap, which the mute button provides).
 - Boats, trains, planes, the electric truck, buildings and missiles have no sound yet (owner's choice for now).
+- The tutorial was checked on desktop and phone sizes in Chrome, not on a real iPhone. It explains things in words
+  and rings buttons; it doesn't wait for the player to actually do each thing.
 
 ## 8. Code style
 

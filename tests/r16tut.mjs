@@ -1,0 +1,42 @@
+import { chromium } from '/opt/npm-tools/node_modules/playwright/index.mjs';
+// Tutorial: offered on a new world, pauses single player, Next/Back, highlight, skip asks, advanced part, book button restarts.
+const W = process.argv[2] === 'phone' ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } : { viewport: { width: 1300, height: 820 } };
+const tag = process.argv[2] === 'phone' ? 'phone' : 'desk';
+const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox', '--use-gl=swiftshader'] });
+const page = await (await browser.newContext(W)).newPage();
+const errs = []; page.on('pageerror', e => errs.push('PAGEERROR ' + e.message + '\n' + e.stack));
+await page.goto('http://localhost:8765/?seed=42');
+await page.waitForFunction(() => !document.getElementById('loading'), null, { timeout: 60000 });
+await page.waitForTimeout(800);
+const log = [];
+const st = () => page.evaluate(() => { const T = window.__game.TUT; return [T.on, T.part, T.i, document.querySelector('#tut .tut-title')?.textContent, !document.getElementById('tut-hl').hidden]; });
+log.push(['on a new world', await st()]);
+const t0 = await page.evaluate(() => window.__game.game.time); await page.waitForTimeout(1500);
+log.push(['paused (time unchanged)', (await page.evaluate(() => window.__game.game.time)) === t0]);
+await page.screenshot({ path: `/tmp/tut-${tag}-0.png` });
+const click = async t => { await page.click(`#tut button[data-t="${t}"]`); await page.waitForTimeout(700); };
+await click('next');
+for (let k = 1; k < 16; k++) {
+  const s = await st();
+  log.push([k, s[3], 'ring', s[4]]);
+  if ([1, 3, 4, 10, 11, 14].includes(k)) await page.screenshot({ path: `/tmp/tut-${tag}-${k}.png` });
+  if (s[3] === "That's the basics!") break;
+  await click('next');
+}
+await click('back'); log.push(['back', (await st())[3]]); await click('next');
+await click('adv'); log.push(['advanced', await st()]);
+await page.screenshot({ path: `/tmp/tut-${tag}-adv.png` });
+await click('ask'); log.push(['skip asks', await page.evaluate(() => document.querySelector('#tut .tut-ask')?.textContent)]);
+await page.screenshot({ path: `/tmp/tut-${tag}-ask.png` });
+await click('noskip'); log.push(['kept going', await st()]);
+await click('ask'); await click('skip');
+log.push(['after skip', await st(), 'toast', await page.evaluate(() => document.getElementById('toast').textContent)]);
+const t1 = await page.evaluate(() => window.__game.game.time); await page.waitForTimeout(1000);
+log.push(['running again', (await page.evaluate(() => window.__game.game.time)) > t1]);
+await page.evaluate(() => window.__game.toggleCmdMenu(true));
+await page.click('#cmdmenu button[data-act="tutorial"]'); await page.waitForTimeout(500);
+log.push(['book button', await st()]);
+await click('skipnow'); log.push(['no thanks closes at once', (await st())[0]]);
+for (const l of log) console.log(JSON.stringify(l));
+console.log(errs.slice(0, 4).join('\n') || 'no errors');
+await browser.close();
