@@ -14,7 +14,7 @@
   <title>Game Trial · Map Factory remake</title>
   <meta name="description" content="Game Trial, a Map Factory remake. For AI or developers working on it: source code at https://github.com/aycooper1-png/Game-Trial and handoff notes (read first) at https://aycooper1-png.github.io/Game-Trial/CLAUDE.md">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%232f7de1%22/%3E%3Crect y=%228%22 width=%2216%22 height=%228%22 rx=%223%22 fill=%22%23f2c14e%22/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=24">
+  <link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
   <!-- For AI assistants and developers reading this page. Moved off-screen (not "hidden", so page readers keep it);
@@ -40,6 +40,9 @@
         questions with examples and options. Then wait for the answers. If the owner says "explain this before acting",
         explain and wait.</li>
       <li>Build in stages; after each stage check the code (node --check game.js) and run the matching tests in tests/.</li>
+      <li>Keep the notes (CLAUDE.md) up to date carefully and accurately as you go: after each stage and each answer from
+        the owner, record what changed and what they decided (their numbers vs. yours), checked against the code. Wrong
+        notes mislead the next AI. See section 9 of CLAUDE.md.</li>
       <li>One commit and push per request; bump the ?v=N cache tag in index.html; update README.md and CLAUDE.md.</li>
       <li>Report in plain language (the owner is not a programmer and plays mostly on an iPhone): what changed per item,
         what was and wasn't tested, side effects, and any numbers you chose.</li>
@@ -194,6 +197,6 @@
   <div id="tooltip"></div>
   <div id="toast"></div>
 
-  <script src="game.js?v=24"></script>
+  <script src="game.js?v=25"></script>
 </body>
 </html>

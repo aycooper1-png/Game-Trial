@@ -74,10 +74,12 @@ small bug fix). When in doubt, ask.
    a screenshot when something visual changed (desktop and phone size).
 3. Fix what you broke. Fix real bugs you find on the way (and mention them).
 4. If you discover something that changes what the owner will get (a side effect, a limit, a slowdown), tell them.
+5. **Update these notes as you go** (section 9), stage by stage, while the details are fresh. Don't leave it all to the
+   end, when things are easy to forget or get wrong.
 
 ### Step 4: Publish and report
-1. Bump the cache tag, update `README.md` and this file, commit once for the whole request, push to `main`
-   (section 6).
+1. Bump the cache tag, update `README.md`, **re-read and finish updating this file (section 9)**, commit once for
+   the whole request, push to `main` (section 6).
 2. Report to the owner in plain language (they are not a programmer):
    - what changed, item by item, in their numbering;
    - what you tested and what you could **not** test (for example: real iPhone Safari, real two-device multiplayer);
@@ -142,7 +144,7 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 | `.nojekyll` | Makes GitHub Pages serve files as they are. Keep it. |
 
 **Cache tag:** `index.html` loads `style.css?v=N` and `game.js?v=N`. **Increase N by one on every push**, in both
-places, or phones keep running the old code. Look in `index.html` for the current N (it was 24 on 2026-11-26).
+places, or phones keep running the old code. Look in `index.html` for the current N (it was 25 on 2026-11-26).
 
 ---
 
@@ -427,11 +429,39 @@ End commit messages with whatever attribution lines your own environment require
 
 ## 9. Keeping these notes up to date
 
-After every request, in the same commit:
-- add the owner's new decisions to section 4 (mark numbers you chose as *AI's number*);
-- update section 3 if you added or renamed important functions;
-- update section 7 (fixed gaps out, new gaps in);
-- update the date at the top of this file and the cache tag in section 2;
-- if you change what an AI needs to know first, update the off-screen `#ai-notes` block at the top of `<body>` in
-  `index.html` too. Keep it off-screen with CSS, **not** with the `hidden` attribute: AI page-readers skip hidden
+These notes are how the next AI knows what you know. A wrong note is worse than no note: the next AI will trust it
+and build on it. So update them **carefully and accurately, as you go**, not only at the end.
+
+### When
+- **During the work:** after each stage, add what changed while you still remember exactly how it works.
+- **When the owner answers questions:** record each decision right away in section 4, in their meaning, not yours.
+- **Before you commit:** re-read every part of this file you touched, and the parts about the systems you changed,
+  and check them against the code as it is now.
+
+### What to update
+- **Section 4 (decisions):** every new decision the owner makes. Record what they actually decided, close to their
+  own words. Mark every number **you** chose as *(AI's number)*, and say which numbers **they** gave. If they change
+  an earlier decision, replace the old line (don't leave both), and note what it replaced if that helps.
+- **Section 3 (code map):** new or renamed functions, fields and consts that matter; anything you moved or removed.
+  Use the exact names as they are in `game.js`, and search the file to confirm each name exists before writing it.
+- **Section 5 (tests):** new tests and what they cover; tests whose timing or meaning changed.
+- **Section 7 (gaps):** remove gaps you fixed; add new ones, including anything you couldn't test, couldn't finish, or
+  noticed but left alone.
+- **Section 1 (owner's words):** any new word or phrase of theirs that could be misread, and what it turned out to mean.
+- **Top of file:** the date. **Section 2:** the current cache tag.
+- **`index.html`:** if what an AI must know first changes, update the off-screen `#ai-notes` block at the top of
+  `<body>` too. Keep it off-screen with CSS, **not** with the `hidden` attribute: AI page-readers skip hidden
   elements and HTML comments.
+- **`README.md`:** the player-facing description, in the same commit.
+
+### How (accuracy rules)
+- **Write only what you have checked** in the code or seen in a test. If you are unsure, check; if you still can't
+  tell, write that it's unverified rather than guessing.
+- **Be specific:** exact names, numbers and conditions ("only when no boat is free", "off by default"), not vague
+  summaries.
+- **Keep the owner's decisions separate from your own choices**, always.
+- **Don't delete information you don't understand.** If something looks outdated, check the code first; if it really
+  is outdated, fix it and say so in your report.
+- **Keep it readable:** plain English, the existing structure and headings, short entries. Put new things in the
+  section where the next AI will look for them.
+- **Mention in your report to the owner** that you updated the notes, and anything important you changed in them.
