@@ -21,6 +21,9 @@ Play with one friend: **New map → 🎮 Multiplayer**. Pick how you play, then 
 - The two browsers connect directly, through the free PeerJS matchmaking service (bundled, no game server). The host's game runs the world, so the host keeps the tab open (in a hidden tab the game keeps going, but slower). If the friend drops out, the same link brings them back. In Rivals their realm is run by the computer until they do.
 - **Limits:** a rival friend has a simpler set of orders than the host: no vehicles, links, walls, space programme or computers of their own. They see stocks and land every couple of seconds, so things on the move can jump a little. Only the host can change the game mode or switch on creative mode.
 
+## The art
+Every building, upgrade, vehicle, troop badge and worker was redrawn in round 9. Three artists each took a group, and an independent reviewer checked every new sprite against the old one at map size (22 and 40 px) on grass, sand, moon dust and water, sending back the ones that weren't clearly better. Upgrade ladders step up visibly: farm, irrigated farm, mechanized farm; the central computer's four levels (each upgrade has its own look); settlement houses from hut to city block; helmets from a leather cap to a drone; haulers from a porter to a self-driving hauler; boats from a rowboat to a container ship.
+
 ## Your domain's flag
 Tap the flag at the top left to give the domain you're viewing a sign (12 designs) and a colour (12 colours): its land on the map, its border and its settlement labels take the colour.
 
@@ -32,7 +35,7 @@ Tap the flag at the top left to give the domain you're viewing a sign (12 design
 ### 1. Technology research
 - Every player (you and every AI nation) has a research bar that fills faster the more people they have. People on your space stations count double.
 - Each discovery shows a notification. The **Build** button shows what's being researched; the Build menu has the details.
-- 35 techs follow the general order of history: Warrior Code, the Wheel and Masonry through Steam Power, Petroleum, Flight, Nuclear Fission, Electronics and Computing, up to Spaceflight, Reusable Rockets, Bubble Habitats, Terraforming, Strategic Bombers, Interplanetary Missiles, the Dyson Swarm and Artificial Intelligence. The next tech is picked from the earliest ones you can research, preferring those that use what you produce most.
+- 36 techs follow the general order of history: Warrior Code, the Wheel and Masonry through Steam Power, Petroleum, Flight, Nuclear Fission, Electronics and Computing, up to Spaceflight, Reusable Rockets, Bubble Habitats, Terraforming, Strategic Bombers, Interplanetary Missiles, the Dyson Swarm and Artificial Intelligence. The next tech is picked from the earliest ones you can research, preferring those that use what you produce most.
 - Gold you mine goes straight into research.
 
 ### 2. Build and Command
@@ -63,6 +66,8 @@ Tap the flag at the top left to give the domain you're viewing a sign (12 design
 
 ### 4. Military
 - **Bases and fortresses** train and hold units; capacity grows with tech. Helmets beside troop counts change with your tech.
+- **Guns reach further:** Gunpowder, Firearms, Armored Warfare, Electronics, Computing and Artificial Intelligence each add range (the Command menu shows it). In a fight, the side that outranges the other hits it while it closes in and takes less in return. Cannon and machine-gun nests reach 15% further, and hit harder, with each of those techs.
+- **Fighting withdrawal** (Artificial Intelligence): the Command menu's *Fall back while firing* has your fighting troops back away toward their nearest fortress while they shoot. They take no ground, but kill many and lose few (about a third of the losses). It applies to the fights going on and the ones that start while it's on.
 - **Troops modernise by themselves** as you research: Warband → … → Airborne infantry (Flight) → Tanks → Mechanized infantry (Electronics) → Networked brigades (Computing) → Drone squadrons (C.A.I.S.). Electronics, Computing and C.A.I.S. also make every unit hit harder and last longer.
 - **Walls** between two fortresses you pick (paid in stone) make the land harder to take and speed up marching. Walls run in **straight lines**: they turn only to stay inside your borders, to keep out of the water, and to go round resources (forests, fields, ore, oil) and other buildings. Picking the second fortress is forgiving: anywhere nearer to a glowing fortress than to the first one counts (a bigger area on phones), a slip of the mouse or finger still counts as a click, and the dashed line shows where the wall will run. Nothing cancels the wall by accident, not a miss and not a fortress it can't reach. A banner shows you're building a wall: its Cancel button, Esc, or clicking right on the first fortress cancels it.
 - **Damage and repair:** each stretch of wall between two fortresses has its own health. Battered walls and forts show cracks, then a breach. A breached stretch or fort shelters no one, but it stays until the war ends. Only if the war ends with that land still lost is it gone for good. Soldiers mend them: in a lull in a war they fetch the stone themselves (more soldiers work faster and carry more, more with better tech); in peacetime haulers bring the stone and the garrison builds.
@@ -121,7 +126,9 @@ Tap the flag at the top left to give the domain you're viewing a sign (12 design
 ### 9. The late game
 - **Nuclear bombers** (Command → Bomber) fly from an airport to anywhere on the map. Ruinously expensive, and air defenses, forts and enemy fighters shoot many of them down on the way.
 - **Interplanetary missiles:** look at another world and use Fire: a silo on any of your worlds strikes it.
-- **The Dyson swarm:** a launch pad at home builds one enormous rocket. Launched, it flies to the sun and builds the swarm; then every **Dyson receiver**, on any world, gives 250 MW.
+- **The Dyson swarm:** a launch pad at home builds it round the sun, ten rocketloads at a time (each a tenth of the huge cost, sent as the domain can pay). While it's built you see a grey scaffold round the sun, mirrors bolted on as each load lands, welding sparks at the build front, and receivers get half power. Finished, the sun wears a golden halo and every Dyson receiver catches a beam of light from it (on other worlds the beam comes straight down out of the sky). Receivers only draw on the nearest star.
+- **The Casimir Effect** (very expensive to research: four times a normal tech) unlocks the **Alcubierre drive**. Order it from any launch pad: eight rocketloads assemble it in orbit round that world, a scaffold first, ring segments added as loads arrive. Finished, its warp ring glows blue-violet. Any rocket bound further than it can fly (a colony ship, or a reusable rocket of any mark) rises to the drive and docks (the clamps close round it), the drive folds space in a flash of ripples, and the rocket casts off over the destination and lands. The drive stays in orbit round the world it last went to.
+- **Planned:** when the space map grows beyond this solar system, fully upgraded rockets will reach anywhere in the solar system on their own, and the Alcubierre drive will be needed to go beyond it.
 
 ### 10. AI personalities
 Each nation is dealt a personality, varied a little on every map: **Warlord**, **Expansionist**, **Fortress-builder**, **Scholar**, **Opportunist** and **Raider**. It shapes how they build, research, fight, make friends and hold grudges.

@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Game Trial · Map Factory remake</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%232f7de1%22/%3E%3Crect y=%228%22 width=%2216%22 height=%228%22 rx=%223%22 fill=%22%23f2c14e%22/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=15">
+  <link rel="stylesheet" href="style.css?v=16">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -121,7 +121,7 @@
     <div class="cm-row" id="warhead-row" hidden><span class="lbl">WARHEAD</span><div class="pcts"><button class="pbtn wide" data-warhead="conventional">Conventional</button><button class="pbtn wide" data-warhead="nuke">☢ Nuclear</button></div><span class="send-n" id="warhead-cost"></span></div>
     <div class="cm-row"><span class="lbl">PEOPLE PER CLICK</span><div class="pcts" id="pct-buttons"></div><span class="send-n" id="send-n"></span></div>
     <div class="cm-row"><span class="lbl">TROOPS PER ATTACK</span><div class="pcts" id="troop-buttons"></div><span class="send-n g" id="troop-n"></span></div>
-    <div class="cm-row"><button class="tog" id="recruit"></button><button class="tog" id="autodef"></button><span class="cm-army" id="army-info"></span></div>
+    <div class="cm-row"><button class="tog" id="recruit"></button><button class="tog" id="autodef"></button><button class="tog" id="fallback" hidden title="Artificial Intelligence: your troops back away while they shoot, so they kill many and lose few (they give no ground and take none)"></button><span class="cm-army" id="army-info"></span></div>
     <div class="cm-row" id="alliance-row"></div>
     <div class="cm-row" id="world-row" hidden><span class="lbl">WORLDS</span><div class="pcts" id="world-buttons"></div></div>
     <div class="cm-row cm-misc">
@@ -148,6 +148,6 @@
   <div id="tooltip"></div>
   <div id="toast"></div>
 
-  <script src="game.js?v=15"></script>
+  <script src="game.js?v=16"></script>
 </body>
 </html>

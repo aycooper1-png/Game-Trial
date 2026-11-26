@@ -198,6 +198,7 @@ const CFG = {
     { id: 'terraform',   name: 'Terraforming',      era: 8, uses: ['uranium', 'iron'], tags: ['econ'], req: ['domes', 'fission', 'reusable'] },
     { id: 'bombers',     name: 'Strategic Bombers', era: 7, uses: ['oil', 'iron'],   tags: ['mil'],   req: ['nukes', 'flight'] },
     { id: 'ipbm',        name: 'Interplanetary Missiles', era: 8, uses: ['uranium', 'oil'], tags: ['mil'], req: ['nukes', 'reusable'] },
+    { id: 'casimir',     name: 'The Casimir Effect', era: 9, uses: ['uranium', 'chips'], tags: ['trans', 'econ'], req: ['qca', 'reusable'], costMult: 4 },
     { id: 'dyson',       name: 'Dyson Swarm',       era: 9, uses: ['iron', 'uranium'], tags: ['econ'], req: ['terraform', 'reusable'] },
   ],
   // what each tech does besides unlocking buildings (multipliers stack). Shown in the unlock notification.
@@ -210,8 +211,8 @@ const CFG = {
     carriages:    { note: 'Carriages for your cars' },
     caravans:     { note: 'Caravans for your cars: big wagon trains that carry far more each trip' },
     shipbuilding: { note: 'Galleons for your fleet' },
-    gunpowder:    { unit: { atk: 1.5 }, note: 'Muskets: units hit 50% harder' },
-    firearms:     { unit: { atk: 1.6 }, note: 'Rifles: units hit 60% harder' },
+    gunpowder:    { unit: { atk: 1.5 }, note: 'Muskets: units hit 50% harder and shoot from 1 tile off · cannon and gun nests reach 15% further' },
+    firearms:     { unit: { atk: 1.6 }, note: 'Rifles: units hit 60% harder and shoot 2 tiles further · guns on buildings reach and hit harder' },
     steam: { note: 'Steamships for your fleet · trains on your rail', veh: { boat: { speed: 1.06 } }, vnote: 'Better hulls: boats 6% faster' },
     petroleum:    { note: 'Oil deposits appear on the map' },
     electricity: { capMult: 0.25, note: 'Bases and fortresses hold more', veh: { rail: { speed: 1.08 } }, vnote: 'Electric signalling: trains 8% faster' },
@@ -220,7 +221,7 @@ const CFG = {
     computing: { note: 'Central computers and data centers · rockets that fly themselves', unit: { hp: 1.1, atk: 1.1 }, veh: { car: { cargo: 1.15 }, boat: { cargo: 1.15 }, plane: { cargo: 1.15 }, rail: { cargo: 1.15 } }, vnote: 'Battlefield computers; containerised loads: every vehicle carries 15% more' },
     mccs: { note: 'Upgrade a central computer to the M.C.C.S.: stronger bonuses, research +40%, rocket range x6', veh: { car: { speed: 1.08 }, boat: { speed: 1.08 }, plane: { speed: 1.08 }, rail: { speed: 1.08 } }, vnote: 'Route planning: every vehicle 8% faster' },
     qca:          { note: 'Upgrade an M.C.C.S. to the Q.C.A.: research +50% more' },
-    cais: { note: 'Upgrade a Q.C.A. to C.A.I.S.: an AI that can run parts of the domain for you', unit: { hp: 1.2, atk: 1.3 }, vnote: 'AI-guided drones: troops 20% tougher, 30% stronger' },
+    cais: { note: 'Upgrade a Q.C.A. to C.A.I.S.: an AI that can run parts of the domain for you · troops can fall back while firing (Command menu) · range +2', unit: { hp: 1.2, atk: 1.3 }, vnote: 'AI-guided drones: troops 20% tougher, 30% stronger' },
     automobile:   { unit: { speed: 1.8 }, fuel: true, note: 'Trucks for your cars, motorized infantry: much faster, but they burn oil' },
     flight:       { note: 'Planes to buy: they fly between your airports' },
     armor:        { unit: { hp: 2, atk: 1.5 }, capMult: 0.25, fuel: true, note: 'Tanks: far tougher and stronger, but they burn oil' },
@@ -233,7 +234,8 @@ const CFG = {
     terraform:    { note: 'Terraformers slowly turn another world\'s land green and breathable' },
     bombers:      { note: 'Nuclear bombers fly from your airports (Command → Bomber): ruinously expensive, and easy prey for air defenses' },
     ipbm:         { note: 'Missile silos can strike other worlds: aim from the world you want to hit' },
-    dyson:        { note: 'A launch pad at home can build the Dyson swarm rocket; once the swarm is up, Dyson receivers on any world pour out power' },
+    dyson:        { note: 'A launch pad at home builds the Dyson swarm round the sun, a rocketload at a time; once it is up, Dyson receivers on any world pour out power' },
+    casimir:      { note: 'The Alcubierre drive: build it from a launch pad, a rocketload at a time. In orbit, it carries any rocket that docks with it to another world almost at once' },
   },
   // military units: the newest kind you know is what your bases train (and your older units are re-equipped).
   units: [
@@ -456,7 +458,7 @@ function fmtTime(sec) {
   const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
-function fmtNum(n) { return n >= 1000 ? Math.floor(n).toLocaleString() : String(Math.floor(n)); }
+function fmtNum(n) { return n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M' : n >= 1000 ? Math.floor(n).toLocaleString() : String(Math.floor(n)); }   // millions shortened (creative mode)
 function addCost(a, b) {
   const o = { ...a };
   if (b) for (const [k, v] of Object.entries(b)) o[k] = (o[k] || 0) + v;
@@ -543,22 +545,62 @@ const fleck = (x, y, s) => `<path d="M${x} ${y - s} L${x + s * 0.6} ${y} L${x} $
 const GREY = ['#7b8289', '#c2c8cd', '#9aa1a8', '#5f666d', '#878e95'], PALE = ['#8a8f8c', '#d2d5cf', '#a9ada8', '#6b706d', '#969a96'];
 const RUST = ['#7a4a38', '#bd7b56', '#96604a', '#4f2f25', '#85523f'], DEEP = ['#6a3d33', '#a8654a', '#84503f', '#43261f', '#74463a'];
 const SHAPES = {
-  farm: `<rect x="-11" y="-9" width="24" height="22" fill="#000" opacity="0.2"/>
-    <rect x="-12" y="-1" width="24" height="12" fill="#d9b24a" stroke="#7a5a1a" stroke-width="0.9"/>
-    <path d="M-12 3 H12 M-12 7 H12" stroke="#b8902e" stroke-width="1"/>
-    <path d="M-10 -1 V-8 L-4 -12 L2 -8 V-1 Z" fill="#b8432f" stroke="#5a1f14" stroke-width="0.9"/>
-    <rect x="-6" y="-6" width="4" height="5" fill="#4e3a33"/><circle cx="8" cy="-6" r="3.2" fill="#c9cfd6" stroke="#59616b" stroke-width="0.8"/>`,
-  farm2: `<rect x="-11" y="-9" width="24" height="22" fill="#000" opacity="0.2"/>
-    <rect x="-12" y="-1" width="24" height="12" fill="#e0bc4e" stroke="#7a5a1a" stroke-width="0.9"/>
-    <path d="M-12 5 H12" stroke="#4f8fcf" stroke-width="2"/><path d="M-12 1.5 H12 M-12 8.5 H12" stroke="#b8902e" stroke-width="1"/>
-    <path d="M-10 -1 V-8 L-4 -12 L2 -8 V-1 Z" fill="#b8432f" stroke="#5a1f14" stroke-width="0.9"/>
-    <rect x="5" y="-12" width="6" height="11" rx="2" fill="#c9cfd6" stroke="#59616b" stroke-width="0.8"/>`,
-  farm3: `<rect x="-11" y="-9" width="24" height="22" fill="#000" opacity="0.2"/>
-    <rect x="-12" y="-1" width="24" height="12" fill="#e8c652" stroke="#7a5a1a" stroke-width="0.9"/>
-    <path d="M-12 3 H12 M-12 7 H12" stroke="#b8902e" stroke-width="1"/>
-    <rect x="-11" y="-11" width="10" height="10" fill="#8fa3b8" stroke="#2b323d" stroke-width="0.9"/>
-    <rect x="2" y="-9" width="9" height="6" rx="1" fill="#2f8f3f" stroke="#14361a" stroke-width="0.8"/>
-    <circle cx="4" cy="-2" r="2" fill="#2b3038"/><circle cx="10" cy="-2" r="2.6" fill="#2b3038"/>`,
+  farm: `<rect x="-11" y="-8" width="25" height="21" fill="#000" opacity="0.2"/>
+<rect x="-12.5" y="-0.5" width="25" height="12" rx="0.8" fill="#d9b24a" stroke="#6e4f16" stroke-width="1"/>
+<path d="M-12 2.3 H12 M-12 5.5 H12 M-12 8.7 H12" stroke="#b08528" stroke-width="1.3"/>
+<path d="M-12 1 H12 M-12 4.2 H12 M-12 7.4 H12" stroke="#f0d070" stroke-width="0.7" opacity="0.8"/>
+<path d="M-1 -7 H6.5 V-0.5 H-1 Z" fill="#94362a" stroke="#4a1a12" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-6 -11.5 H2 L7.5 -7 H-1 Z" fill="#5c3a2c" stroke="#2e1a12" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-4.5 -10.6 H1.5" stroke="#8a5a44" stroke-width="0.8"/>
+<path d="M-11 -0.5 V-7 L-6 -11.5 L-1 -7 V-0.5 Z" fill="#c4503a" stroke="#4a1a12" stroke-width="0.9" stroke-linejoin="round"/>
+<rect x="-8.3" y="-5.5" width="4.6" height="5" fill="#6b2418" stroke="#f4ead8" stroke-width="0.8"/>
+<path d="M-8.3 -5.5 L-3.7 -0.5 M-3.7 -5.5 L-8.3 -0.5" stroke="#f4ead8" stroke-width="0.6"/>
+<circle cx="-6" cy="-8.2" r="0.9" fill="#f4ead8"/>
+<path d="M2 -5 H4.5 V-3 H2 Z" fill="#f2d98a" stroke="#4a1a12" stroke-width="0.5"/>
+<ellipse cx="10" cy="-2.2" rx="2.8" ry="2.4" fill="#e8c652" stroke="#7a5a1a" stroke-width="0.8"/>
+<path d="M8.4 -3 Q10 -4.2 11.6 -3" stroke="#a8802a" stroke-width="0.6" fill="none"/>`,
+  farm2: `<rect x="-11" y="-8" width="25" height="21" fill="#000" opacity="0.2"/>
+<rect x="-12.5" y="-0.5" width="25" height="12.5" rx="0.8" fill="#e0bc4e" stroke="#6e4f16" stroke-width="1"/>
+<path d="M-12 1.8 H-1.5 M-12 4.1 H-1.5 M-12 8.2 H-1.5 M-12 10.4 H-1.5 M1.5 1.8 H12 M1.5 4.1 H12 M1.5 8.2 H12 M1.5 10.4 H12" stroke="#9fb83a" stroke-width="1.2"/>
+<path d="M-12.5 6.2 H12.5 M0 -0.5 V12" stroke="#2c5f9e" stroke-width="2.8"/>
+<path d="M-12.5 6.2 H12.5 M0 -0.5 V12" stroke="#5fb0ec" stroke-width="1.6"/>
+<path d="M-10 6 H-8 M-4 6 H-2.5 M4 6 H5.5 M9 6 H10.5" stroke="#d4f0ff" stroke-width="0.6"/>
+<path d="M-1 -7 H6.5 V-0.5 H-1 Z" fill="#94362a" stroke="#4a1a12" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-6 -11.5 H2 L7.5 -7 H-1 Z" fill="#5c3a2c" stroke="#2e1a12" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-4.5 -10.6 H1.5" stroke="#8a5a44" stroke-width="0.8"/>
+<path d="M-11 -0.5 V-7 L-6 -11.5 L-1 -7 V-0.5 Z" fill="#c4503a" stroke="#4a1a12" stroke-width="0.9" stroke-linejoin="round"/>
+<rect x="-8.3" y="-5.5" width="4.6" height="5" fill="#6b2418" stroke="#f4ead8" stroke-width="0.8"/>
+<path d="M-8.3 -5.5 L-3.7 -0.5 M-3.7 -5.5 L-8.3 -0.5" stroke="#f4ead8" stroke-width="0.6"/>
+<path d="M2 -5 H4.5 V-3 H2 Z" fill="#f2d98a" stroke="#4a1a12" stroke-width="0.5"/>
+<path d="M8.2 -0.5 L10 -9.5 L11.8 -0.5 M8.8 -3.5 H11.2 M9.4 -6.5 H10.6" stroke="#4a3a2a" stroke-width="0.9" fill="none" stroke-linejoin="round"/>
+<g transform="translate(10 -10.5)">
+<path d="M0 0 L-1 -4.2 L1 -4.2 Z M0 0 L4.2 -1 L4.2 1 Z M0 0 L1 4.2 L-1 4.2 Z M0 0 L-4.2 1 L-4.2 -1 Z" fill="#eef1f3" stroke="#3d434a" stroke-width="0.6" stroke-linejoin="round"/>
+<circle r="1" fill="#c4503a" stroke="#3d434a" stroke-width="0.5"/></g>`,
+  farm3: `<rect x="-11" y="-9" width="25.5" height="22.5" fill="#000" opacity="0.22"/>
+<rect x="-13" y="-1.5" width="26" height="14" rx="0.8" fill="#ecc853" stroke="#6e4f16" stroke-width="1"/>
+<path d="M-12.5 1.2 H12.5 M-12.5 4.4 H12.5 M-12.5 10.2 H12.5" stroke="#c09a32" stroke-width="1.3"/>
+<path d="M-12.5 7.3 H12.5" stroke="#a37a3a" stroke-width="2.4"/>
+<path d="M4 -1.5 V-7 H12.5 V-1.5 Z" fill="#9aa3ad" stroke="#262b33" stroke-width="0.9"/>
+<path d="M3.3 -7 L5.5 -10 H11 L13.2 -7 Z" fill="#b8432f" stroke="#262b33" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M6 -1.5 V-5 H10.5 V-1.5" fill="#3a3f46" stroke="#262b33" stroke-width="0.6"/>
+<path d="M6.3 -4.2 H10.2 M6.3 -3 H10.2" stroke="#6b737d" stroke-width="0.5"/>
+<path d="M-13 -1.5 V-9.5 A4.25 3 0 0 1 -4.5 -9.5 V-1.5 Z" fill="#b9c1ca" stroke="#262b33" stroke-width="0.9"/>
+<path d="M-4.5 -1.5 V-9.5 A4.25 3 0 0 1 4 -9.5 V-1.5 Z" fill="#b9c1ca" stroke="#262b33" stroke-width="0.9"/>
+<path d="M-11.6 -9.5 V-2 M-3.1 -9.5 V-2" stroke="#eef2f6" stroke-width="1.3"/>
+<path d="M-6.1 -9.5 V-2 M2.4 -9.5 V-2" stroke="#7d8692" stroke-width="1.3"/>
+<path d="M-13 -9.5 H-4.5 M-13 -6.5 H-4.5 M-13 -4 H-4.5 M-4.5 -9.5 H4 M-4.5 -6.5 H4 M-4.5 -4 H4" stroke="#6b737d" stroke-width="0.5"/>
+<path d="M-11.3 -11 A3 1.6 0 0 1 -7 -12.3" stroke="#ffffff" stroke-width="0.8" fill="none" opacity="0.8"/>
+<path d="M-2.8 -11 A3 1.6 0 0 1 1.5 -12.3" stroke="#ffffff" stroke-width="0.8" fill="none" opacity="0.8"/>
+<path d="M-8.75 -12.5 V-13.8 M-0.25 -12.5 V-13.8" stroke="#262b33" stroke-width="1"/>
+<g transform="translate(-4 3.2)">
+<path d="M-6 3.5 V0 H1 L2 -5 H7 V3.5 Z" fill="#2f9a43" stroke="#123a1a" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M2.8 -4.2 H6.2 V-0.5 H2.2 Z" fill="#bfe6ff" stroke="#123a1a" stroke-width="0.5"/>
+<path d="M-5 0.8 H0.6" stroke="#7ed37a" stroke-width="0.8"/>
+<path d="M-3.5 0 V-3.5" stroke="#262b33" stroke-width="0.9"/>
+<circle cx="-3.5" cy="-4.4" r="0.9" fill="#9aa1a8" opacity="0.8"/>
+<circle cx="4.2" cy="4" r="3.4" fill="#22262c" stroke="#0f1114" stroke-width="0.7"/><circle cx="4.2" cy="4" r="1.4" fill="#f2c14e"/>
+<circle cx="-4" cy="5" r="2.2" fill="#22262c" stroke="#0f1114" stroke-width="0.7"/><circle cx="-4" cy="5" r="0.9" fill="#f2c14e"/>
+</g>`,
   wheatTile: `<path d="M0 10 V-6" stroke="#b8902e" stroke-width="1.4"/>
     <ellipse cx="-2" cy="-6" rx="1.6" ry="3" fill="#e8c652"/><ellipse cx="2" cy="-3" rx="1.6" ry="3" fill="#e8c652"/>
     <ellipse cx="-2" cy="0" rx="1.6" ry="3" fill="#d9b24a"/><ellipse cx="2" cy="3" rx="1.6" ry="3" fill="#d9b24a"/>
@@ -572,33 +614,74 @@ const SHAPES = {
     <path d="M-4 3 A4 4 0 0 0 0 8" stroke="#8d969e" stroke-width="1.4" fill="none"/>`,
   research: `<path d="M-4 -12 H4 M-2.5 -12 V-3 L-9 9 A2 2 0 0 0 -7 12 H7 A2 2 0 0 0 9 9 L2.5 -3 V-12" fill="#cfe8ff" stroke="#3d6f9e" stroke-width="1.3" stroke-linejoin="round"/>
     <path d="M-6.5 5 H6.5 L8 9 A1 1 0 0 1 7 10.5 H-7 A1 1 0 0 1 -8 9 Z" fill="#7bd389"/>`,
-  derrick: `<rect x="-9" y="-8" width="22" height="22" fill="#000" opacity="0.2"/>
-    <path d="M-8 11 L-2 -12 H2 L8 11" fill="none" stroke="#3d434a" stroke-width="2" stroke-linejoin="round"/>
-    <path d="M-6 4 H6 M-4 -3 H4" stroke="#3d434a" stroke-width="1.5"/>
-    <rect x="-11" y="9" width="22" height="4" rx="1" fill="#2b2f36"/><path d="M-12 -6 L10 -10" stroke="#b8432f" stroke-width="2.4" stroke-linecap="round"/>
-    <circle cx="9" cy="6" r="3" fill="#2b2f36"/>`,
+  derrick: `<rect x="-10" y="-8" width="24" height="21" fill="#000" opacity="0.2"/>
+<path d="M-13 9 H13 V12 H-13 Z" fill="#6b6255" stroke="#2b2620" stroke-width="0.9"/>
+<path d="M-12.5 9.7 H12.5" stroke="#8f8577" stroke-width="0.6"/>
+<path d="M-11.5 9 L-7 -13 L-3 9" fill="none" stroke="#2b2620" stroke-width="3" stroke-linejoin="round"/>
+<path d="M-11.5 9 L-7 -13 L-3 9" fill="none" stroke="#b8864e" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M-10.6 4.5 L-4 4.5 L-10 0 L-4.6 0 L-9.1 -4.5 L-5.5 -4.5 L-8 -8.5 L-6 -8.5" fill="none" stroke="#5a3a1e" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-8.3 -13 H-5.7" stroke="#2b2620" stroke-width="1.4" stroke-linecap="round"/>
+<path d="M-7 -12.4 V8" stroke="#2b2620" stroke-width="0.6"/>
+<path d="M2 9 L5.5 -3 L9 9" fill="#7b8289" stroke="#1d2024" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M3.4 4 H7.6" stroke="#1d2024" stroke-width="0.8"/>
+<path d="M-1.5 -2.5 L11 -6.2" stroke="#1d2024" stroke-width="2.8" stroke-linecap="round"/>
+<path d="M-1.5 -2.5 L11 -6.2" stroke="#d6503a" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M-3.5 -4.2 Q-1.2 -4.8 -0.8 -2.4 Q-1 0.5 -3 1.4 Z" fill="#d6503a" stroke="#1d2024" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M-2.6 1.2 V8.5" stroke="#1d2024" stroke-width="0.8"/>
+<circle cx="5.5" cy="-3.6" r="1.1" fill="#f2c14e" stroke="#1d2024" stroke-width="0.6"/>
+<circle cx="10.5" cy="3.5" r="2.8" fill="#59616b" stroke="#1d2024" stroke-width="0.8"/>
+<path d="M11 -5.8 L10.5 3.5" stroke="#1d2024" stroke-width="1"/>
+<circle cx="10.5" cy="3.5" r="0.9" fill="#1d2024"/>
+<path d="M-4 11 Q-2.6 10 -1 11 Q-2.6 12 -4 11 Z" fill="#0f1114"/>
+<rect x="-1.5" y="5.8" width="2.8" height="3.4" rx="0.5" fill="#2b2f36" stroke="#0f1114" stroke-width="0.5"/>
+<path d="M-1.5 7.3 H1.3" stroke="#f2c14e" stroke-width="0.5"/>`,
   post: `<rect x="-9" y="-6" width="22" height="19" fill="#000" opacity="0.22"/>
     <rect x="-11" y="-3" width="16" height="13" fill="#c9a66b" stroke="#5a4310" stroke-width="1"/>
     <path d="M-13 -3 L-3 -11 L7 -3 Z" fill="#8a5a44" stroke="#4a2a1e" stroke-width="1" stroke-linejoin="round"/>
     <circle cx="9" cy="8" r="3.6" fill="none" stroke="#4a2a1e" stroke-width="1.6"/><path d="M9 4.4 V11.6 M5.4 8 H12.6" stroke="#4a2a1e" stroke-width="1"/>`,
-  airport: `<rect x="-11" y="-10" width="26" height="25" fill="#000" opacity="0.2"/>
-    <rect x="-13" y="-12" width="26" height="24" rx="2" fill="#59616b" stroke="#2b3038" stroke-width="1"/>
-    <path d="M-10 8 L10 -8" stroke="#eef1f3" stroke-width="3"/><path d="M-10 8 L10 -8" stroke="#59616b" stroke-width="0.8" stroke-dasharray="2 2"/>
-    <path d="M0 -6 L2 -1 L8 1 L8 3 L2 2 L1 7 L3 9 L3 10 L0 9 L-3 10 L-3 9 L-1 7 L-2 2 L-8 3 L-8 1 L-2 -1 Z" fill="#cfe8ff" stroke="#2b3038" stroke-width="0.7"/>`,
+  airport: `<rect x="-11" y="-10" width="26" height="25" rx="2" fill="#000" opacity="0.22"/>
+    <rect x="-13" y="-12" width="26" height="24" rx="2" fill="#4a525b" stroke="#1a1e24" stroke-width="1.1"/>
+    <path d="M-13 9 V10 A2 2 0 0 0 -11 12 H11 A2 2 0 0 0 13 10 V9 Z" fill="#2f353c"/>
+    <path d="M-12 6 L6 -12 M-6 12 L12 -6" stroke="#8a939c" stroke-width="1"/>
+    <path d="M-9 9 L9 -9" stroke="#eef1f3" stroke-width="1.2" stroke-dasharray="2.4 2"/>
+    <g transform="translate(0 0) rotate(45)"><path d="M0 -11.5 C1.4 -11.5 2 -10 2 -8 V-3.5 L11 1.5 V4 L2 1.5 V7 L5 9.5 V11 L0 10 L-5 11 V9.5 L-2 7 V1.5 L-11 4 V1.5 L-2 -3.5 V-8 C-2 -10 -1.4 -11.5 0 -11.5 Z" fill="#f6f8fa" stroke="#14171b" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M-1 -8.5 H1" stroke="#2a6f96" stroke-width="1.2"/><path d="M0 7 V10" stroke="#d64045" stroke-width="1.2"/></g>`,
   plane: `<path d="M12 0 L4 -2 L-2 -11 L-5 -11 L-1 -2 L-8 -2 L-11 -6 L-13 -6 L-11 0 L-13 6 L-11 6 L-8 2 L-1 2 L-5 11 L-2 11 L4 2 Z" fill="#eef1f3" stroke="#2b3038" stroke-width="1"/>`,
-  base: `<rect x="-11" y="-9" width="25" height="23" fill="#000" opacity="0.22"/>
-    <rect x="-12" y="-6" width="24" height="17" fill="#6f7a4a" stroke="#2f3520" stroke-width="1"/>
-    <path d="M-12 -6 L0 -12 L12 -6" fill="#4f5a32" stroke="#2f3520" stroke-width="1"/>
-    <rect x="-3" y="2" width="6" height="9" fill="#2f3520"/><path d="M8 -12 V2" stroke="#3d434a" stroke-width="1.2"/>
-    <path d="M8 -12 L14 -10 L8 -8 Z" fill="#7bd389"/>`,
-  fort: `<rect x="-11" y="-9" width="25" height="23" fill="#000" opacity="0.22"/>
-    <path d="M-12 11 V-6 H-9 V-10 H-5 V-6 H-2 V-10 H2 V-6 H5 V-10 H9 V-6 H12 V11 Z" fill="#9aa1a8" stroke="#3d434a" stroke-width="1"/>
-    <path d="M-12 0 H12 M-6 -6 V11 M6 -6 V11" stroke="#7b8289" stroke-width="0.8"/>
-    <path d="M-3 11 V5 A3 3 0 0 1 3 5 V11 Z" fill="#2b3038"/><path d="M0 -10 V-16" stroke="#3d434a" stroke-width="1"/><path d="M0 -16 L6 -14 L0 -12 Z" fill="#7bd389"/>`,
-  soldier: `<circle cx="0" cy="-6" r="3.2" fill="#7bd389" stroke="#1d4a26" stroke-width="0.9"/>
-    <path d="M-6 -8.5 H6 L4 -10.5 H-4 Z" fill="#2f5a2b"/>
-    <path d="M-5 7 V0 C-5 -2 -3 -2.5 0 -2.5 C3 -2.5 5 -2 5 0 V7 Z" fill="#7bd389" stroke="#1d4a26" stroke-width="0.9"/>
-    <path d="M7 -9 V8" stroke="#d9dde2" stroke-width="1.4"/>`,
+  base: `<rect x="-11" y="-5" width="25" height="18" rx="1" fill="#000" opacity="0.22"/>
+    <path d="M-13 -1 L-10 -7 H10 L13 -1 Z" fill="#55603a" stroke="#1f2414" stroke-width="1" stroke-linejoin="round"/>
+    <path d="M-8 -7 L-10 -1 M-4 -7 L-5 -1 M0 -7 V-1 M4 -7 L5 -1 M8 -7 L10 -1" stroke="#454f2e" stroke-width="0.8"/>
+    <rect x="-12" y="-1" width="24" height="10" fill="#7d8a52" stroke="#1f2414" stroke-width="1"/>
+    <path d="M-12 1 H12" stroke="#9aa86a" stroke-width="0.9"/>
+    <rect x="-2.6" y="2.5" width="5.2" height="6.5" fill="#2f3520"/>
+    <rect x="-9.5" y="2.5" width="4" height="2.8" fill="#2b3038"/><rect x="5.5" y="2.5" width="4" height="2.8" fill="#2b3038"/>
+    <path d="M0 -6.4 L0.95 -3.9 H3.5 L1.45 -2.4 L2.25 0.1 L0 -1.4 L-2.25 0.1 L-1.45 -2.4 L-3.5 -3.9 H-0.95 Z" fill="#f4f1e6" stroke="#1f2414" stroke-width="0.5" stroke-linejoin="round"/>
+    <path d="M-13 9 H13 V12.5 H-13 Z" fill="#c2a878" stroke="#5a4a2a" stroke-width="0.9"/>
+    <path d="M-9.5 9 V12.5 M-4 9 V12.5 M4 9 V12.5 M9.5 9 V12.5 M-6.8 10.75 H-1.2 M1.2 10.75 H6.8" stroke="#5a4a2a" stroke-width="0.6"/>
+    <path d="M10 -1 V-14" stroke="#2b3038" stroke-width="1.1"/>
+    <path d="M10.4 -14 L15 -12.4 L10.4 -10.8 Z" fill="#7bd389" stroke="#1d4a26" stroke-width="0.6" stroke-linejoin="round"/>`,
+  fort: `<rect x="-11" y="-6" width="25" height="20" rx="1" fill="#000" opacity="0.24"/>
+    <path d="M-7 12 V-3 H-6 V-5 H-4 V-3 H-2 V-5 H0 V-3 H2 V-5 H4 V-3 H6 V-5 H7 V12 Z" fill="#a7adb3" stroke="#2f3439" stroke-width="1" stroke-linejoin="round"/>
+    <path d="M-7 3 H7 M-7 7.5 H7 M-3 -1.5 V3 M3 -1.5 V3 M0 3 V7.5 M-4.5 7.5 V12 M4.5 7.5 V12" stroke="#878e95" stroke-width="0.6"/>
+    <path d="M-3.2 12 V7 A3.2 3.2 0 0 1 3.2 7 V12 Z" fill="#6b4a2b" stroke="#2f2014" stroke-width="0.9"/><path d="M-3.2 9.5 H3.2 M0 4 V12" stroke="#3a2614" stroke-width="0.6"/>
+    <path d="M-13 12.5 V-6 H-12 V-8.5 H-10 V-6 H-9 V-8.5 H-7 V-6 H-6 V12.5 Z" fill="#bcc2c8" stroke="#2f3439" stroke-width="1" stroke-linejoin="round"/>
+    <path d="M13 12.5 V-6 H12 V-8.5 H10 V-6 H9 V-8.5 H7 V-6 H6 V12.5 Z" fill="#bcc2c8" stroke="#2f3439" stroke-width="1" stroke-linejoin="round"/>
+    <path d="M-12.5 -4.5 H-6.5 M6.5 -4.5 H12.5" stroke="#878e95" stroke-width="1.4"/>
+    <path d="M-11 2 V-1 A0.8 0.8 0 0 1 -8 -1 V2 Z M8 2 V-1 A0.8 0.8 0 0 1 11 -1 V2 Z" fill="#2b3038"/>
+    <path d="M-13 6.5 H-6 M6 6.5 H13" stroke="#959ca3" stroke-width="0.6"/>
+    <path d="M9.5 -8.5 V-15" stroke="#2b3038" stroke-width="1"/><path d="M9.9 -15 L15 -13.4 L9.9 -11.6 Z" fill="#7bd389" stroke="#1d4a26" stroke-width="0.6" stroke-linejoin="round"/>`,
+  soldier: `<ellipse cx="1" cy="12.6" rx="7" ry="1.8" fill="#000" opacity="0.22"/>
+
+<path d="M-4 4 V11.5 H-0.6 V6 H0.6 V11.5 H4 V4 Z" fill="#3f7a4a" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-4.6 11 H-0.3 V12.6 H-4.6 Z M0.3 11 H4.6 V12.6 H0.3 Z" fill="#2b2018" stroke="#1e1610" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M-5 5 V-0.5 Q-5 -3.4 -2 -3.4 H2 Q5 -3.4 5 -0.5 V5 Z" fill="#7bd389" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-5 2.2 H5" stroke="#6b4222" stroke-width="1.4"/><path d="M-4.4 -3 L3.4 2.2" stroke="#3f7a4a" stroke-width="1"/>
+<path d="M-4.6 -1.6 L-6.4 4.6" stroke="#1e1610" stroke-width="2.8" stroke-linecap="round"/><path d="M-4.6 -1.6 L-6.4 4.4" stroke="#7bd389" stroke-width="1.4" stroke-linecap="round"/>
+<circle cx="-6.4" cy="5" r="1.2" fill="#e8b88e" stroke="#1e1610" stroke-width="0.7"/>
+<circle cx="0" cy="-7.2" r="3.6" fill="#e8b88e" stroke="#1e1610" stroke-width="1"/>
+<circle cx="1.4" cy="-7.2" r="0.55" fill="#1e1610"/>
+<path d="M-4.6 -7.6 C-4.6 -12.4 4.6 -12.4 4.6 -7.6 Z" fill="#3f7a35" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/><path d="M-5.6 -7.8 H5.8" stroke="#1e1610" stroke-width="1.8" stroke-linecap="round"/><path d="M-5.4 -7.8 H5.6" stroke="#3f7a35" stroke-width="0.8" stroke-linecap="round"/><path d="M-2.4 -10.6 Q-1 -11.4 0.6 -11.4" stroke="#8fd07a" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+<path d="M4.4 -1.6 L7 1.6" stroke="#1e1610" stroke-width="2.8" stroke-linecap="round"/><path d="M4.4 -1.6 L7 1.4" stroke="#7bd389" stroke-width="1.4" stroke-linecap="round"/>
+<path d="M7.2 4 V-8" stroke="#1e1610" stroke-width="2.4" stroke-linecap="round"/><path d="M7.2 4 V-8" stroke="#8a5a34" stroke-width="1.1" stroke-linecap="round"/><path d="M7.2 -8 V-13.6" stroke="#e8edf2" stroke-width="1" stroke-linecap="round"/><circle cx="7.2" cy="1.6" r="1.3" fill="#e8b88e" stroke="#1e1610" stroke-width="0.7"/>`,
   gear: `<circle r="9" fill="#141a25" opacity="0.85"/>` + Array.from({ length: 8 }, (_, k) => `<rect x="-1.8" y="-9.5" width="3.6" height="4" rx="0.8" fill="#f2c14e" transform="rotate(${k * 45})"/>`).join('') +
     `<circle r="6.2" fill="#f2c14e"/><circle r="2.6" fill="#141a25"/>`,
   treeA: broadleaf('#2f5a2b', '#3f7a35', '#56963f', '#7bb85a'),
@@ -611,70 +694,196 @@ const SHAPES = {
   oreA: chunk(RUST) + fleck(-2, -4.5, 1.7) + fleck(4.5, -1, 1.3) + fleck(-5.5, 2, 1.1),
   oreB: at(-4, 1, 0.62, chunk(DEEP)) + at(5, -3, 0.5, chunk(RUST)) + at(4, 6, 0.4, chunk(RUST)) + fleck(-5, -1, 1.3) + fleck(5, -4.5, 1.1) + fleck(4, 5.5, 0.9),
   oreC: at(-5, -3, 0.36, chunk(RUST)) + at(4, -5, 0.3, chunk(DEEP)) + at(0, 3, 0.46, chunk(RUST)) + at(8, 4, 0.28, chunk(DEEP)) + at(-8, 5, 0.25, chunk(RUST)) + fleck(0, 1.5, 1.1) + fleck(-5, -4, 0.8),
-  settle1: SETTLE_ART[0], settle2: SETTLE_ART[1], settle3: SETTLE_ART[2], settle4: SETTLE_ART[3], settlement: SETTLE_ART[1],
+  settle1: `<ellipse cx="0" cy="10" rx="13" ry="3" fill="#000" opacity="0.2"/>
+<path d="M-7.5 10 V2 H7.5 V10 Z" fill="#c49a64" stroke="#5a3d22" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-7.5 10 Q0 11.6 7.5 10" fill="none" stroke="#5a3d22" stroke-width="1"/>
+<path d="M-7 5 Q0 6.4 7 5 M-7 7.8 Q0 9.2 7 7.8" stroke="#9a7444" stroke-width="0.7" fill="none"/>
+<path d="M-2 10.6 V6 A2 2 0 0 1 2 6 V10.6 Z" fill="#3a2614"/>
+<path d="M-10.5 3 L0 -10 L10.5 3 Q0 5.5 -10.5 3 Z" fill="#d9b45a" stroke="#6b4a1a" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-7 1 L-1 -8 M-3 3 L0 -9 M2 3.4 L1 -8.5 M6 2.8 L1.5 -7.5" stroke="#b08a34" stroke-width="0.7"/>
+<path d="M-8.5 0.6 L0 -8.5" stroke="#f2d98a" stroke-width="0.9"/>
+<path d="M-1.4 -9.4 L0 -12 L1.4 -9.4" fill="none" stroke="#6b4a1a" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-10.5 3 Q0 5.5 10.5 3" fill="none" stroke="#6b4a1a" stroke-width="1"/>
+<path d="M9 11.5 L12 9.5 M9 9.5 L12 11.5" stroke="#5a3d22" stroke-width="1"/>
+<path d="M9.4 10.8 C9 9.2 10 8.4 10.5 7.4 C11 8.4 12 9 11.6 10.8 Z" fill="#ffb238" stroke="#d9531e" stroke-width="0.5"/>
+<circle cx="11.6" cy="5.6" r="1.1" fill="#d9dde2" opacity="0.6"/><circle cx="12.6" cy="3.6" r="0.8" fill="#d9dde2" opacity="0.45"/>`,
+  settle2: SETTLE_ART[1], settle3: SETTLE_ART[2], settle4: SETTLE_ART[3], settlement: SETTLE_ART[1],
   person: `<circle cx="0" cy="-4.5" r="3" fill="#f2c14e" stroke="#5a4310" stroke-width="0.8"/>
     <path d="M-4.5 5 C-4.5 0 -2.5 -0.8 0 -0.8 C2.5 -0.8 4.5 0 4.5 5 Z" fill="#f2c14e" stroke="#5a4310" stroke-width="0.8"/>`,
-  house: `<rect x="-7" y="-6" width="18" height="16" fill="#000" opacity="0.22"/>
-    <rect x="-9" y="-8" width="18" height="8" fill="#de6d4c"/><rect x="-9" y="0" width="18" height="8" fill="#b04a31"/>
-    <rect x="-9" y="-8" width="18" height="16" fill="none" stroke="#6b2b1b" stroke-width="1"/>
-    <line x1="-9" y1="0" x2="9" y2="0" stroke="#7d3220" stroke-width="1.2"/><rect x="3" y="-6.5" width="3.2" height="4" fill="#4e3a33"/>`,
-  house2: `<rect x="-9" y="-8" width="24" height="20" fill="#000" opacity="0.22"/>
-    <rect x="-12" y="-10" width="24" height="10" fill="#7099c4"/><rect x="-12" y="0" width="24" height="10" fill="#4d6f96"/>
-    <rect x="-12" y="-10" width="24" height="20" fill="none" stroke="#2c4260" stroke-width="1"/>
-    <line x1="-12" y1="0" x2="12" y2="0" stroke="#2c4260" stroke-width="1.2"/>
-    <rect x="-8" y="-8" width="3" height="4" fill="#3a3f4a"/><rect x="5" y="-8" width="3" height="4" fill="#3a3f4a"/>`,
-  house3: `<rect x="-10" y="-9" width="26" height="25" fill="#000" opacity="0.25"/>
-    <rect x="-13" y="-13" width="26" height="26" rx="1.5" fill="#5f6b7d" stroke="#2b323d" stroke-width="1"/>
-    <rect x="-11" y="-11" width="10" height="10" fill="#8fa3b8"/><rect x="1" y="-11" width="10" height="10" fill="#7c8fa4"/>
-    <rect x="-11" y="1" width="10" height="10" fill="#7c8fa4"/><rect x="1" y="1" width="10" height="10" fill="#8fa3b8"/>
-    <path d="M-9 -8 H-3 M-9 -4 H-3 M3 -8 H9 M3 -4 H9 M-9 4 H-3 M-9 8 H-3 M3 4 H9 M3 8 H9" stroke="#f2d98a" stroke-width="1.3"/>`,
-  burner: `<rect x="-9" y="-7" width="22" height="20" fill="#000" opacity="0.22"/>
-    <rect x="-11" y="-6" width="20" height="16" rx="1.5" fill="#8a5a44" stroke="#4a2a1e" stroke-width="1"/>
-    <rect x="3" y="-13" width="5" height="9" fill="#6b4535" stroke="#4a2a1e" stroke-width="0.9"/>
-    <path d="M-6 6 C-7 2 -4 0 -3 -2 C-2 1 0 1 0 -1 C2 2 2 5 0 6 Z" fill="#ffb238" stroke="#d9531e" stroke-width="0.9"/>
-    <circle cx="5.5" cy="-14" r="2.2" fill="#c8c8c8" opacity="0.7"/>`,
-  rig: `<rect x="-8" y="-8" width="22" height="22" fill="#000" opacity="0.2"/>
-    <path d="M-9 11 L0 -12 L9 11" fill="none" stroke="#e0a93a" stroke-width="2.2" stroke-linejoin="round"/>
-    <path d="M-5.5 2 H5.5 M-3 -5 H3" stroke="#e0a93a" stroke-width="1.6"/>
-    <rect x="-11" y="9" width="22" height="4" rx="1" fill="#59616b" stroke="#2b3038" stroke-width="0.8"/>
-    <path d="M0 -12 V9" stroke="#3d434a" stroke-width="1.6"/><circle cx="0" cy="-12" r="2" fill="#f2c14e" stroke="#5a4310" stroke-width="0.8"/>`,
-  solar: `<rect x="-10" y="-8" width="24" height="22" fill="#000" opacity="0.18"/>
-    <rect x="-12" y="-11" width="24" height="22" rx="1" fill="#1d3e78" stroke="#c9d3df" stroke-width="1.2"/>
-    <path d="M-4 -11 V11 M4 -11 V11 M-12 -3.7 H12 M-12 3.7 H12" stroke="#6f93cf" stroke-width="1"/>
-    <path d="M-11 -10 L-6 -10 L-10 -6 Z" fill="#9fc0f0" opacity="0.7"/>`,
-  cabin: `<rect x="-9" y="-5" width="22" height="18" fill="#000" opacity="0.22"/>
-    <path d="M-12 -1 L0 -11 L12 -1 Z" fill="#7a4a2a" stroke="#3e2414" stroke-width="1" stroke-linejoin="round"/>
-    <rect x="-10" y="-1" width="20" height="12" fill="#a0683e" stroke="#3e2414" stroke-width="1"/>
-    <path d="M-10 3 H10 M-10 7 H10" stroke="#6e4426" stroke-width="0.9"/><rect x="-3" y="3" width="6" height="8" fill="#3e2414"/>
-    <path d="M7 -14 L11 -6 M11 -14 L7 -6" stroke="#cfd5db" stroke-width="1.6"/>`,
-  camp: `<rect x="-9" y="-6" width="22" height="19" fill="#000" opacity="0.22"/>
-    <path d="M-12 11 L-3 -9 L6 11 Z" fill="#c9a66b" stroke="#5a4310" stroke-width="1" stroke-linejoin="round"/>
-    <path d="M-3 -9 V11" stroke="#5a4310" stroke-width="0.9"/><path d="M-6 11 L-3 3 L0 11 Z" fill="#4a3a28"/>
-    <path d="M5 -10 L12 -3 M8 -12 L4 -6 L10 -8" stroke="#8d969e" stroke-width="2" stroke-linecap="round"/>
-    <path d="M6 -8 L13 1" stroke="#7a4a2a" stroke-width="1.6" stroke-linecap="round"/>`,
-  silo: `<rect x="-11" y="-10" width="26" height="25" fill="#000" opacity="0.22"/>
-    <rect x="-13" y="-13" width="26" height="26" rx="2" fill="#7d858f" stroke="#2b3038" stroke-width="1"/>
-    <rect x="-11.5" y="-11.5" width="23" height="23" rx="1.5" fill="none" stroke="#f2c14e" stroke-width="1.6" stroke-dasharray="3 2.5"/>
-    <rect x="-13" y="-4" width="5" height="8" fill="#5a626c" stroke="#2b3038" stroke-width="0.8"/><rect x="8" y="-4" width="5" height="8" fill="#5a626c" stroke="#2b3038" stroke-width="0.8"/>
-    <circle r="8" fill="#22262c" stroke="#14171b" stroke-width="1.2"/><circle r="6.2" fill="none" stroke="#454c55" stroke-width="0.9"/>
-    <path d="M-5.5 -5.5 L5.5 5.5 M5.5 -5.5 L-5.5 5.5" stroke="#b9c0c6" stroke-width="1.8"/>
-    <circle r="4.2" fill="#e8ecef" stroke="#8d969e" stroke-width="0.8"/><circle r="2.5" fill="#f6f8f9"/><circle r="1.5" fill="#d64045"/>`,
-  turret: `<ellipse cx="1.5" cy="3" rx="12" ry="10" fill="#000" opacity="0.2"/>` + ring(10, 9, 3, '#8f7a52') + ring(10, 9, 2.3, '#bfa674', -0.4, -0.5) +
-    `<circle r="6.6" fill="#4a4034"/><circle r="4.6" fill="#55603a" stroke="#262b18" stroke-width="0.9"/>
-    <g transform="rotate(-30)"><rect x="1" y="-2.6" width="12" height="1.8" rx="0.6" fill="#22262c"/><rect x="1" y="0.8" width="12" height="1.8" rx="0.6" fill="#22262c"/>
-    <rect x="-3.4" y="-3.4" width="6.8" height="6.8" rx="1.4" fill="#6f7a4a" stroke="#262b18" stroke-width="0.8"/></g>`,
-  airdef: `<rect x="-10" y="-9" width="24" height="23" fill="#000" opacity="0.22"/>
-    <rect x="-12" y="-12" width="24" height="24" rx="3" fill="#5f6f78" stroke="#263238" stroke-width="1"/>
-    <circle r="8.5" fill="#3d4a52" stroke="#1d262b" stroke-width="1"/>
-    <g transform="rotate(-35)"><rect x="-6.5" y="-3.2" width="15" height="2.6" rx="1" fill="#dfe6ea" stroke="#59616b" stroke-width="0.6"/>
-    <rect x="-6.5" y="0.6" width="15" height="2.6" rx="1" fill="#dfe6ea" stroke="#59616b" stroke-width="0.6"/>
-    <path d="M8.5 -3.2 L11 -1.9 L8.5 -0.6 Z M8.5 0.6 L11 1.9 L8.5 3.2 Z" fill="#d64045"/>
-    <rect x="-7.5" y="-4.2" width="5" height="8.4" rx="1" fill="#7c8a93" stroke="#263238" stroke-width="0.7"/></g>
-    <path d="M-9.5 9.5 A13.5 13.5 0 0 1 -9.5 -9.5" fill="none" stroke="#7bd389" stroke-width="1.3" stroke-dasharray="2.5 2"/>`,
-  mortar: `<ellipse cx="1.5" cy="3" rx="12" ry="10" fill="#000" opacity="0.2"/>` + ring(9, 8.6, 3.3, '#8f7a52') + ring(9, 8.6, 2.6, '#bfa674', -0.4, -0.5) +
-    `<circle r="6.4" fill="#4a4034"/><circle r="4.2" fill="#6b6f74" stroke="#2b3038" stroke-width="0.9"/>
-    <rect x="-2.2" y="-12" width="4.4" height="13" rx="1.6" fill="#3a4049" stroke="#1d2126" stroke-width="0.8" transform="rotate(38)"/>
-    <circle cx="6.6" cy="-8.4" r="1.5" fill="#111417"/>`,
+  house: `<ellipse cx="1.5" cy="8.5" rx="10.5" ry="2.6" fill="#000" opacity="0.22"/>
+<rect x="-9" y="-1" width="18" height="9.5" fill="#efdcb4" stroke="#6b4a2b" stroke-width="1"/>
+<path d="M-11 -0.5 L-7 -8 H7 L11 -0.5 Z" fill="#d0563c" stroke="#6b2b1b" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-9.5 -3 H9.5 M-8.3 -5.5 H8.3" stroke="#a8402a" stroke-width="0.7"/>
+<path d="M-7 -8 H7" stroke="#f08a6a" stroke-width="0.8"/>
+<rect x="3.5" y="-10.5" width="2.6" height="4.5" fill="#9a5a44" stroke="#4a2a1e" stroke-width="0.8"/>
+<rect x="-2" y="2.5" width="4" height="6" fill="#7a4a2a" stroke="#4a2a1e" stroke-width="0.7"/>
+<rect x="-7" y="2" width="3.6" height="3.2" fill="#f2d98a" stroke="#6b4a2b" stroke-width="0.7"/>
+<rect x="3.4" y="2" width="3.6" height="3.2" fill="#f2d98a" stroke="#6b4a2b" stroke-width="0.7"/>
+<path d="M-5.2 2 V5.2 M5.2 2 V5.2" stroke="#6b4a2b" stroke-width="0.5"/>`,
+  house2: `<ellipse cx="1.5" cy="10.2" rx="12.5" ry="2.6" fill="#000" opacity="0.22"/>
+<rect x="-11" y="-5" width="22" height="15" fill="#c98a6a" stroke="#4a2a1e" stroke-width="1"/>
+<path d="M0 -5 V10" stroke="#4a2a1e" stroke-width="0.9"/>
+<path d="M-12.5 -4.5 L-10 -11 H10 L12.5 -4.5 Z" fill="#4d6f96" stroke="#1f3450" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-11.4 -7 H11.4 M-10.6 -9 H10.6" stroke="#3a5778" stroke-width="0.6"/>
+<path d="M-10 -11 H10" stroke="#8fb2d8" stroke-width="0.8"/>
+<rect x="-7" y="-10" width="3.4" height="3.6" fill="#7099c4" stroke="#1f3450" stroke-width="0.7"/>
+<rect x="3.6" y="-10" width="3.4" height="3.6" fill="#7099c4" stroke="#1f3450" stroke-width="0.7"/>
+<rect x="-6.4" y="-9.2" width="2.2" height="2" fill="#f2d98a"/><rect x="4.2" y="-9.2" width="2.2" height="2" fill="#f2d98a"/>
+<rect x="-1.6" y="-13" width="3.2" height="3.4" fill="#8a5a44" stroke="#4a2a1e" stroke-width="0.7"/>
+<g fill="#f2d98a" stroke="#4a2a1e" stroke-width="0.6">
+<rect x="-9.4" y="-3.2" width="2.8" height="3.4"/><rect x="-4.6" y="-3.2" width="2.8" height="3.4"/>
+<rect x="1.8" y="-3.2" width="2.8" height="3.4"/><rect x="6.6" y="-3.2" width="2.8" height="3.4"/>
+<rect x="-9.4" y="2" width="2.8" height="3"/><rect x="6.6" y="2" width="2.8" height="3"/>
+</g>
+<path d="M-11 1 H11" stroke="#a86a4c" stroke-width="0.6"/>
+<rect x="-4.6" y="4.5" width="3" height="5.5" fill="#2c4260" stroke="#1f3450" stroke-width="0.6"/>
+<rect x="1.6" y="4.5" width="3" height="5.5" fill="#2c4260" stroke="#1f3450" stroke-width="0.6"/>
+<path d="M-5.2 4.2 H-1 M1 4.2 H5.2" stroke="#efdcb4" stroke-width="0.8"/>`,
+  house3: `<ellipse cx="2" cy="11" rx="13" ry="2.8" fill="#000" opacity="0.25"/>
+<rect x="-12.5" y="-3" width="9" height="14" fill="#9aa6b4" stroke="#262c35" stroke-width="1"/>
+<path d="M-12.5 -3 L-11 -5 H-2 L-3.5 -3 Z" fill="#c3ccd6" stroke="#262c35" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M-11 -0.5 H-5 M-11 2.5 H-5 M-11 5.5 H-5" stroke="#f2d98a" stroke-width="1.2" stroke-dasharray="1.6 1"/>
+<rect x="3.5" y="-6" width="9" height="17" fill="#a9b4c1" stroke="#262c35" stroke-width="1"/>
+<path d="M3.5 -6 L5 -8 H14 L12.5 -6 Z" fill="#cdd5de" stroke="#262c35" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M12.5 11 V-6 L14 -8 V9 Z" fill="#7d8896" stroke="#262c35" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M5 -3.5 H11 M5 -0.5 H11 M5 2.5 H11 M5 5.5 H11" stroke="#f2d98a" stroke-width="1.2" stroke-dasharray="1.6 1"/>
+<rect x="-5" y="-11" width="10" height="22" fill="#d3dbe4" stroke="#262c35" stroke-width="1"/>
+<path d="M-5 -11 L-3.5 -13 H6.5 L5 -11 Z" fill="#eef2f6" stroke="#262c35" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M5 11 V-11 L6.5 -13 V9 Z" fill="#9aa6b4" stroke="#262c35" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M-3.5 -8.8 H3.5 M-3.5 -6.2 H3.5 M-3.5 -3.5 H3.5 M-3.5 -0.5 H3.5 M-3.5 2.5 H3.5 M-3.5 5.5 H3.5" stroke="#f2d98a" stroke-width="1.3" stroke-dasharray="1.6 1"/>
+<path d="M-4 -8.8 H-3 M-4 -3.5 H-3" stroke="#7fb3e0" stroke-width="1.3"/>
+<rect x="-2" y="8" width="4" height="3" fill="#2b323d"/>
+<path d="M1.5 -13 V-14.4" stroke="#262c35" stroke-width="0.8"/><circle cx="1.5" cy="-14.4" r="0.6" fill="#ff5a4a"/>`,
+  burner: `<rect x="-10" y="-5" width="24" height="18" fill="#000" opacity="0.22"/>
+<rect x="3.5" y="-9.5" width="5" height="12" fill="#8a4a36" stroke="#3a1e14" stroke-width="1"/>
+<path d="M3.5 -6.5 H8.5 M3.5 -3 H8.5" stroke="#6b3526" stroke-width="0.6"/>
+<rect x="2.8" y="-10.6" width="6.4" height="1.6" fill="#5a2e22" stroke="#3a1e14" stroke-width="0.7"/>
+<circle cx="4.6" cy="-12" r="1.7" fill="#d9dee2" stroke="#8d969e" stroke-width="0.5"/>
+<circle cx="7.4" cy="-12.2" r="2.3" fill="#eef1f3" stroke="#8d969e" stroke-width="0.5"/>
+<circle cx="10.8" cy="-12.4" r="2.4" fill="#f8f9fa" stroke="#8d969e" stroke-width="0.5"/>
+<path d="M-12.5 -1 L-9.5 -6 H3 L6 -1 Z" fill="#4a3a33" stroke="#241814" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-10.5 -3.6 H4.5" stroke="#6b5448" stroke-width="0.7"/>
+<rect x="-12.5" y="-1" width="18.5" height="11.5" fill="#b0583e" stroke="#3a1e14" stroke-width="1"/>
+<path d="M-12 2 H6 M-12 5 H6 M-12 8 H6 M-9 -1 V2 M-3 -1 V2 M3 -1 V2 M0 2 V5 M3 5 V8 M0 8 V10.5" stroke="#86402c" stroke-width="0.6"/>
+<path d="M6 10.5 V-1 L9.5 -3.5 V8 Z" fill="#8a4430" stroke="#3a1e14" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-10.5 10.5 V4.5 A4 4 0 0 1 -2.5 4.5 V10.5 Z" fill="#2a1410" stroke="#3a1e14" stroke-width="1"/>
+<path d="M-9.6 10.5 C-10.2 7.4 -8.2 5.6 -7.2 3.4 C-6.6 5.6 -5.4 5.8 -5.2 4.6 C-3.4 6.6 -3.2 8.8 -3.4 10.5 Z" fill="#ff9a2a"/>
+<path d="M-8.4 10.5 C-8.6 8.6 -7.4 7.6 -6.8 6.6 C-6.2 7.8 -5 8.2 -4.6 10.5 Z" fill="#ffe27a"/>
+<rect x="0" y="1.6" width="4" height="3" fill="#ffcf6a" stroke="#3a1e14" stroke-width="0.6"/>
+<path d="M2 1.6 V4.6" stroke="#3a1e14" stroke-width="0.5"/>
+<path d="M7.5 12.5 L9.5 9 L11 9.6 L13 8.4 L13.5 12.5 Z" fill="#2b2b2e" stroke="#111" stroke-width="0.6" stroke-linejoin="round"/>
+<circle cx="10" cy="10.5" r="0.5" fill="#5a5f66"/><circle cx="12" cy="10.2" r="0.5" fill="#5a5f66"/>`,
+  rig: `<defs><radialGradient id="rig-glow"><stop offset="0" stop-color="#9ffaff" stop-opacity="0.9"/><stop offset="1" stop-color="#2fd8ff" stop-opacity="0"/></radialGradient></defs>
+<rect x="-10.5" y="-6" width="24.5" height="19" fill="#000" opacity="0.22"/>
+<rect x="-12.5" y="6" width="25" height="6" rx="1" fill="#a9b0b7" stroke="#1d2126" stroke-width="1.1"/>
+<path d="M-12 7 H12" stroke="#d4d9de" stroke-width="0.8"/>
+<path d="M-11.5 6 L-4.5 -9.5 L2.5 6" fill="none" stroke="#1d2126" stroke-width="3.6" stroke-linejoin="round"/>
+<path d="M-11.5 6 L-4.5 -9.5 L2.5 6" fill="none" stroke="#f2b82e" stroke-width="2.1" stroke-linejoin="round"/>
+<path d="M-8.6 0 H-0.4" stroke="#1d2126" stroke-width="2.6"/><path d="M-8.6 0 H-0.4" stroke="#f2b82e" stroke-width="1.2"/>
+<path d="M-4.5 -9 V6" stroke="#1d2126" stroke-width="1"/>
+<circle cx="-4.5" cy="-10" r="3.6" fill="#59616b" stroke="#1d2126" stroke-width="1.1"/>
+<circle cx="-4.5" cy="-10" r="2.2" fill="none" stroke="#6ff0ff" stroke-width="1"/>
+<circle cx="-4.5" cy="-10" r="0.9" fill="#e8ecef"/>
+<circle cx="7.5" cy="0" r="8" fill="url(#rig-glow)"/>
+<path d="M3 6 V-3 H12.5 V6 Z" fill="#46535e" stroke="#1d2126" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M3 -3 L4.5 -5.5 H13 L12.5 -3 Z" fill="#7d8e9c" stroke="#1d2126" stroke-width="1" stroke-linejoin="round"/>
+<rect x="4.6" y="-1.4" width="6.3" height="5.6" rx="0.8" fill="#13252e" stroke="#1d2126" stroke-width="0.6"/>
+<path d="M8.6 -1 L6.2 1.8 H8 L6.8 4" fill="none" stroke="#7ff4ff" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M-1.8 -10.4 Q4 -10 7.8 -5.5" stroke="#1d2126" stroke-width="1.6" fill="none"/>
+<path d="M-1.8 -10.4 Q4 -10 7.8 -5.5" stroke="#6ff0ff" stroke-width="0.6" fill="none"/>
+<path d="M-12.5 10 H12.5" stroke="#f2c14e" stroke-width="1.6"/>`,
+  solar: `<rect x="-10.5" y="-6" width="24" height="18" fill="#000" opacity="0.2"/>
+<path d="M-8 9.5 V12 M8 9.5 V12 M-6 -2 V4 M6 -2 V4" stroke="#3d434a" stroke-width="1.4"/>
+<path d="M-12.5 10 L-9 -10.5 H9 L12.5 10 Z" fill="#c9d3df" stroke="#22262c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-11.4 9 L-8.2 -9.5 H8.2 L11.4 9 Z" fill="#1c3d7a"/>
+<path d="M-3 -9.5 L-3.9 9 M3 -9.5 L3.9 9 M-9.2 -3.5 H9.2 M-10.3 2.6 H10.3" stroke="#7aa0dc" stroke-width="0.8"/>
+<path d="M-8.2 -9.5 L-3 -9.5 L-10.3 2.6 L-10.9 6 Z" fill="#a9c8f4" opacity="0.35"/>
+<path d="M-6.4 -9.5 L-4.4 -9.5 L-10.5 0.5 L-10.8 -1.2 Z" fill="#e6f0ff" opacity="0.55"/>
+<path d="M4 9 L6 6.6 L7.6 9 Z" fill="#7aa0dc" opacity="0.4"/>
+<rect x="9" y="8.5" width="4" height="3.5" rx="0.5" fill="#dfe4e8" stroke="#22262c" stroke-width="0.6"/>
+<circle cx="11" cy="10.2" r="0.6" fill="#7ee05a"/>`,
+  cabin: `<rect x="-9.5" y="-5" width="23" height="18" fill="#000" opacity="0.22"/>
+<path d="M-11 -2 H6 V10 H-11 Z" fill="#a0683e" stroke="#3e2414" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-11 1 H6 M-11 4 H6 M-11 7 H6" stroke="#6e4426" stroke-width="0.9"/>
+<path d="M-11 -0.6 H6 M-11 2.4 H6 M-11 5.4 H6 M-11 8.4 H6" stroke="#c48a58" stroke-width="0.6"/>
+<path d="M-13 -1 L-7.5 -11 H4 L8.5 -1 Z" fill="#6e4426" stroke="#3e2414" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-11 -4 H6.5 M-9.4 -7 H5.2" stroke="#4e2e18" stroke-width="0.8"/>
+<path d="M-7.5 -11 H4" stroke="#c48a58" stroke-width="0.8"/>
+<rect x="1" y="-14" width="2.6" height="5" fill="#7b8289" stroke="#2b3038" stroke-width="0.7"/>
+<circle cx="3" cy="-15" r="1.4" fill="#d9dde2" opacity="0.7"/>
+<rect x="-5.5" y="3" width="4.2" height="7" fill="#3e2414"/>
+<rect x="0.5" y="1" width="3.5" height="3" fill="#f2c14e" stroke="#3e2414" stroke-width="0.6"/>
+<circle cx="-11" cy="1" r="0.8" fill="#d9a36a" stroke="#3e2414" stroke-width="0.4"/><circle cx="-11" cy="4" r="0.8" fill="#d9a36a" stroke="#3e2414" stroke-width="0.4"/><circle cx="-11" cy="7" r="0.8" fill="#d9a36a" stroke="#3e2414" stroke-width="0.4"/>
+<g stroke="#3e2414" stroke-width="0.6">
+<circle cx="8.2" cy="9.8" r="1.7" fill="#d9a36a"/><circle cx="11.6" cy="9.8" r="1.7" fill="#d9a36a"/>
+<circle cx="9.9" cy="6.8" r="1.7" fill="#d9a36a"/><circle cx="13" cy="6.9" r="1.4" fill="#d9a36a"/>
+<circle cx="8.2" cy="3.9" r="1.4" fill="#d9a36a"/>
+</g>
+<g fill="none" stroke="#8a5a2e" stroke-width="0.4"><circle cx="8.2" cy="9.8" r="0.7"/><circle cx="11.6" cy="9.8" r="0.7"/><circle cx="9.9" cy="6.8" r="0.7"/></g>
+<path d="M9 -4 L12.5 -10" stroke="#5a3a1e" stroke-width="1.1" stroke-linecap="round"/>
+<path d="M11.3 -11.5 L13.8 -10 L12.9 -8.2 L11 -9 Z" fill="#cfd5db" stroke="#3d434a" stroke-width="0.5" stroke-linejoin="round"/>
+<ellipse cx="9" cy="-2.8" rx="2.4" ry="1.3" fill="#c48a58" stroke="#3e2414" stroke-width="0.6"/>`,
+  camp: `<rect x="-10" y="-6" width="23.5" height="19" fill="#000" opacity="0.22"/>
+<path d="M-2 11 L0 -2 L5 -9 L11 -5 L13 4 L13 11 Z" fill="#7b8289" stroke="#3a3f45" stroke-width="1" stroke-linejoin="round"/>
+<path d="M0 -2 L5 -9 L11 -5 L7 -2 Z" fill="#a9b0b6"/>
+<path d="M11 -5 L13 4 L9 2 L7 -2 Z" fill="#5f666d"/>
+<circle cx="9" cy="-4.5" r="0.9" fill="#c9824e"/><circle cx="3.5" cy="-3" r="0.7" fill="#c9824e"/>
+<path d="M2 11 V3.5 Q6 0 10 3.5 V11 Z" fill="#1a1d21"/>
+<path d="M2 11 V3 H10 V11" fill="none" stroke="#7a4a2a" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M1 3 H11" stroke="#a0683e" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M3 9.5 H9 M3 11 H9" stroke="#6b5240" stroke-width="0.6"/>
+<path d="M-13 9 L-7 -3 L-1 9 Z" fill="#d9bf86" stroke="#5a4310" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-7 -3 L-1 9 L-4 9 Z" fill="#b89a5e"/>
+<path d="M-8.5 9 L-7 4 L-5.5 9 Z" fill="#4a3a28"/>
+<path d="M-7 -3 V-5" stroke="#5a4310" stroke-width="0.9"/>
+<path d="M-4.5 10.5 H2" stroke="#4a3a28" stroke-width="0.6"/>
+<path d="M-3.5 7.5 H1.5 L1 10 H-3 Z" fill="#7b8289" stroke="#2b3038" stroke-width="0.7" stroke-linejoin="round"/>
+<path d="M-3 7 L-2 6 L-1 7 L0.5 6.2 L1 7" fill="#c9824e" stroke="#4f2f25" stroke-width="0.5"/>
+<circle cx="-2" cy="10.6" r="0.8" fill="#2b3038"/><circle cx="0.5" cy="10.6" r="0.8" fill="#2b3038"/>
+<path d="M8 -6.5 L4 -2" stroke="#3e2414" stroke-width="2" stroke-linecap="round"/><path d="M8 -6.5 L4 -2" stroke="#a0683e" stroke-width="1" stroke-linecap="round"/>
+<path d="M6 -8.8 Q8.6 -8.4 10.4 -5.6" stroke="#2b3038" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M6 -8.8 Q8.6 -8.4 10.4 -5.6" stroke="#c9ced3" stroke-width="1" fill="none" stroke-linecap="round"/>`,
+  silo: `<rect x="-11" y="-8" width="26" height="23" rx="2" fill="#000" opacity="0.22"/>
+    <rect x="-13" y="-9" width="26" height="22" rx="2" fill="#8a9198" stroke="#2b3038" stroke-width="1"/>
+    <path d="M-13 9.5 H13" stroke="#5f666d" stroke-width="1"/><path d="M-13 9.5 H13 V11 A2 2 0 0 1 11 13 H-11 A2 2 0 0 1 -13 11 Z" fill="#6b737b"/>
+    <ellipse cx="0" cy="2" rx="9" ry="6" fill="#f2c14e" stroke="#2b3038" stroke-width="0.9"/>
+    <ellipse cx="0" cy="2" rx="9" ry="6" fill="none" stroke="#22262c" stroke-width="2" stroke-dasharray="2.4 2.4"/>
+    <ellipse cx="0" cy="2" rx="6.6" ry="4.3" fill="#14171b" stroke="#2b3038" stroke-width="0.8"/>
+    <path d="M-13 -2 H-8.5 V6 H-13 Z M13 -2 H8.5 V6 H13 Z" fill="#59616b" stroke="#2b3038" stroke-width="0.8"/>
+    <path d="M-3.4 2.6 V-6 C-3.4 -10 -1.6 -13 0 -14.5 C1.6 -13 3.4 -10 3.4 -6 V2.6 A3.4 1.3 0 0 1 -3.4 2.6 Z" fill="#eef1f3" stroke="#1a1e24" stroke-width="1"/>
+    <path d="M-2.6 -9.5 C-1.9 -11.6 -1 -13 0 -14.5 C1 -13 1.9 -11.6 2.6 -9.5 Z" fill="#d64045"/>
+    <path d="M-3.4 -3 H3.4" stroke="#d64045" stroke-width="1.2"/>
+    <path d="M1.8 -8 V2" stroke="#b9c0c6" stroke-width="1"/>`,
+  turret: `<ellipse cx="1.5" cy="3.5" rx="12.5" ry="10.5" fill="#000" opacity="0.22"/>
+    <ellipse cx="0" cy="2" rx="11" ry="9.6" fill="#8a7450" stroke="#3a2e1a" stroke-width="1"/>
+    <rect x="5.08" y="1.08" width="6.6" height="3.8" rx="1.90" transform="rotate(107.8 8.38 2.98)" fill="#d8bf88" stroke="#4a3a1e" stroke-width="0.8"/><rect x="1.90" y="4.99" width="6.6" height="3.8" rx="1.90" transform="rotate(143.8 5.20 6.89)" fill="#d8bf88" stroke="#4a3a1e" stroke-width="0.8"/><rect x="-3.26" y="6.50" width="6.6" height="3.8" rx="1.90" transform="rotate(179.8 0.04 8.40)" fill="#d8bf88" stroke="#4a3a1e" stroke-width="0.8"/><rect x="-8.44" y="5.03" width="6.6" height="3.8" rx="1.90" transform="rotate(215.8 -5.14 6.93)" fill="#d8bf88" stroke="#4a3a1e" stroke-width="0.8"/><rect x="-11.66" y="1.14" width="6.6" height="3.8" rx="1.90" transform="rotate(251.8 -8.36 3.04)" fill="#d8bf88" stroke="#4a3a1e" stroke-width="0.8"/><rect x="-11.68" y="-3.68" width="6.6" height="3.8" rx="1.90" transform="rotate(287.8 -8.38 -1.78)" fill="#d8bf88" stroke="#4a3a1e" stroke-width="0.8"/><rect x="-8.50" y="-7.59" width="6.6" height="3.8" rx="1.90" transform="rotate(323.8 -5.20 -5.69)" fill="#d8bf88" stroke="#4a3a1e" stroke-width="0.8"/><rect x="-3.34" y="-9.10" width="6.6" height="3.8" rx="1.90" transform="rotate(359.8 -0.04 -7.20)" fill="#d8bf88" stroke="#4a3a1e" stroke-width="0.8"/><rect x="1.84" y="-7.63" width="6.6" height="3.8" rx="1.90" transform="rotate(395.8 5.14 -5.73)" fill="#d8bf88" stroke="#4a3a1e" stroke-width="0.8"/><rect x="5.06" y="-3.74" width="6.6" height="3.8" rx="1.90" transform="rotate(431.8 8.36 -1.84)" fill="#d8bf88" stroke="#4a3a1e" stroke-width="0.8"/>
+    <ellipse cx="0" cy="0.6" rx="5.4" ry="4.6" fill="#3d3426"/>
+    <g transform="rotate(-32)"><rect x="1" y="-1.4" width="13.5" height="2.8" rx="0.8" fill="#2b3038" stroke="#0f1114" stroke-width="0.7"/>
+    <path d="M3.5 -1.3 V1.3 M5.5 -1.3 V1.3 M7.5 -1.3 V1.3" stroke="#6b737b" stroke-width="0.6"/>
+    <rect x="13.2" y="-1.8" width="2" height="3.6" rx="0.5" fill="#14171b"/>
+    <rect x="-2.6" y="-2.5" width="5.8" height="5" rx="1" fill="#3d434a" stroke="#0f1114" stroke-width="0.7"/>
+    <rect x="-0.5" y="2.5" width="3" height="2.6" fill="#556b2f" stroke="#1f2414" stroke-width="0.6"/></g>
+    <circle cx="-2.6" cy="2.8" r="2.6" fill="#55603a" stroke="#1f2414" stroke-width="0.8"/><path d="M-4.2 2.2 A1.8 1.8 0 0 1 -1.8 1" stroke="#8a9a5a" stroke-width="0.7" fill="none"/>`,
+  airdef: `<rect x="-10" y="-5" width="24" height="19" rx="2" fill="#000" opacity="0.24"/>
+    <path d="M-8 -5 H8 L12.5 -0.5 V8 L8 12.5 H-8 L-12.5 8 V-0.5 Z" fill="#aab2b8" stroke="#1a1e24" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M-12.5 7 V8 L-8 12.5 H8 L12.5 8 V7 Z" fill="#6b7378"/>
+    <path d="M-2 2 L9 -11 M2 4 L13 -9" stroke="#14171b" stroke-width="3.6" stroke-linecap="round"/>
+    <path d="M-2 2 L9 -11 M2 4 L13 -9" stroke="#f4f6f8" stroke-width="2" stroke-linecap="round"/>
+    <path d="M8 -9.8 L9.4 -11.5 M12 -7.8 L13.4 -9.5" stroke="#d64045" stroke-width="2.2" stroke-linecap="round"/>
+    <circle cx="-1" cy="4" r="6" fill="#5f6f7a" stroke="#14171b" stroke-width="1.1"/>
+    <path d="M-5 2 A4.5 4.5 0 0 1 1 -1" stroke="#9fb0bb" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+    <circle cx="-1" cy="4" r="1.8" fill="#2b3038"/>`,
+  mortar: `<g transform="scale(0.84)"><ellipse cx="1" cy="7" rx="13" ry="6" fill="#000" opacity="0.24"/>
+    <ellipse cx="0" cy="5.5" rx="13" ry="6.5" fill="#b8a27a" stroke="#4a3a20" stroke-width="1"/>
+    <path d="M-6 8 L10 0 L12.5 2.5 L-2.5 10.5 Z" fill="#9a6a3c" stroke="#2e1a08" stroke-width="1" stroke-linejoin="round"/>
+    <g transform="rotate(-36 0 2)"><rect x="-7" y="-1" width="22" height="7" rx="3" fill="#3d434a" stroke="#0a0c0e" stroke-width="1.1"/>
+    <rect x="13.4" y="-1.8" width="3" height="8.6" rx="1" fill="#4a5058" stroke="#0a0c0e" stroke-width="1"/>
+    <circle cx="-7" cy="2.5" r="2.6" fill="#3d434a" stroke="#0a0c0e" stroke-width="1"/>
+    <path d="M-4 0.8 H12" stroke="#b9c2ca" stroke-width="1.4" stroke-linecap="round"/></g>
+    <circle cx="0" cy="5" r="6.4" fill="#d09a5c" stroke="#2e1a08" stroke-width="1.2"/>
+    <circle cx="0" cy="5" r="4.4" fill="none" stroke="#5a3a1a" stroke-width="1"/>
+    <path d="M0 -1 V11 M-6 5 H6 M-4.2 0.8 L4.2 9.2 M4.2 0.8 L-4.2 9.2" stroke="#5a3a1a" stroke-width="1.1"/>
+    <circle cx="0" cy="5" r="1.7" fill="#2b3038"/>
+    <circle cx="-9" cy="8" r="2" fill="#2b2f36" stroke="#0a0c0e" stroke-width="0.7"/><circle cx="-9.6" cy="7.4" r="0.6" fill="#a9b2ba"/></g>`,
   truck: `<ellipse cx="0" cy="8" rx="12" ry="2.5" fill="#000" opacity="0.2"/>
     <rect x="-12" y="-6" width="15" height="11" rx="1" fill="#c9a66b" stroke="#5a4310" stroke-width="1"/>
     <path d="M-12 -2 H3" stroke="#a6844c" stroke-width="0.9"/>
@@ -683,15 +892,27 @@ const SHAPES = {
     <circle cx="-7" cy="6" r="2.6" fill="#2b3038"/><circle cx="7" cy="6" r="2.6" fill="#2b3038"/>
     <circle cx="-7" cy="6" r="1" fill="#8d969e"/><circle cx="7" cy="6" r="1" fill="#8d969e"/>`,
   bolt: `<path d="M2 -11 L-7 2 H-1 L-3 11 L7 -3 H1 Z" fill="#f2c14e" stroke="#5a4310" stroke-width="0.9" stroke-linejoin="round"/>`,
-  station: `<rect x="-10" y="-8" width="24" height="20" fill="#000" opacity="0.22"/>
-    <rect x="-12" y="-10" width="24" height="20" rx="2" fill="#a3aab1" stroke="#4c535b" stroke-width="1"/>
-    <path d="M-9 -2 V6 M-4 -2 V6 M1 -2 V6 M6 -2 V6" stroke="#6b5240" stroke-width="1.6"/>
-    <path d="M-12 0 H12 M-12 4 H12" stroke="#3d434a" stroke-width="1.4"/>
-    <rect x="-7" y="-10" width="14" height="6" fill="#c4553a" stroke="#6b2b1b" stroke-width="0.8"/>`,
-  port: `<rect x="-12" y="-12" width="24" height="24" rx="2" fill="#4a86ab"/><rect x="-12" y="-12" width="24" height="7" fill="#dccf93"/>
-    <rect x="-4" y="-7" width="8" height="18" fill="#a67c52" stroke="#6b4a2b" stroke-width="0.9"/>
-    <path d="M-4 -2 H4 M-4 3 H4 M-4 8 H4" stroke="#6b4a2b" stroke-width="0.8"/>
-    <circle cx="-5.5" cy="10" r="1.4" fill="#5a3d22"/><circle cx="5.5" cy="10" r="1.4" fill="#5a3d22"/>`,
+  station: `<rect x="-11" y="-8" width="25" height="21" rx="1" fill="#000" opacity="0.22"/>
+    <rect x="-13" y="4" width="26" height="8" fill="#8a7a66" stroke="#3d342b" stroke-width="1"/>
+    <path d="M-11 4.5 V11.5 M-7.5 4.5 V11.5 M-4 4.5 V11.5 M-0.5 4.5 V11.5 M3 4.5 V11.5 M6.5 4.5 V11.5 M10 4.5 V11.5" stroke="#5a3e2b" stroke-width="1.3"/>
+    <path d="M-13 6 H13 M-13 10 H13" stroke="#2b3038" stroke-width="1.2"/><path d="M-13 5.6 H13 M-13 9.6 H13" stroke="#c9ced6" stroke-width="0.5"/>
+    <rect x="-12" y="1.5" width="24" height="2.6" fill="#c9c2b2" stroke="#3d342b" stroke-width="0.8"/>
+    <rect x="-10" y="-5" width="20" height="7" fill="#e8d9b8" stroke="#4a3626" stroke-width="1"/>
+    <path d="M-8 2 V-1.5 A1.3 1.3 0 0 1 -5.4 -1.5 V2 Z M-2.6 2 V-1.5 A1.3 1.3 0 0 1 2.6 -1.5 V2 Z M5.4 2 V-1.5 A1.3 1.3 0 0 1 8 -1.5 V2 Z" fill="#3a4250"/>
+    <path d="M-12 -4.5 L-9 -10 H9 L12 -4.5 Z" fill="#c4553a" stroke="#5a1f14" stroke-width="1" stroke-linejoin="round"/>
+    <path d="M-10 -6 H10" stroke="#e07a5a" stroke-width="0.9"/>
+    <path d="M-4 -10 L0 -13.5 L4 -10 Z" fill="#c4553a" stroke="#5a1f14" stroke-width="0.9" stroke-linejoin="round"/>
+    <circle cx="0" cy="-7.4" r="2.3" fill="#f4f1e6" stroke="#4a3626" stroke-width="0.8"/><path d="M0 -8.8 V-7.4 H1.1" stroke="#2b3038" stroke-width="0.6" fill="none"/>`,
+  port: `<rect x="-12" y="-12" width="25" height="25" rx="2" fill="#000" opacity="0.22"/>
+    <rect x="-13" y="-13" width="26" height="26" rx="2" fill="#3f86c0" stroke="#163452" stroke-width="1.1"/>
+    <path d="M-11 6 q2 -1.2 4 0 M5 9 q2 -1.2 4 0" stroke="#a6dcff" stroke-width="1" fill="none"/>
+    <path d="M-13 -11 A2 2 0 0 1 -11 -13 H11 A2 2 0 0 1 13 -11 V-4 H-13 Z" fill="#d8ccaa" stroke="#4f4a44" stroke-width="1"/>
+    <path d="M-13 -4 H13" stroke="#6e675c" stroke-width="1.8"/>
+    <rect x="-4" y="-5" width="8" height="16" fill="#b5875a" stroke="#3a2412" stroke-width="1.1"/>
+    <path d="M-4 0 H4 M-4 5 H4" stroke="#6b4a2b" stroke-width="1"/>
+    <path d="M9 -4.5 V-12.5 L-6 -10" fill="none" stroke="#3a2a06" stroke-width="3.4" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="M9 -4.5 V-12.5 L-6 -10" fill="none" stroke="#f2b01e" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    <path d="M-5 -9.5 V-6" stroke="#1a1e24" stroke-width="0.9"/>`,
   tree: `<ellipse cx="1.5" cy="3" rx="7" ry="4" fill="#000" opacity="0.18"/><circle r="7" fill="#3d6b32"/>
     <circle cx="-2" cy="-2" r="4.2" fill="#558a3f"/><circle cx="-3" cy="-3" r="1.6" fill="#72a855"/>`,
   rock: `<ellipse cx="1" cy="4" rx="8" ry="3.5" fill="#000" opacity="0.2"/>
@@ -722,96 +943,279 @@ function pix(rows, pal, scale) {
 const K = '#141018';
 Object.assign(SHAPES, {
   // troops: the helmet changes with your army's tech
-  helmLeather: pix([
-    '....KKKKK....', '...KLLLLLK...', '..KLLHLLLLK..', '..KLHLLLLLK..', '.KLLLLLLLLLK.', '.KDDDDDDDDDK.',
-    '.KLK.....KLK.', '.KLK.....KLK.', '..K.......K..'], { K, L: '#9a6638', H: '#c08a52', D: '#6b4222' }),
-  helmBronze: pix([
-    '......RR.....', '.....RRRR....', '....KKKKK....', '...KBBBBBK...', '..KBHBBBBBK..', '..KBHBBBBBK..',
-    '.KBBBBBBBBBK.', '.KBBK...KBBK.', '.KBBK...KBBK.', '.KBBBK.KBBBK.', '..KKK...KKK..'], { K, R: '#c23b2b', B: '#c98a3a', H: '#f0c070' }),
-  helmIron: pix([
-    '......KK......', '.....KCCK.....', '....KIIIIK....', '...KIHIIIIK...', '..KIHIIIIIIK..', '..KIIIIIIIIK..',
-    'KKKIIIIIIIIKKK', 'KIIIKKKKKKIIIK', '.KKK......KKK.'], { K, I: '#8d969e', H: '#d2d8dd', C: '#b8432f' }),
-  helmSteel: pix([
-    '.....KKKKK.....', '....KGGGGGK....', '...KGHGGGGGK...', '...KGGGGGGGK...', 'KKKKGGGGGGGKKKK', 'KGGGGGGGGGGGGGK',
-    '.KKKKKKKKKKKKK.'], { K, G: '#6f7a4a', H: '#9aa46c' }),
-  helmModern: pix([
-    '....KKKKKK....', '...KMMMMMMK...', '..KMHMMMMMMK..', '.KMMMMMMMMMMK.', '.KMMMMMMMMMMK.', '.KSSSSSSSSSSK.',
-    '.KMMK....KMMK.', '..KK......KK..'], { K, M: '#4b5536', H: '#748052', S: '#1d2016' }),
-  helmAirborne: pix([
-    '....KKKKKK....', '...KRRRRRRK...', '..KRHRRRRRRK..', '.KRRRRRRRRRRK.', '.KRRRRRRRRRRK.', '.KKKKKKKKKKKK.',
-    '..KYK....KYK..', '...K......K...'], { K, R: '#7a2e2e', H: '#a84848', Y: '#d9c49a' }),
-  helmMech: pix([
-    '....KKKKKK....', '...KMMMMMMK...', '..KMHMMMMMMK..', '.KMMMMMMMMMMK.', '.KGGGGGGGGGGK.', '.KSSSSSSSSSSK.',
-    '.KMMK....KMMK.', '..KK......KK..'], { K, M: '#3e4a52', H: '#66757f', G: '#7bd389', S: '#1d2016' }),
-  helmDrone: pix([
-    'KK..........KK', 'KWK........KWK', '.KKKKKKKKKKKK.', '...KDDDDDDK...', '..KDDLLLLDDK..', '..KDDLRRLDDK..',
-    '...KDDDDDDK...', 'KWK.KKKKKK.KWK', 'KK..........KK'], { K, W: '#c9d3dd', D: '#3a4250', L: '#9fd0ff', R: '#c13b2f' }),
+  helmLeather: `<ellipse cx="1" cy="12" rx="10" ry="2" fill="#000" opacity="0.2"/>
+<path d="M-10.5 9.5 L-10 2 L-6 2 L-6 9.5 Q-8.2 11.5 -10.5 9.5 Z M10.5 9.5 L10 2 L6 2 L6 9.5 Q8.2 11.5 10.5 9.5 Z" fill="#8a5a30" stroke="#2e1a0c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-10.8 3.5 C-11 -6 -6 -11.5 0 -11.5 C6 -11.5 11 -6 10.8 3.5 Z" fill="#a86f3c" stroke="#2e1a0c" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-7.5 -4 C-7 -8 -4 -10 -1 -10.2 C-4 -8 -5.5 -6 -6 -2.5 Z" fill="#d49a5e"/>
+<path d="M0 -11.3 C2.5 -8 3 -3 2.8 2" stroke="#6b4222" stroke-width="0.9" fill="none" stroke-dasharray="1.2 1"/>
+<path d="M-11 1.5 H11 V5.2 H-11 Z" fill="#6b4222" stroke="#2e1a0c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-8.3 9.8 V13 M8.3 9.8 V13" stroke="#d9c49a" stroke-width="1" stroke-linecap="round"/>`,
+  helmBronze: `<ellipse cx="1" cy="12.5" rx="9" ry="1.8" fill="#000" opacity="0.2"/>
+<path d="M-11 -7.5 C-10 -14.5 10 -14.5 11 -7.5 C6 -9.5 -6 -9.5 -11 -7.5 Z" fill="#c23b2b" stroke="#4a1410" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-8 -9.6 L-7 -12 M-4 -10.3 L-3.5 -13 M0 -10.5 V-13.4 M4 -10.3 L3.5 -13 M8 -9.6 L7 -12" stroke="#7d1f16" stroke-width="0.8"/>
+<path d="M-8.5 -11.5 C-5 -13.6 0 -13.8 3 -13.4" stroke="#f07a5a" stroke-width="1" fill="none"/>
+<path d="M-9 -1 C-9 -8 -5 -10.5 0 -10.5 C5 -10.5 9 -8 9 -1 L9 8.5 Q9 11.5 6 11.5 L2.8 11.5 L1.8 3.5 L-1.8 3.5 L-2.8 11.5 L-6 11.5 Q-9 11.5 -9 8.5 Z" fill="#d0903e" stroke="#3a2208" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-6.8 -1.2 Q-3.8 -3.2 -1.2 -1.4 L-1.4 1.6 Q-4 0.6 -6.5 1.4 Z M6.8 -1.2 Q3.8 -3.2 1.2 -1.4 L1.4 1.6 Q4 0.6 6.5 1.4 Z" fill="#2a1606"/>
+<path d="M-1.8 3.5 L-2.8 11.5 H2.8 L1.8 3.5 Z" fill="#2a1606"/>
+<path d="M-6.5 -5 C-6 -7.5 -4 -9 -1.5 -9.4" stroke="#f6d48a" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+<path d="M-7.6 3 V9" stroke="#f0c070" stroke-width="1.1" stroke-linecap="round"/>
+<path d="M7.2 2 V9.5" stroke="#9a6420" stroke-width="1.2" stroke-linecap="round"/>`,
+  helmIron: `<ellipse cx="1" cy="10.5" rx="11" ry="2" fill="#000" opacity="0.2"/>
+<path d="M-8 -3 C-10 -6 -12 -6 -13 -9 C-10 -9 -8 -8 -6.5 -5.5" fill="#c23b2b" stroke="#4a1410" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-6 0 C-6.5 -10 -4 -13 0 -13 C4 -13 6.5 -10 6 0 Z" fill="#8f99a3" stroke="#1c2026" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-7.5 4.5 C-8.2 -3 -5 -5.5 0 -5.5 C5 -5.5 8.2 -3 7.5 4.5 Z" fill="#9aa4ae" stroke="#1c2026" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-3.5 -3 C-3.8 -8 -2.5 -11 -0.5 -11.6" stroke="#e4eaef" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+<path d="M-5.5 0.5 C-5.5 -2.5 -3.5 -4 -1.5 -4.3" stroke="#d2d8dd" stroke-width="1.1" fill="none" stroke-linecap="round"/>
+<path d="M-13.5 -3.5 Q-9 5 0 5 Q9 5 13.5 -3.5 Q10.5 8.5 0 8.5 Q-10.5 8.5 -13.5 -3.5 Z" fill="#a7b0b8" stroke="#1c2026" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-11 0 Q-6 6.2 0 6.2" stroke="#e4eaef" stroke-width="0.9" fill="none"/>
+<circle cx="-4.5" cy="3" r="0.85" fill="#e0c070"/><circle cx="0" cy="3.6" r="0.85" fill="#e0c070"/><circle cx="4.5" cy="3" r="0.85" fill="#e0c070"/>`,
+  helmSteel: `<ellipse cx="1" cy="11.5" rx="11" ry="2" fill="#000" opacity="0.2"/>
+<path d="M0 -14.8 L-1.8 -8.5 H1.8 Z" fill="#f2c14e" stroke="#5a4010" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M-3.2 -8 Q0 -10.2 3.2 -8 L2.8 -6.6 H-2.8 Z" fill="#e0b040" stroke="#5a4010" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M-9 4 C-9.5 -4 -5.5 -7.6 0 -7.6 C5.5 -7.6 9.5 -4 9 4 Z" fill="#b4c0cc" stroke="#1c2230" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-13 7.5 Q-11.5 3.5 -9 3.6 H9 Q12 3.6 13.5 6.5 Q11 9 8 8.6 L-8 8.6 Q-11 9 -13 7.5 Z" fill="#8a96a3" stroke="#1c2230" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-6.5 1.5 C-6.8 -3 -4.5 -5.8 -1 -6.3" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+<path d="M0 -5.3 L3.4 -3 L2.6 1.8 H-2.6 L-3.4 -3 Z" fill="#f2c14e" stroke="#5a4010" stroke-width="0.7" stroke-linejoin="round"/>
+<path d="M-9 3.6 H9" stroke="#e0b040" stroke-width="1"/>
+<path d="M-7 8.6 Q0 13.5 7 8.6" stroke="#e0b040" stroke-width="1.2" fill="none"/>`,
+  helmModern: `<g transform="scale(0.84)"><ellipse cx="1" cy="11.5" rx="11.5" ry="2" fill="#000" opacity="0.2"/>
+<path d="M-11.5 6 C-11 -6 -6.5 -11 0 -11 C6.5 -11 11 -6 11.5 6 Q12.8 6.6 12.5 8 H-12.5 Q-12.8 6.6 -11.5 6 Z" fill="none" stroke="#f1ecd2" stroke-width="3.4" stroke-linejoin="round"/>
+<path d="M-4.5 -10.5 L-7 -14 L-2.8 -11.2 Z M3.5 -10.8 L5.5 -14.5 L5.8 -10.2 Z M10 -4 L13.5 -6 L11 -2.2 Z M-10.5 -2.5 L-14 -4 L-11.2 -0.5 Z" fill="none" stroke="#f1ecd2" stroke-width="2.4" stroke-linejoin="round"/>
+<path d="M-6 7.5 Q-6 12.5 0 12.5 Q6 12.5 6 7.5" stroke="#3a3020" stroke-width="1.3" fill="none"/>
+<path d="M-11.5 6 C-11 -6 -6.5 -11 0 -11 C6.5 -11 11 -6 11.5 6 Q12.8 6.6 12.5 8 H-12.5 Q-12.8 6.6 -11.5 6 Z" fill="#7f9044" stroke="#1a2010" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M5 -9.5 C9 -6.5 10.6 -2 10.8 6 H5 Z" fill="#62702f" opacity="0.8"/>
+<path d="M-9 0 L1 -10.5 M-10.5 6 L6 -9.5 M-4 7 L10 -4 M9 -6 L-3 -10.6 M10.8 1 L-6.5 -8.6 M10.5 7 L-10 -4" stroke="#4a5626" stroke-width="0.8"/>
+<path d="M-7.5 -3 C-6.5 -7 -4 -9 -1 -9.6" stroke="#c8d68a" stroke-width="1.7" fill="none" stroke-linecap="round"/>
+<path d="M-4.5 -10.5 L-7 -14 L-2.8 -11.2 Z M3.5 -10.8 L5.5 -14.5 L5.8 -10.2 Z M10 -4 L13.5 -6 L11 -2.2 Z M-10.5 -2.5 L-14 -4 L-11.2 -0.5 Z" fill="#9cc04a" stroke="#1a2010" stroke-width="0.7" stroke-linejoin="round"/>
+<path d="M-12.5 8 H12.5" stroke="#1a2010" stroke-width="1"/>
+<path d="M-11.4 6.6 H11.4" stroke="#b0c070" stroke-width="1"/></g>`,
+  helmAirborne: `<ellipse cx="1" cy="11.5" rx="11.5" ry="2" fill="#000" opacity="0.2"/>
+<path d="M-7.5 6 L-7 11.2 Q0 13.6 7 11.2 L7.5 6" stroke="#2a1a12" stroke-width="1.3" fill="none" stroke-linejoin="round"/>
+<path d="M-11.5 7 C-11.5 -5 -6.5 -11.5 0 -11.5 C6.5 -11.5 11.5 -5 11.5 7 Z" fill="#9a3434" stroke="#2a0e0e" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-8.6 -5 C-7.6 -8.4 -4.6 -10.2 -1.2 -10.4" stroke="#d06060" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+<path d="M-11.3 -2.6 Q0 -6 11.3 -2.6 V0.4 Q0 -3 -11.3 0.4 Z" fill="#3a2a1e"/>
+<rect x="-8.6" y="-6.4" width="7.4" height="5.6" rx="2.8" fill="#f2c14e" stroke="#1a1410" stroke-width="1.1"/>
+<rect x="1.2" y="-6.4" width="7.4" height="5.6" rx="2.8" fill="#f2c14e" stroke="#1a1410" stroke-width="1.1"/>
+<path d="M-7.2 -4.7 Q-5.6 -5.7 -3.8 -5.1 M2.6 -4.7 Q4.2 -5.7 6 -5.1" stroke="#fff6cc" stroke-width="1" fill="none" stroke-linecap="round"/>
+<path d="M-9.5 4 C-6 5.4 6 5.4 9.5 4" stroke="#6e2020" stroke-width="1" fill="none"/>
+<path d="M-12 7 H12" stroke="#2a0e0e" stroke-width="1.1"/>`,
+  helmMech: `<ellipse cx="1" cy="11.5" rx="11" ry="2" fill="#000" opacity="0.2"/>
+<path d="M9 -2 L12.5 -13.5" stroke="#1c232b" stroke-width="1.1" stroke-linecap="round"/><circle cx="12.5" cy="-13.5" r="1.2" fill="#ff5a4a"/>
+<path d="M-11 6 C-11 -5 -6.5 -10.5 0 -10.5 C6.5 -10.5 11 -5 11 3 L11 9 L7 9 L6.5 5 L-6.5 5 L-7 9 L-11 9 Z" fill="#56646f" stroke="#141a20" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-11 1 H-6.5 V4.5 H-11 M11 1 H6.5 V4.5 H11" fill="#38444e" stroke="#141a20" stroke-width="0.8"/>
+<path d="M-7.5 -3 C-6.5 -7 -4 -9 -1 -9.4" stroke="#8fa0ad" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+<rect x="-3" y="-9.8" width="6" height="3.2" rx="0.8" fill="#2b333b" stroke="#141a20" stroke-width="0.8"/>
+<path d="M-7.5 -1 H7.5 L8 4.5 Q0 6.5 -8 4.5 Z" fill="#141a20" stroke="#0a0e12" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-6.5 1.2 H6.5 L6.7 3.4 Q0 4.8 -6.7 3.4 Z" fill="#3fe0c0"/>
+<path d="M-5.6 1.8 H-1" stroke="#d8fff4" stroke-width="0.8" stroke-linecap="round"/>
+<rect x="-6.5" y="-1.2" width="13" height="7.4" rx="2" fill="#3fe0c0" opacity="0.18"/>`,
+  helmDrone: `<ellipse cx="1.5" cy="2" rx="11" ry="9" fill="#000" opacity="0.18"/>
+<path d="M-8.5 -8.5 L8.5 8.5 M8.5 -8.5 L-8.5 8.5" stroke="#141a20" stroke-width="3.6" stroke-linecap="round"/>
+<path d="M-8.5 -8.5 L8.5 8.5 M8.5 -8.5 L-8.5 8.5" stroke="#5a6672" stroke-width="2" stroke-linecap="round"/>
+<g fill="#b8e0ff" fill-opacity="0.6" stroke="#1c2630" stroke-width="0.9"><circle cx="-8.5" cy="-8.5" r="5"/><circle cx="8.5" cy="-8.5" r="5"/><circle cx="-8.5" cy="8.5" r="5"/><circle cx="8.5" cy="8.5" r="5"/></g>
+<path d="M-12 -9.5 L-5 -7.5 M5 -9.5 L12 -7.5 M-12 7.5 L-5 9.5 M5 7.5 L12 9.5" stroke="#f4f8fc" stroke-width="1" stroke-linecap="round"/>
+<g fill="#2b333b" stroke="#141a20" stroke-width="0.8"><circle cx="-8.5" cy="-8.5" r="1.4"/><circle cx="8.5" cy="-8.5" r="1.4"/><circle cx="-8.5" cy="8.5" r="1.4"/><circle cx="8.5" cy="8.5" r="1.4"/></g>
+<circle r="6.5" fill="#3fe0c0" opacity="0.25"/>
+<path d="M-5.5 0 C-5.5 -4 -3 -5.5 0 -5.5 C3 -5.5 5.5 -4 5.5 0 C5.5 4 3 5.5 0 5.5 C-3 5.5 -5.5 4 -5.5 0 Z" fill="#3a4450" stroke="#0e1216" stroke-width="1.1"/>
+<circle r="2.8" fill="#0e1216"/><circle r="2" fill="#3fe0c0"/><circle cx="-0.6" cy="-0.7" r="0.7" fill="#e8fffa"/>
+<path d="M-3.8 -3 C-2.8 -4.2 -1.5 -4.6 0 -4.6" stroke="#7d8a97" stroke-width="0.9" fill="none" stroke-linecap="round"/>`,
   // haulers on the roads: on foot, then a handcart (the Wheel), a horse (Equestrianism), a carriage, a caravan, a truck
-  porter: pix([
-    '.....SSS....', '....SSSSS...', '.....FF.....', '....FFF.....', '...TTTTT....', '...TTTTT....',
-    '....TTT.....', '....P.P.....', '...P...P....'], { S: '#c9a66b', F: '#e0b48c', T: '#7a5a3a', P: '#3d2a1c' }),
-  handcart: pix([
-    '..BBBBBBBB......', '.BCCCCCCCCB.....', '.BCCCCCCCCBHHHHH', '.BBBBBBBBBB.....', '....KWWK.........',
-    '...KWKKWK.......', '...KWKKWK.......', '....KWWK........'], { K, B: '#6b4222', C: '#c9a66b', H: '#8a5a34', W: '#d9c49a' }),
-  horse: pix([
-    '..........HH....', '.........HHHH...', '..SSSSS..HHE....', '.SBBBBBSHHH.....', '.HHHHHHHHHH.....',
-    '.HHHHHHHHH......', '.H.H....H.H.....', '.H.H....H.H.....', '.K.K....K.K.....'], { K, H: '#8a5532', E: '#141018', S: '#c9a66b', B: '#e8d3a8' }),
-  carriage: pix([
-    '..WWWWWWW............', '.WWWWWWWWW.......HH..', '.WWWWWWWWW......HHHH.', '.BBBBBBBBBRRRRRHHHE..',
-    '.BBBBBBBBB.....HHHH..', '..KWK..KWK.....H..H..', '..KKK..KKK.....H..H..'], { K, W: '#eee6d2', B: '#6b4222', R: '#3d2a1c', H: '#8a5532', E: '#141018' }),
+  porter: `<ellipse cx="0" cy="10.2" rx="7.5" ry="2.2" fill="#000" opacity="0.22"/>
+<g transform="translate(2 1.2) scale(1.15) rotate(8)">
+<path d="M-1.4 2.5 L-3.2 8.5 M1.2 2.5 L2.8 8.5" stroke="#2a1a0e" stroke-width="2.6" stroke-linecap="round"/>
+<path d="M-1.4 2.5 L-3.2 8.2 M1.2 2.5 L2.8 8.2" stroke="#4a3220" stroke-width="1.3" stroke-linecap="round"/>
+<path d="M-2.6 3 L-2.2 -2.5 Q0 -4 2.2 -2.5 L2.6 3 Z" fill="#7a5a3a" stroke="#2a1a0e" stroke-width="1" stroke-linejoin="round"/>
+<path d="M1.6 -1.6 L-1.6 1.2" stroke="#2a1a0e" stroke-width="1.9" stroke-linecap="round"/><path d="M1.6 -1.6 L-1.6 1.2" stroke="#e0b48c" stroke-width="0.8" stroke-linecap="round"/>
+<circle cx="0.4" cy="-5.4" r="2.3" fill="#e0b48c" stroke="#2a1a0e" stroke-width="0.9"/>
+<path d="M-3.6 -6.2 Q0.4 -10.4 4.4 -6.2 Z" fill="#d9b36b" stroke="#2a1a0e" stroke-width="0.9" stroke-linejoin="round"/>
+</g>
+<path d="M-8.5 -2 C-9.5 -9 -5 -11.5 -1.8 -10 C1 -8.6 1.2 -3 0 1.5 C-2.5 3.5 -7.5 3.2 -8.5 -2 Z" fill="#c9a66b" stroke="#2a1a0e" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-7 -6 C-6 -9 -3.5 -9.8 -2.2 -9.4" stroke="#ecd39c" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+<path d="M-8.4 -3.5 Q-4 -1.5 0.6 -4.5 M-5 -10.6 Q-3.6 -4 -4.4 2.6" stroke="#6b4222" stroke-width="1" fill="none"/>`,
+  handcart: `<ellipse cx="0" cy="10.2" rx="12.5" ry="2.2" fill="#000" opacity="0.22"/>
+<path d="M-12.5 -0.5 H2 L9 2.5" stroke="#2a1a0e" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+<rect x="-10" y="-6.5" width="5" height="5" fill="#d9a441" stroke="#2a1a0e" stroke-width="0.9"/>
+<rect x="-5" y="-8.5" width="6" height="7" fill="#b4613d" stroke="#2a1a0e" stroke-width="0.9"/>
+<path d="M-5 -5 H1 M-2 -8.5 V-1.5" stroke="#7d3a22" stroke-width="0.7"/>
+<path d="M-8.5 -9.5 C-9.5 -12 -6.5 -12.5 -6 -10.5 Z" fill="#7bb85a" stroke="#2a1a0e" stroke-width="0.8"/>
+<path d="M-12.5 -2 H2 V1.5 H-12.5 Z" fill="#8a5a34" stroke="#2a1a0e" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-12 -1.2 H1.5" stroke="#c08a52" stroke-width="0.7"/>
+<circle cx="-5" cy="5.2" r="4.4" fill="#6b4222" stroke="#2a1a0e" stroke-width="1"/><circle cx="-5" cy="5.2" r="3.4000000000000004" fill="none" stroke="#d9c49a" stroke-width="0.9"/><path d="M-8.4 5.2 H-1.5999999999999996 M-5 1.7999999999999998 V8.600000000000001 M-7.38 2.8200000000000003 L-2.62 7.58 M-2.62 2.8200000000000003 L-7.38 7.58" stroke="#d9c49a" stroke-width="0.6"/><circle cx="-5" cy="5.2" r="1.1" fill="#d9c49a" stroke="#2a1a0e" stroke-width="0.5"/>
+<g transform="translate(8.6 1) scale(1.05) rotate(14)">
+<path d="M-1.4 2.5 L-3.2 8.5 M1.2 2.5 L2.8 8.5" stroke="#2a1a0e" stroke-width="2.6" stroke-linecap="round"/>
+<path d="M-1.4 2.5 L-3.2 8.2 M1.2 2.5 L2.8 8.2" stroke="#4a3220" stroke-width="1.3" stroke-linecap="round"/>
+<path d="M-2.6 3 L-2.2 -2.5 Q0 -4 2.2 -2.5 L2.6 3 Z" fill="#5b7fa8" stroke="#2a1a0e" stroke-width="1" stroke-linejoin="round"/>
+<path d="M1 -1.8 L-2.6 0.6" stroke="#2a1a0e" stroke-width="1.9" stroke-linecap="round"/><path d="M1 -1.8 L-2.6 0.6" stroke="#e0b48c" stroke-width="0.8" stroke-linecap="round"/>
+<circle cx="0.4" cy="-5.4" r="2.3" fill="#e0b48c" stroke="#2a1a0e" stroke-width="0.9"/>
+<path d="M-3.6 -6.2 Q0.4 -10.4 4.4 -6.2 Z" fill="#d9b36b" stroke="#2a1a0e" stroke-width="0.9" stroke-linejoin="round"/>
+</g>`,
+  horse: `<ellipse cx="0" cy="10.4" rx="11.5" ry="2.2" fill="#000" opacity="0.22"/><g transform="translate(-0.8 1.8) scale(1.2)"><path d="M-4.4 2 L-4.8 8 M3.6 2 L4 8" stroke="#2a1a0e" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M-3 2 L-2.6 8 M2.2 2 L1.8 8" stroke="#2a1a0e" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M-3 2 L-2.6 7.6 M2.2 2 L1.8 7.6" stroke="#5a321a" stroke-width="1.2" stroke-linecap="round"/>
+<path d="M-4.4 2 L-4.8 7.6 M3.6 2 L4 7.6" stroke="#9a5c32" stroke-width="1.2" stroke-linecap="round"/><path d="M-6 -1 C-7.5 -0.5 -8.4 2 -8 5" stroke="#2a1a0e" stroke-width="2" fill="none" stroke-linecap="round"/>
+<path d="M-6 -1 C-6 -3.6 -2.5 -3.6 1 -3.4 L3 -3.6 C4.5 -5 6 -7 7.4 -8.2 L8.2 -8.9 L8.8 -7.8 L11 -5.6 C11.4 -4.6 10.6 -4 9.8 -4.4 L8 -5 C7 -3.6 6.2 -1.5 5.4 0.5 C4.6 2.5 2 3 0 3 L-3.6 3 C-5.6 3 -6.3 1 -6 -1 Z" fill="#9a5c32" stroke="#2a1a0e" stroke-width="1" stroke-linejoin="round"/>
+<path d="M2.8 -3.8 C4.4 -5.2 6 -7 7.8 -8.6" stroke="#5a321a" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+<path d="M-3.5 -2.2 C-1.5 -2.8 1 -2.6 2.6 -2.6" stroke="#c98a5a" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+<circle cx="8.8" cy="-6.6" r="0.6" fill="#2a1a0e"/><path d="M-4.6 -2.8 C-5 -7 -2 -8 0 -7.6 C2.4 -8 4.2 -6.5 3.4 -2.8 Z" fill="#c9a66b" stroke="#2a1a0e" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-5.6 -3 H-1 V1.6 H-5.6 Z" fill="#b4613d" stroke="#2a1a0e" stroke-width="0.8"/>
+<path d="M-1.2 -7.6 V-2.8 M-4.2 -5 Q0 -4 3.4 -5" stroke="#6b4222" stroke-width="0.8" fill="none"/>
+<path d="M-3.4 -6.6 C-2.6 -7.4 -1.6 -7.6 -0.6 -7.5" stroke="#ecd39c" stroke-width="1" fill="none" stroke-linecap="round"/></g>`,
+  carriage: `<ellipse cx="0" cy="10.4" rx="13.5" ry="2.2" fill="#000" opacity="0.22"/>
+<path d="M-2 3.5 H2" stroke="#2a1a0e" stroke-width="1.3"/>
+<g transform="translate(4.4 2.6) scale(0.88)"><path d="M-4.4 2 L-4.8 8 M3.6 2 L4 8" stroke="#2a1a0e" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M-3 2 L-2.6 8 M2.2 2 L1.8 8" stroke="#2a1a0e" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M-3 2 L-2.6 7.6 M2.2 2 L1.8 7.6" stroke="#5a321a" stroke-width="1.2" stroke-linecap="round"/>
+<path d="M-4.4 2 L-4.8 7.6 M3.6 2 L4 7.6" stroke="#9a5c32" stroke-width="1.2" stroke-linecap="round"/><path d="M-6 -1 C-7.5 -0.5 -8.4 2 -8 5" stroke="#2a1a0e" stroke-width="2" fill="none" stroke-linecap="round"/>
+<path d="M-6 -1 C-6 -3.6 -2.5 -3.6 1 -3.4 L3 -3.6 C4.5 -5 6 -7 7.4 -8.2 L8.2 -8.9 L8.8 -7.8 L11 -5.6 C11.4 -4.6 10.6 -4 9.8 -4.4 L8 -5 C7 -3.6 6.2 -1.5 5.4 0.5 C4.6 2.5 2 3 0 3 L-3.6 3 C-5.6 3 -6.3 1 -6 -1 Z" fill="#9a5c32" stroke="#2a1a0e" stroke-width="1" stroke-linejoin="round"/>
+<path d="M2.8 -3.8 C4.4 -5.2 6 -7 7.8 -8.6" stroke="#5a321a" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+<path d="M-3.5 -2.2 C-1.5 -2.8 1 -2.6 2.6 -2.6" stroke="#c98a5a" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+<circle cx="8.8" cy="-6.6" r="0.6" fill="#2a1a0e"/></g>
+<path d="M-13 -9 H-2 V-8 H-13 Z" fill="#3d2a1c" stroke="#2a1a0e" stroke-width="0.8"/>
+<path d="M-12.5 2.5 V-6 Q-12.5 -8 -10.5 -8 H-4.5 Q-2.5 -8 -2.5 -6 V2.5 Z" fill="#2f6f4f" stroke="#2a1a0e" stroke-width="1.1" stroke-linejoin="round"/>
+<rect x="-10.6" y="-6.4" width="6.2" height="4" rx="0.6" fill="#f4e6b0" stroke="#2a1a0e" stroke-width="0.8"/>
+<path d="M-7.5 -6.4 V-2.4" stroke="#2a1a0e" stroke-width="0.6"/>
+<path d="M-12.5 0 H-2.5" stroke="#e0bc4e" stroke-width="1"/>
+<path d="M-12 -7 C-11 -7.6 -9 -7.7 -7.5 -7.6" stroke="#5aa07a" stroke-width="0.9" fill="none"/>
+<path d="M-2.5 -1 H1.5 L1 2.5 H-2.5" fill="#3d2a1c" stroke="#2a1a0e" stroke-width="0.8"/>
+<circle cx="-10" cy="6.4" r="3.4" fill="#3d2a1c" stroke="#2a1a0e" stroke-width="1"/><circle cx="-10" cy="6.4" r="2.4" fill="none" stroke="#e0bc4e" stroke-width="0.9"/><path d="M-12.4 6.4 H-7.6 M-10 4.0 V8.8 M-11.68 4.720000000000001 L-8.32 8.08 M-8.32 4.720000000000001 L-11.68 8.08" stroke="#e0bc4e" stroke-width="0.6"/><circle cx="-10" cy="6.4" r="0.85" fill="#e0bc4e" stroke="#2a1a0e" stroke-width="0.5"/><circle cx="-3" cy="7" r="2.8" fill="#3d2a1c" stroke="#2a1a0e" stroke-width="1"/><circle cx="-3" cy="7" r="1.7999999999999998" fill="none" stroke="#e0bc4e" stroke-width="0.9"/><path d="M-4.8 7 H-1.2000000000000002 M-3 5.2 V8.8 M-4.26 5.74 L-1.7400000000000002 8.26 M-1.7400000000000002 5.74 L-4.26 8.26" stroke="#e0bc4e" stroke-width="0.6"/><circle cx="-3" cy="7" r="0.7" fill="#e0bc4e" stroke="#2a1a0e" stroke-width="0.5"/>`,
   // Trade Caravans: a big covered wagon, heaped with goods, behind a pair of horses
-  caravan: pix([
-    '...WWWWWWWWW..............', '..WWLWWLWWLWW.........HH..', '.WWWLWWLWWLWWW.......HHHH.', '.WWWLWWLWWLWWW...HH.HHHE..',
-    '.BBBBBBBBBBBBBRRRRHHHHHH..', '.BGGBOOBGGBOOB...HHHHHH...', '.BBBBBBBBBBBBB...H.HH.H...', '..KWK.....KWK....H.HH.H...', '..KKK.....KKK....K.KK.K...'],
-    { K, W: '#efe4c6', L: '#c9b78e', B: '#6b4222', G: '#b4613d', O: '#e0bc4e', R: '#3d2a1c', H: '#8a5532', E: '#141018' }),
-  truck: pix([
-    '..........CCCC..', '.BBBBBBBB.CGGCC.', '.BBBBBBBB.CGGCCC', '.BBBBBBBBCCCCCCC', '.BBBBBBBBCCCCCCC',
-    '.KKKKKKKKKKKKKKK', '..KWK.....KWK...', '...K.......K....'], { K, B: '#c9a66b', C: '#b8432f', G: '#9fd0ff', W: '#8d969e' }),
+  caravan: `<ellipse cx="0" cy="10.6" rx="14" ry="2.2" fill="#000" opacity="0.22"/>
+<path d="M0 2.5 H3" stroke="#2a1a0e" stroke-width="1.3"/>
+<g transform="translate(7.4 1.4) scale(0.82)"><path d="M-4.4 2 L-4.8 8 M3.6 2 L4 8" stroke="#2a1a0e" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M-3 2 L-2.6 8 M2.2 2 L1.8 8" stroke="#2a1a0e" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M-3 2 L-2.6 7.6 M2.2 2 L1.8 7.6" stroke="#5a321a" stroke-width="1.2" stroke-linecap="round"/>
+<path d="M-4.4 2 L-4.8 7.6 M3.6 2 L4 7.6" stroke="#7a4426" stroke-width="1.2" stroke-linecap="round"/><path d="M-6 -1 C-7.5 -0.5 -8.4 2 -8 5" stroke="#2a1a0e" stroke-width="2" fill="none" stroke-linecap="round"/>
+<path d="M-6 -1 C-6 -3.6 -2.5 -3.6 1 -3.4 L3 -3.6 C4.5 -5 6 -7 7.4 -8.2 L8.2 -8.9 L8.8 -7.8 L11 -5.6 C11.4 -4.6 10.6 -4 9.8 -4.4 L8 -5 C7 -3.6 6.2 -1.5 5.4 0.5 C4.6 2.5 2 3 0 3 L-3.6 3 C-5.6 3 -6.3 1 -6 -1 Z" fill="#7a4426" stroke="#2a1a0e" stroke-width="1" stroke-linejoin="round"/>
+<path d="M2.8 -3.8 C4.4 -5.2 6 -7 7.8 -8.6" stroke="#5a321a" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+<path d="M-3.5 -2.2 C-1.5 -2.8 1 -2.6 2.6 -2.6" stroke="#c98a5a" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+<circle cx="8.8" cy="-6.6" r="0.6" fill="#2a1a0e"/></g>
+<g transform="translate(4.6 2.9) scale(0.86)"><path d="M-4.4 2 L-4.8 8 M3.6 2 L4 8" stroke="#2a1a0e" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M-3 2 L-2.6 8 M2.2 2 L1.8 8" stroke="#2a1a0e" stroke-width="2.4" stroke-linecap="round"/>
+<path d="M-3 2 L-2.6 7.6 M2.2 2 L1.8 7.6" stroke="#5a321a" stroke-width="1.2" stroke-linecap="round"/>
+<path d="M-4.4 2 L-4.8 7.6 M3.6 2 L4 7.6" stroke="#9a5c32" stroke-width="1.2" stroke-linecap="round"/><path d="M-6 -1 C-7.5 -0.5 -8.4 2 -8 5" stroke="#2a1a0e" stroke-width="2" fill="none" stroke-linecap="round"/>
+<path d="M-6 -1 C-6 -3.6 -2.5 -3.6 1 -3.4 L3 -3.6 C4.5 -5 6 -7 7.4 -8.2 L8.2 -8.9 L8.8 -7.8 L11 -5.6 C11.4 -4.6 10.6 -4 9.8 -4.4 L8 -5 C7 -3.6 6.2 -1.5 5.4 0.5 C4.6 2.5 2 3 0 3 L-3.6 3 C-5.6 3 -6.3 1 -6 -1 Z" fill="#9a5c32" stroke="#2a1a0e" stroke-width="1" stroke-linejoin="round"/>
+<path d="M2.8 -3.8 C4.4 -5.2 6 -7 7.8 -8.6" stroke="#5a321a" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+<path d="M-3.5 -2.2 C-1.5 -2.8 1 -2.6 2.6 -2.6" stroke="#c98a5a" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+<circle cx="8.8" cy="-6.6" r="0.6" fill="#2a1a0e"/></g>
+<path d="M-14 -1.5 C-14.5 -10 -12 -12.6 -6.5 -12.6 C-1 -12.6 1.5 -10 1 -1.5 Z" fill="#f2e8cc" stroke="#2a1a0e" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-10 -12.2 C-11 -8 -11 -4 -10.5 -1.5 M-6.5 -12.6 V-1.5 M-3 -12.2 C-2 -8 -2 -4 -2.5 -1.5" stroke="#b8a37a" stroke-width="0.9" fill="none"/>
+<path d="M-12.5 -6 C-12.6 -9.5 -11.4 -11.4 -9 -11.8" stroke="#fffaf0" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+<path d="M-15 -2 H2 L1 3.5 H-14 Z" fill="#7a4a26" stroke="#2a1a0e" stroke-width="1.1" stroke-linejoin="round"/>
+<rect x="-12.6" y="-0.7" width="3" height="2.6" fill="#e0bc4e" stroke="#2a1a0e" stroke-width="0.6"/>
+<rect x="-8.4" y="-0.7" width="3" height="2.6" fill="#c23b2b" stroke="#2a1a0e" stroke-width="0.6"/>
+<rect x="-4.2" y="-0.7" width="3" height="2.6" fill="#3b6fc4" stroke="#2a1a0e" stroke-width="0.6"/>
+<circle cx="-11" cy="6.4" r="3.8" fill="#3d2a1c" stroke="#2a1a0e" stroke-width="1"/><circle cx="-11" cy="6.4" r="2.8" fill="none" stroke="#e0bc4e" stroke-width="0.9"/><path d="M-13.8 6.4 H-8.2 M-11 3.6000000000000005 V9.2 M-12.959999999999999 4.44 L-9.040000000000001 8.36 M-9.040000000000001 4.44 L-12.959999999999999 8.36" stroke="#e0bc4e" stroke-width="0.6"/><circle cx="-11" cy="6.4" r="0.95" fill="#e0bc4e" stroke="#2a1a0e" stroke-width="0.5"/><circle cx="-2.2" cy="6.8" r="3.3" fill="#3d2a1c" stroke="#2a1a0e" stroke-width="1"/><circle cx="-2.2" cy="6.8" r="2.3" fill="none" stroke="#e0bc4e" stroke-width="0.9"/><path d="M-4.5 6.8 H0.09999999999999964 M-2.2 4.5 V9.1 M-3.81 5.1899999999999995 L-0.5900000000000003 8.41 M-0.5900000000000003 5.1899999999999995 L-3.81 8.41" stroke="#e0bc4e" stroke-width="0.6"/><circle cx="-2.2" cy="6.8" r="0.825" fill="#e0bc4e" stroke="#2a1a0e" stroke-width="0.5"/>
+<path d="M-6.5 -12.6 V-15 M-6.5 -15 L-3 -14 L-6.5 -13 Z" stroke="#2a1a0e" stroke-width="0.7" fill="#c23b2b" stroke-linejoin="round"/>`,
+  truck: `<ellipse cx="0" cy="10.4" rx="14" ry="2.2" fill="#000" opacity="0.22"/>
+<path d="M-1.8 -8 V-12.5" stroke="#3a3f47" stroke-width="1.4" stroke-linecap="round"/>
+<circle cx="-0.6" cy="-13.6" r="1.4" fill="#8d969e" opacity="0.6"/>
+<rect x="-13" y="-7" width="5.5" height="5" fill="#d9a441" stroke="#1c2230" stroke-width="0.9"/>
+<rect x="-7.5" y="-8.5" width="6" height="6.5" fill="#c9a66b" stroke="#1c2230" stroke-width="0.9"/>
+<path d="M-7.5 -5.2 H-1.5 M-4.5 -8.5 V-2" stroke="#8a6a3a" stroke-width="0.7"/>
+<path d="M-14 -2 H5 V3.6 H-14 Z" fill="#59616b" stroke="#1c2230" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-1 3.6 V-9.5 Q-1 -10.5 0 -10.5 H5 Q6.2 -10.5 6.6 -9 L7.5 -4.5 H12.5 Q14 -4.5 14 -3 V3.6 Z" fill="#c63d2f" stroke="#1c2230" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M1 -9 H5 L6 -5 H1 Z" fill="#bfe0ff" stroke="#1c2230" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M7.5 -4.5 V3" stroke="#7d2219" stroke-width="0.8"/>
+<path d="M8.6 -3 H13 M8.6 -1.4 H13" stroke="#7d2219" stroke-width="0.7"/>
+<path d="M0.5 -3 C0.5 -4 1.5 -4 3 -4" stroke="#ef7a64" stroke-width="0.9" fill="none"/>
+<rect x="12.6" y="-3.6" width="1.6" height="1.6" fill="#ffe680" stroke="#1c2230" stroke-width="0.5"/>
+<circle cx="-9.5" cy="6.2" r="3.4" fill="#23272e" stroke="#1c2230" stroke-width="0.9"/><circle cx="-9.5" cy="6.2" r="1.53" fill="#9aa1a8"/><circle cx="-4.2" cy="6.2" r="3.4" fill="#23272e" stroke="#1c2230" stroke-width="0.9"/><circle cx="-4.2" cy="6.2" r="1.53" fill="#9aa1a8"/><circle cx="9" cy="6.2" r="3.4" fill="#23272e" stroke="#1c2230" stroke-width="0.9"/><circle cx="9" cy="6.2" r="1.53" fill="#9aa1a8"/>`,
   // boats: a rowboat, then sail (Sailing), a galleon (Shipbuilding), a steamship (Steam Power)
-  rowboat: pix([
-    '........P.......', '.......PFP......', '.......PTP......', '..O.HHHHHHHH.O..', '...OHHHHHHHHO...',
-    '....HHHHHHHH....', '.....DDDDDD.....', 'wwwwwwwwwwwwwwww'], { P: '#3d2a1c', F: '#e0b48c', T: '#7a5a3a', O: '#d9c49a', H: '#8a5a34', D: '#6b4222', w: '#9fd0ff' }),
-  sailboat: pix([
-    '.......M........', '.......MSS......', '.......MSSS.....', '.......MSSSS....', '.......MSSSSS...',
-    '.......MSSSSSS..', '.......M........', '..HHHHHHHHHHHH..', '...HHHHHHHHHH...', '....DDDDDDDD....', 'wwwwwwwwwwwwwwww'],
-    { M: '#5a3b26', S: '#f4efe0', H: '#a0683e', D: '#6b4222', w: '#9fd0ff' }),
-  galleon: pix([
-    '.....M....M.....', '....SSS..SSS....', '...SSSSSSSSSS...', '...SSSSSSSSSS...', '....SSS..SSS....',
-    '.....M....M..F..', 'HHHHHHHHHHHHHHH.', '.HHGHHGHHGHHHH..', '..DDDDDDDDDDD...', 'wwwwwwwwwwwwwwww'],
-    { M: '#5a3b26', S: '#f4efe0', F: '#c23b2b', H: '#8a5a34', G: '#f2c14e', D: '#5a3b26', w: '#9fd0ff' }),
-  steamship: pix([
-    '.....R..........', '.....R....R.....', '....KKK..KKK....', '....RRR..RRR....', '..WWWWWWWWWWW...',
-    '..WGWGWGWGWGW...', 'BBBBBBBBBBBBBBBB', '.BBBBBBBBBBBBBB.', '..RRRRRRRRRRRR..', 'wwwwwwwwwwwwwwww'],
-    { K, R: '#b8432f', W: '#eef1f3', G: '#5b8fbf', B: '#2b3038', w: '#9fd0ff' }),
+  rowboat: `<ellipse cx="0.75" cy="8.1" rx="9.75" ry="2" fill="#000" opacity="0.2"/><path d="M-10.5 7.1 Q-0.25 8.5 9.0 6.7" stroke="#ffffff" stroke-width="1.1" fill="none" opacity="0.75" stroke-linecap="round"/><path d="M7.5 6.1 Q10.5 5.9 11.3 7.9" stroke="#ffffff" stroke-width="1.2" fill="none" opacity="0.85" stroke-linecap="round"/>
+<path d="M-4.5 1 L-11 7.5 M3 1 L9.5 7" stroke="#24160c" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M-4.5 1 L-11 7.5 M3 1 L9.5 7" stroke="#d9b36b" stroke-width="0.7" stroke-linecap="round"/>
+<path d="M-1.6 2 L-2 -4 Q0 -5.4 2 -4 L1.8 2 Z" fill="#c23b2b" stroke="#24160c" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-1 -2.6 L-4.5 1 M1.2 -2.6 L3 1" stroke="#e0b48c" stroke-width="1" stroke-linecap="round"/>
+<circle cx="0" cy="-6.6" r="2.1" fill="#e0b48c" stroke="#24160c" stroke-width="0.9"/>
+<path d="M-2.3 -7.4 Q0 -10 2.4 -7.4 Z" fill="#3d2a1c"/>
+<path d="M-9.5 0.5 H9.5 Q8.5 5.8 3 6 H-5 Q-8.5 5.8 -9.5 0.5 Z" fill="#a0683e" stroke="#24160c" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-9 1.8 H9" stroke="#d49a5e" stroke-width="0.9"/><path d="M-6.5 4.2 H6.5" stroke="#6b4222" stroke-width="0.7"/>`,
+  sailboat: `<ellipse cx="1.25" cy="8.6" rx="12.25" ry="2" fill="#000" opacity="0.2"/><path d="M-12.5 7.6 Q0.25 9 12.0 7.2" stroke="#ffffff" stroke-width="1.1" fill="none" opacity="0.75" stroke-linecap="round"/><path d="M10.5 6.6 Q13.5 6.4 14.3 8.4" stroke="#ffffff" stroke-width="1.2" fill="none" opacity="0.85" stroke-linecap="round"/>
+<path d="M-1 4 V-13.5" stroke="#24160c" stroke-width="1.5"/>
+<path d="M-1.6 -12.8 Q-9 -4 -10 1.2 H-1.6 Z" fill="#f6f1e2" stroke="#24160c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-3.2 -9 Q-7 -4 -8.2 -0.6" stroke="#d8cfb4" stroke-width="0.9" fill="none"/>
+<path d="M-0.4 -12.4 Q7.5 -4 9.5 0.8 H-0.4 Z" fill="#f6f1e2" stroke="#24160c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M1 -9.5 Q5.5 -4.5 7 -0.6" stroke="#d8cfb4" stroke-width="0.9" fill="none"/>
+<path d="M-1 -13.5 L3 -12.4 L-1 -11.4 Z" fill="#c23b2b"/>
+<path d="M-12 1.2 H12.5 Q10 6.4 5 6.4 H-8 Q-11.2 6.2 -12 1.2 Z" fill="#a0683e" stroke="#24160c" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-11.5 2.6 H11.6" stroke="#d49a5e" stroke-width="0.9"/><path d="M-9 4.8 H8" stroke="#3b6fc4" stroke-width="1"/>`,
+  galleon: `<ellipse cx="1.0" cy="9.0" rx="14.5" ry="2" fill="#000" opacity="0.2"/><path d="M-15.0 8.0 Q0.0 9.4 14.0 7.6000000000000005" stroke="#ffffff" stroke-width="1.1" fill="none" opacity="0.75" stroke-linecap="round"/><path d="M12.5 7.0 Q15.5 6.800000000000001 16.3 8.8" stroke="#ffffff" stroke-width="1.2" fill="none" opacity="0.85" stroke-linecap="round"/>
+<path d="M-7 1 V-12 M1 1 V-14.5 M8 1 V-10.5 M8 -4 L14.5 1" stroke="#24160c" stroke-width="1.3"/>
+<path d="M-10.3 -10.5 Q-7 -11.5 -3.7 -10.5 Q-2.7 -8.2 -3.7 -5.9 Q-7 -7.1000000000000005 -10.3 -5.9 Q-9.3 -8.2 -10.3 -10.5 Z" fill="#f6f1e2" stroke="#24160c" stroke-width="0.9" stroke-linejoin="round"/><path d="M-10.8 -5.4 Q-7 -6.4 -3.2 -5.4 Q-2.2 -3.1000000000000005 -3.2 -0.8000000000000007 Q-7 -2.000000000000001 -10.8 -0.8000000000000007 Q-9.8 -3.1000000000000005 -10.8 -5.4 Z" fill="#f6f1e2" stroke="#24160c" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-2.7 -13 Q1 -14 4.7 -13 Q5.7 -10.5 4.7 -8 Q1 -9.2 -2.7 -8 Q-1.7000000000000002 -10.5 -2.7 -13 Z" fill="#f6f1e2" stroke="#24160c" stroke-width="0.9" stroke-linejoin="round"/><path d="M-3.3 -7.4 Q1 -8.4 5.3 -7.4 Q6.3 -4.7 5.3 -2.0 Q1 -3.2 -3.3 -2.0 Q-2.3 -4.7 -3.3 -7.4 Z" fill="#f6f1e2" stroke="#24160c" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M5.2 -9 Q8 -10 10.8 -9 Q11.8 -7.0 10.8 -5 Q8 -6.2 5.2 -5 Q6.2 -7.0 5.2 -9 Z" fill="#f6f1e2" stroke="#24160c" stroke-width="0.9" stroke-linejoin="round"/><path d="M4.8 -4.4 Q8 -5.4 11.2 -4.4 Q12.2 -2.4000000000000004 11.2 -0.40000000000000036 Q8 -1.6000000000000003 4.8 -0.40000000000000036 Q5.8 -2.4000000000000004 4.8 -4.4 Z" fill="#f6f1e2" stroke="#24160c" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M1 -14.5 L5.5 -13.4 L1 -12.4 Z M-7 -12 L-3.5 -11.2 L-7 -10.4 Z" fill="#c23b2b"/>
+<path d="M-14 -3.5 H-7 V0 H12 L14.5 0.5 Q12 6.6 6 6.6 H-10 Q-13.6 6 -14 -3.5 Z" fill="#8a5a34" stroke="#24160c" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-13.6 -1.5 H-7.4 M-13.2 1.8 H13.4" stroke="#c08a52" stroke-width="0.9"/>
+<path d="M-13 4.4 H9" stroke="#e0bc4e" stroke-width="0.9"/>
+<g fill="#2a1a0e"><rect x="-6" y="2.6" width="1.6" height="1.4"/><rect x="-2" y="2.6" width="1.6" height="1.4"/><rect x="2" y="2.6" width="1.6" height="1.4"/><rect x="6" y="2.6" width="1.6" height="1.4"/></g>
+<rect x="-12.6" y="-2.6" width="1.6" height="1.4" fill="#ffd866"/><rect x="-10" y="-2.6" width="1.6" height="1.4" fill="#ffd866"/>`,
+  steamship: `<ellipse cx="1.0" cy="9.0" rx="14.5" ry="2" fill="#000" opacity="0.2"/><path d="M-15.0 8.0 Q0.0 9.4 14.0 7.6000000000000005" stroke="#ffffff" stroke-width="1.1" fill="none" opacity="0.75" stroke-linecap="round"/><path d="M12.5 7.0 Q15.5 6.800000000000001 16.3 8.8" stroke="#ffffff" stroke-width="1.2" fill="none" opacity="0.85" stroke-linecap="round"/>
+<circle cx="-7" cy="-13" r="2.2" fill="#9aa1a8" opacity="0.75"/><circle cx="-10.5" cy="-13.6" r="1.6" fill="#9aa1a8" opacity="0.55"/>
+<circle cx="1" cy="-13.2" r="2" fill="#9aa1a8" opacity="0.75"/><circle cx="-2.2" cy="-14" r="1.4" fill="#9aa1a8" opacity="0.55"/>
+<path d="M-6.2 -3 L-5.6 -11.5 H-2.2 L-1.6 -3 Z M1.6 -3 L2.2 -11 H5.6 L6.2 -3 Z" fill="#c63d2f" stroke="#141a22" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-5.7 -11.4 H-2.1 V-9.6 H-5.8 Z M2.2 -10.9 H5.6 V-9.1 H2.1 Z" fill="#1d2228"/>
+<path d="M-11 0 V-4 H10 V0 Z M-8.5 -4 V-6.5 H5 V-4 Z" fill="#eef1f3" stroke="#141a22" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-9.5 -2.4 H8.6" stroke="#5b8fbf" stroke-width="1.1" stroke-dasharray="1.4 1"/>
+<path d="M-14 -0.5 H14.5 Q12.5 6.6 7 6.6 H-11 Q-14 6 -14 -0.5 Z" fill="#2b3038" stroke="#141a22" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-13.6 4.6 Q0 5.4 12.6 4" stroke="#c63d2f" stroke-width="1.3" fill="none"/>
+<path d="M-13.4 0.8 H14" stroke="#59616b" stroke-width="0.9"/>
+<path d="M-3 -0.5 A3.6 3.6 0 0 1 4.2 -0.5 Z" fill="#8a5a34" stroke="#141a22" stroke-width="0.9"/>`,
   // later boats, made by themselves once you know how: a diesel freighter (Petroleum), a container ship (Computing)
-  freighter: pix([
-    '...........K....', '..........RR....', '.........WWWW...', '.........WGGW...', '.........WWWW...',
-    'BBBBBBBBBBBBBBB.', '.BBBBBBBBBBBBB..', '..RRRRRRRRRRR...', 'wwwwwwwwwwwwwwww'],
-    { K, R: '#c23b2b', W: '#eef1f3', G: '#5b8fbf', B: '#33424f', w: '#9fd0ff' }),
-  container: pix([
-    '.............WW.', '..OOYYBBRRGG.WW.', '..OOYYBBRRGG.WG.', '..GGRROOYYBB.WW.',
-    'NNNNNNNNNNNNNNNN', '.NNNNNNNNNNNNNN.', '..RRRRRRRRRRRR..', 'wwwwwwwwwwwwwwww'],
-    { O: '#e07b39', Y: '#e8c23a', B: '#3b6fc4', R: '#c23b2b', G: '#4f9a54', W: '#eef1f3', N: '#24303c', w: '#9fd0ff' }),
-  etruck: `<ellipse cx="0" cy="8" rx="12" ry="2.5" fill="#000" opacity="0.2"/>
-    <rect x="-12" y="-6" width="15" height="11" rx="1.5" fill="#eef1f3" stroke="#3a4250" stroke-width="1"/>
-    <path d="M-6 -4 L-8.5 0 H-5.5 L-7 3.5 L-2.5 -1 H-5.5 L-3.5 -4 Z" fill="#4fbf6a"/>
-    <path d="M3 -3 H8 L12 1 V5 H3 Z" fill="#3aa65a" stroke="#1f6b3a" stroke-width="1" stroke-linejoin="round"/>
-    <path d="M5 -1.5 H7.5 L9.8 1 H5 Z" fill="#d8f5e0"/>
-    <circle cx="-7" cy="6" r="2.6" fill="#2b3038"/><circle cx="7" cy="6" r="2.6" fill="#2b3038"/>
-    <circle cx="-7" cy="6" r="1" fill="#9fe0b0"/><circle cx="7" cy="6" r="1" fill="#9fe0b0"/>`,
-  autohauler: `<ellipse cx="0" cy="8" rx="12" ry="2.5" fill="#000" opacity="0.2"/>
-    <path d="M-12 4 V-3 Q-12 -6 -9 -6 H6 Q12 -6 12.5 0 V4 Z" fill="#dfe6ee" stroke="#3a4250" stroke-width="1" stroke-linejoin="round"/>
-    <path d="M-10 -3.5 H8 Q10.5 -3.5 10.8 -1 H-10 Z" fill="#2b3a4a"/>
-    <path d="M-10 1.5 H11" stroke="#9fd0ff" stroke-width="1.1"/>
-    <circle cx="2" cy="-7.5" r="1.8" fill="#9fd0ff" stroke="#3a4250" stroke-width="0.6"/>
-    <circle cx="-7" cy="5.5" r="2.4" fill="#2b3038"/><circle cx="7" cy="5.5" r="2.4" fill="#2b3038"/>`,
-  cargojet: `<path d="M-1 -2.4 L-10 -16 L-13 -16 L-7.5 -2.4 Z M-1 2.4 L-10 16 L-13 16 L-7.5 2.4 Z" fill="#c9d0d8" stroke="#2b3038" stroke-width="0.9" stroke-linejoin="round"/>
-    <path d="M-13 -1.4 L-16.5 -7.5 L-18 -7.5 L-16.5 -1.4 Z M-13 1.4 L-16.5 7.5 L-18 7.5 L-16.5 1.4 Z" fill="#c9d0d8" stroke="#2b3038" stroke-width="0.8"/>
-    <path d="M15.5 0 C14.5 -2.6 11 -3.4 6 -3.4 L-15.5 -2 L-17.5 0 L-15.5 2 L6 3.4 C11 3.4 14.5 2.6 15.5 0 Z" fill="#f4f6f8" stroke="#2b3038" stroke-width="1"/>
-    <path d="M-6 -1.6 H10 M-6 1.6 H10" stroke="#e07b39" stroke-width="1"/>
-    <path d="M12 -2 Q14.2 0 12 2" stroke="#1d3a55" stroke-width="1.4" fill="none"/>
-    <rect x="-7" y="-10" width="4.5" height="2.2" rx="1" fill="#4a515c"/><rect x="-7" y="7.8" width="4.5" height="2.2" rx="1" fill="#4a515c"/>
-    <rect x="-4" y="-13" width="4.5" height="2.2" rx="1" fill="#4a515c"/><rect x="-4" y="10.8" width="4.5" height="2.2" rx="1" fill="#4a515c"/>`,
+  freighter: `<ellipse cx="1.0" cy="9.2" rx="15.0" ry="2" fill="#000" opacity="0.2"/><path d="M-15.5 8.2 Q0.0 9.6 14.5 7.8" stroke="#ffffff" stroke-width="1.1" fill="none" opacity="0.75" stroke-linecap="round"/><path d="M13 7.199999999999999 Q16 7.0 16.8 9.0" stroke="#ffffff" stroke-width="1.2" fill="none" opacity="0.85" stroke-linecap="round"/>
+<path d="M-1 -1 V-10 L5 -1 M5.5 -1 V-9 L10.5 -1" stroke="#59616b" stroke-width="1" fill="none"/>
+<path d="M-1 -10 L5 -1 M5.5 -9 L10.5 -1" stroke="#e0bc4e" stroke-width="0.8"/>
+<rect x="0" y="-3.6" width="4" height="2.6" fill="#c9a66b" stroke="#141a22" stroke-width="0.7"/><rect x="6.5" y="-3.6" width="4" height="2.6" fill="#4f9a54" stroke="#141a22" stroke-width="0.7"/>
+<path d="M-11.5 -7.4 L-11 -13 H-7.6 L-7.2 -7.4 Z" fill="#2b3038" stroke="#141a22" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-11.2 -11 H-7.4" stroke="#c23b2b" stroke-width="1.6"/>
+<path d="M-13 -1 V-8 H-3 V-1 Z" fill="#eef1f3" stroke="#141a22" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-12 -5.8 H-4" stroke="#2a6f96" stroke-width="1.3"/>
+<path d="M-14.5 -1.2 H11 L14.8 -2.4 Q13.5 6.8 7 6.8 H-11 Q-14.5 6.4 -14.5 -1.2 Z" fill="#33505f" stroke="#141a22" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-14 0.4 H13.8" stroke="#5f8494" stroke-width="1"/>
+<path d="M-14 4.8 Q0 5.6 13 4.2 L12.4 5.6 Q6 6.8 -11 6.8 Q-13.6 6.4 -14 4.8 Z" fill="#c23b2b"/>`,
+  container: `<ellipse cx="1.0" cy="9.4" rx="15.5" ry="2" fill="#000" opacity="0.2"/><path d="M-16.0 8.4 Q0.0 9.8 15.0 8.0" stroke="#ffffff" stroke-width="1.1" fill="none" opacity="0.75" stroke-linecap="round"/><path d="M13.5 7.3999999999999995 Q16.5 7.2 17.3 9.2" stroke="#ffffff" stroke-width="1.2" fill="none" opacity="0.85" stroke-linecap="round"/>
+<path d="M-13.8 -0.5 V-11 H-9.6 V-0.5 Z" fill="#eef1f3" stroke="#141a22" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-14.4 -11 H-9 V-12.6 H-14.4 Z" fill="#c9d3dd" stroke="#141a22" stroke-width="0.8"/>
+<path d="M-12.6 -12.6 V-14.6" stroke="#141a22" stroke-width="0.8"/><circle cx="-12.6" cy="-14.6" r="0.8" fill="#5ff0e0"/>
+<path d="M-13.2 -9.6 H-10.2 M-13.2 -6.8 H-10.2 M-13.2 -4 H-10.2" stroke="#2a6f96" stroke-width="1.2"/>
+<path d="M-13.2 -9.6 H-10.2" stroke="#5ff0e0" stroke-width="1.2"/>
+<rect x="-8.2" y="-3.4" width="3.6" height="3.2" fill="#e07b39" stroke="#141a22" stroke-width="0.6"/><rect x="-8.2" y="-6.6" width="3.6" height="3.2" fill="#c23b2b" stroke="#141a22" stroke-width="0.6"/><rect x="-8.2" y="-9.8" width="3.6" height="3.2" fill="#3b6fc4" stroke="#141a22" stroke-width="0.6"/><rect x="-4.6" y="-3.4" width="3.6" height="3.2" fill="#3b6fc4" stroke="#141a22" stroke-width="0.6"/><rect x="-4.6" y="-6.6" width="3.6" height="3.2" fill="#e07b39" stroke="#141a22" stroke-width="0.6"/><rect x="-4.6" y="-9.8" width="3.6" height="3.2" fill="#e8c23a" stroke="#141a22" stroke-width="0.6"/><rect x="-1" y="-3.4" width="3.6" height="3.2" fill="#4f9a54" stroke="#141a22" stroke-width="0.6"/><rect x="-1" y="-6.6" width="3.6" height="3.2" fill="#e07b39" stroke="#141a22" stroke-width="0.6"/><rect x="-1" y="-9.8" width="3.6" height="3.2" fill="#c23b2b" stroke="#141a22" stroke-width="0.6"/><rect x="2.6" y="-3.4" width="3.6" height="3.2" fill="#3b6fc4" stroke="#141a22" stroke-width="0.6"/><rect x="2.6" y="-6.6" width="3.6" height="3.2" fill="#3b6fc4" stroke="#141a22" stroke-width="0.6"/><rect x="2.6" y="-9.8" width="3.6" height="3.2" fill="#e07b39" stroke="#141a22" stroke-width="0.6"/><rect x="6.2" y="-3.4" width="3.6" height="3.2" fill="#e8c23a" stroke="#141a22" stroke-width="0.6"/><rect x="6.2" y="-6.6" width="3.6" height="3.2" fill="#4f9a54" stroke="#141a22" stroke-width="0.6"/><path d="M-8.2 -12.8 V-0.2 M-4.6 -12.8 V-0.2" stroke="#000" stroke-width="0" />
+<path d="M-15 -0.6 H12 L15 -2.8 Q14 7 7 7 H-11.5 Q-15 6.6 -15 -0.6 Z" fill="#24303c" stroke="#141a22" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-14.6 1 H14" stroke="#4a5a6a" stroke-width="1"/>
+<path d="M-14.4 5 Q0 5.8 13.4 4.4 L12.6 5.8 Q6 7 -11.5 7 Q-14 6.6 -14.4 5 Z" fill="#c23b2b"/>
+<path d="M9.8 1.6 Q11 3 9.8 3.8" stroke="#eef1f3" stroke-width="0.8" fill="none"/>`,
+  etruck: `<ellipse cx="0" cy="10.4" rx="14.2" ry="2.2" fill="#000" opacity="0.22"/>
+<path d="M-14 -11 H2.5 V4 H-14 Z" fill="#f2f5f7" stroke="#1c2230" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-13 -9.6 C-11 -10 -6 -10 -2 -10" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+<path d="M-14 0.6 H2.5" stroke="#3aa65a" stroke-width="2.2"/>
+<path d="M-6 -9 L-9.2 -4 H-6.3 L-7.8 0 L-3 -5.6 H-6 L-4 -9 Z" fill="#3aa65a" stroke="#1f5a34" stroke-width="0.6" stroke-linejoin="round"/>
+<path d="M3 4 V-9.5 Q3 -11 4.5 -11 H9 Q11 -11 12.6 -7 L14 -2 V4 Z" fill="#3aa65a" stroke="#1c2230" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M8.6 -9.6 Q10.4 -9.6 11.6 -6.4 L12.4 -3.6 H8.6 Z" fill="#d8f5ff" stroke="#1c2230" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M4.4 -9 V-1" stroke="#7fd696" stroke-width="1" stroke-linecap="round"/>
+<path d="M3 1.6 H14" stroke="#1f6b3a" stroke-width="0.8"/>
+<rect x="12.4" y="-1.2" width="1.8" height="1.6" fill="#e8fff0" stroke="#1c2230" stroke-width="0.4"/>
+<circle cx="-10" cy="6.4" r="3.2" fill="#23272e" stroke="#1c2230" stroke-width="0.9"/><circle cx="-10" cy="6.4" r="1.4400000000000002" fill="#7be08a"/><circle cx="-3.6" cy="6.4" r="3.2" fill="#23272e" stroke="#1c2230" stroke-width="0.9"/><circle cx="-3.6" cy="6.4" r="1.4400000000000002" fill="#7be08a"/><circle cx="9" cy="6.4" r="3.2" fill="#23272e" stroke="#1c2230" stroke-width="0.9"/><circle cx="9" cy="6.4" r="1.4400000000000002" fill="#7be08a"/>`,
+  autohauler: `<ellipse cx="0" cy="10.6" rx="14.5" ry="2.2" fill="#000" opacity="0.22"/>
+<path d="M-14.5 4 V-8.5 Q-14.5 -11.5 -11.5 -11.5 H2 Q3 -11.5 3 -10.5 V4 Z" fill="#dfe7ef" stroke="#1c2230" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-11.6 -10.2 H1.8" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+<path d="M-14.5 -1.6 H3" stroke="#2b3a4a" stroke-width="3"/>
+<path d="M-14 -1.6 H2.6" stroke="#5ff0e0" stroke-width="1.1"/>
+<path d="M-14.5 -1.6 H3" stroke="#5ff0e0" stroke-width="3.4" opacity="0.25"/>
+<path d="M3.6 4 V-5.5 C3.6 -10 6 -11 9 -11 C12.5 -11 14.6 -6 14.8 -1 L14.8 4 Z" fill="#2b3a4a" stroke="#1c2230" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M6 -9.2 C9 -10 12 -8.6 13.4 -4.4" stroke="#5f7488" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+<path d="M9.8 -2.6 H14.6" stroke="#5ff0e0" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M9.8 -2.6 H14.6" stroke="#5ff0e0" stroke-width="3.6" opacity="0.3" stroke-linecap="round"/>
+<path d="M7 -11.2 Q8.4 -14 9.8 -11.2 Z" fill="#5ff0e0" stroke="#1c2230" stroke-width="0.7"/>
+<circle cx="-11" cy="6.6" r="3" fill="#23272e" stroke="#1c2230" stroke-width="0.9"/><circle cx="-11" cy="6.6" r="1.35" fill="#5ff0e0"/><circle cx="-5" cy="6.6" r="3" fill="#23272e" stroke="#1c2230" stroke-width="0.9"/><circle cx="-5" cy="6.6" r="1.35" fill="#5ff0e0"/><circle cx="10.4" cy="6.6" r="3" fill="#23272e" stroke="#1c2230" stroke-width="0.9"/><circle cx="10.4" cy="6.6" r="1.35" fill="#5ff0e0"/>`,
+  cargojet: `<path d="M-11 -1.4 L-14.4 -7.4 H-12.2 L-8 -1.4 Z M-11 1.4 L-14.4 7.4 H-12.2 L-8 1.4 Z" fill="#c9d0d8" stroke="#1e242c" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M2.5 -2.8 L-8.5 -14.6 H-11.4 L-6.5 -2.8 Z M2.5 2.8 L-8.5 14.6 H-11.4 L-6.5 2.8 Z" fill="#d3d9e0" stroke="#1e242c" stroke-width="1" stroke-linejoin="round"/>
+<circle cx="-10" cy="-14.1" r="1" fill="#5ff0e0"/><circle cx="-10" cy="14.1" r="1" fill="#5ff0e0"/>
+<g fill="#4a515c" stroke="#1e242c" stroke-width="0.7"><rect x="-6.6" y="-8.4" width="5" height="2.4" rx="1.1"/><rect x="-6.6" y="6" width="5" height="2.4" rx="1.1"/><rect x="-9.6" y="-12.3" width="4.4" height="2.2" rx="1"/><rect x="-9.6" y="10.1" width="4.4" height="2.2" rx="1"/></g>
+<path d="M14.2 0 C13.6 -2.8 10.5 -3.6 6 -3.6 L-12.5 -2 L-14.6 0 L-12.5 2 L6 3.6 C10.5 3.6 13.6 2.8 14.2 0 Z" fill="#f6f8fa" stroke="#1e242c" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M-11 -1.1 H9.5 M-11 1.1 H9.5" stroke="#e07b39" stroke-width="1.2"/>
+<path d="M-14.4 0 L-10.5 -1.2 V1.2 Z" fill="#e07b39"/>
+<path d="M10.6 -2.2 Q13 0 10.6 2.2" stroke="#1d3a55" stroke-width="1.5" fill="none"/>
+<path d="M-2 -2.9 H6" stroke="#fff" stroke-width="0.9"/>`,
   siliconI: `<path d="M-9 9 L-6 -3 L-3 -6 L0 -3 L-1 9 Z" fill="#dfe6f0" stroke="#5d6676" stroke-width="1" stroke-linejoin="round"/>
     <path d="M-2 9 L-1 -8 L2 -12 L5 -8 L5 9 Z" fill="#f4f8fc" stroke="#5d6676" stroke-width="1" stroke-linejoin="round"/>
     <path d="M5 9 L6 -1 L9 -4 L11 0 L10 9 Z" fill="#cfd8e6" stroke="#5d6676" stroke-width="1" stroke-linejoin="round"/>
@@ -826,63 +1230,142 @@ Object.assign(SHAPES, {
   batteryI: `<rect x="-7" y="-10" width="14" height="22" rx="2" fill="#2b2f36" stroke="#0f1216" stroke-width="1.2"/>
     <rect x="-3" y="-13" width="6" height="3" fill="#9aa1a8"/><rect x="-5" y="-2" width="10" height="12" fill="#e0e36a"/>
     <path d="M1 -8 L-2 -2 H1 L-1 4" stroke="#e0e36a" stroke-width="1.4" fill="none"/>`,
-  refinery: `<rect x="-11" y="-6" width="24" height="20" fill="#000" opacity="0.22"/>
-    <rect x="-12" y="-2" width="16" height="13" fill="#b9c0ca" stroke="#2b3038" stroke-width="1"/>
-    <path d="M4 11 V-6 H10 V11 Z" fill="#8f97a3" stroke="#2b3038" stroke-width="1"/>
-    <path d="M5 -6 V-12 H9 V-6" fill="#6f7782" stroke="#2b3038" stroke-width="0.9"/>
-    <path d="M-12 -2 L-8 -8 H0 L4 -2 Z" fill="#9aa1a8" stroke="#2b3038" stroke-width="1"/>
-    <circle cx="-4" cy="5" r="3" fill="#eef2f8" stroke="#7d8594" stroke-width="0.8"/><path d="M-6 5 H-2 M-4 3 V7" stroke="#9fd0ff" stroke-width="0.8"/>`,
-  chipfab: `<rect x="-11" y="-5" width="24" height="19" fill="#000" opacity="0.22"/>
-    <rect x="-12" y="-4" width="24" height="15" rx="1.5" fill="#e6e9ec" stroke="#2b3038" stroke-width="1"/>
-    <path d="M-12 -4 L-6 -10 H6 L12 -4" fill="#c8ccd0" stroke="#2b3038" stroke-width="1"/>
-    <rect x="-6" y="0" width="12" height="8" fill="#1f6b43" stroke="#0e3a22" stroke-width="0.8"/>
-    <rect x="-3" y="2" width="6" height="4" fill="#2b2f36"/><path d="M-8 2 H-6 M-8 6 H-6 M6 2 H8 M6 6 H8" stroke="#e0c070" stroke-width="0.9"/>`,
-  datacenter: `<rect x="-11" y="-8" width="24" height="22" fill="#000" opacity="0.22"/>
-    <rect x="-12" y="-10" width="24" height="21" rx="1.5" fill="#3a4250" stroke="#1a1e24" stroke-width="1"/>
-    <path d="M-10 -6 H10 M-10 -1 H10 M-10 4 H10 M-10 9 H10" stroke="#1a1e24" stroke-width="1.2"/>
-    <path d="M-8 -8 H-6 M-8 -3 H-6 M-8 2 H-6 M-8 7 H-6" stroke="#7bd389" stroke-width="1.4"/>
-    <path d="M-3 -8 H-1 M-3 2 H-1" stroke="#9fd0ff" stroke-width="1.4"/><path d="M2 -3 H4 M2 7 H4" stroke="#f2c14e" stroke-width="1.4"/>`,
-  computer: `<rect x="-11" y="-9" width="24" height="23" fill="#000" opacity="0.22"/>
-    <path d="M-13 11 V-4 L0 -12 L13 -4 V11 Z" fill="#d8dde6" stroke="#1a1e24" stroke-width="1.1" stroke-linejoin="round"/>
-    <rect x="-8" y="-3" width="16" height="11" rx="1" fill="#1d2633" stroke="#1a1e24" stroke-width="0.9"/>
-    <path d="M-6 0 H-1 M-6 3 H3 M-6 6 H1" stroke="#7bd389" stroke-width="1.1"/>
-    <circle cx="0" cy="-7" r="2.2" fill="#9fd0ff" stroke="#1a1e24" stroke-width="0.7"/>`,
-  computerAI: `<rect x="-11" y="-9" width="24" height="23" fill="#000" opacity="0.22"/>
-    <path d="M-13 11 V-4 L0 -12 L13 -4 V11 Z" fill="#c9d3df" stroke="#1a1e24" stroke-width="1.1" stroke-linejoin="round"/>
-    <circle cx="0" cy="2" r="7" fill="#1d2633" stroke="#1a1e24" stroke-width="0.9"/>
-    <circle cx="0" cy="2" r="4.2" fill="#c13b2f"/><circle cx="0" cy="2" r="1.8" fill="#ffd0c8"/>
-    <circle cx="0" cy="-7" r="2.2" fill="#f2c14e" stroke="#1a1e24" stroke-width="0.7"/>`,
+  refinery: `<defs><radialGradient id="refinery-glow"><stop offset="0" stop-color="#fff0b0"/><stop offset="0.5" stop-color="#ff9a2a" stop-opacity="0.8"/><stop offset="1" stop-color="#ff6a1a" stop-opacity="0"/></radialGradient></defs>
+<rect x="-11" y="-6" width="25" height="19.5" fill="#000" opacity="0.22"/>
+<path d="M5 11 V-8 A3.5 1.4 0 0 1 12 -8 V11 Z" fill="#b9c2cc" stroke="#22262c" stroke-width="1"/>
+<ellipse cx="8.5" cy="-8" rx="3.5" ry="1.4" fill="#dfe5eb" stroke="#22262c" stroke-width="0.8"/>
+<path d="M6.2 -7 V10 M5 -3 H12 M5 2 H12 M5 7 H12" stroke="#eef2f6" stroke-width="0.7"/>
+<path d="M10.8 -7 V10" stroke="#848e99" stroke-width="0.9"/>
+<path d="M8.5 -9.4 V-12.5 H5.5" stroke="#22262c" stroke-width="1.2" fill="none"/>
+<circle cx="4.6" cy="-12.6" r="1.4" fill="#eef1f3" opacity="0.75"/>
+<path d="M-13 0 L-12 -5 L-9 -2 L-8 -7 L-5 -4 L-4 -9 L-1 -6 L0 -1 L5 0 Z" fill="#8fa0b2" stroke="#22262c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-12 -5 L-9 -2 M-8 -7 L-5 -4 M-4 -9 L-1 -6" stroke="#cfe0f2" stroke-width="0.9"/>
+<rect x="-13" y="0" width="18" height="11" fill="#c7ced6" stroke="#22262c" stroke-width="1"/>
+<path d="M-13 2.6 H5" stroke="#8d97a2" stroke-width="0.7"/>
+<circle cx="-7" cy="7.2" r="4.4" fill="url(#refinery-glow)"/>
+<path d="M-10 11 V7 A3 3 0 0 1 -4 7 V11 Z" fill="#3a2418" stroke="#22262c" stroke-width="0.9"/>
+<path d="M-9 11 V8.2 A2 2 0 0 1 -5 8.2 V11 Z" fill="#ffb238"/>
+<path d="M-8 11 V9 A1 1 0 0 1 -6 9 V11 Z" fill="#fff0a0"/>
+<path d="M0 3.6 L2.4 5 V8 L0 9.4 L-2.4 8 V5 Z" fill="#4a5a8a" stroke="#1d2440" stroke-width="0.7" stroke-linejoin="round"/>
+<path d="M0 3.6 L2.4 5 L0 6.4 L-2.4 5 Z" fill="#9fb4ff"/>
+<path d="M0 6.4 V9.4" stroke="#1d2440" stroke-width="0.5"/>
+<path d="M5 5 H3.2" stroke="#22262c" stroke-width="0.8"/>`,
+  chipfab: `<rect x="-11" y="-7" width="25" height="21" rx="1" fill="#000" opacity="0.22"/>
+    <rect x="9" y="-13" width="3" height="8" fill="#9aa1a8" stroke="#2b3038" stroke-width="0.8"/><circle cx="10.5" cy="-13.6" r="1.4" fill="#cfe8ff" opacity="0.9"/>
+    <path d="M-12 -5 L-9 -9 L-6 -5 L-3 -9 L0 -5 L3 -9 L6 -5 L9 -9 L12 -5 Z" fill="#c8d0d8" stroke="#2b3038" stroke-width="0.9" stroke-linejoin="round"/>
+    <path d="M-9 -9 L-6 -5 M-3 -9 L0 -5 M3 -9 L6 -5 M9 -9 L12 -5" stroke="#7fb4d8" stroke-width="1.1"/>
+    <rect x="-12" y="-5" width="24" height="17" rx="1" fill="#eef1f4" stroke="#2b3038" stroke-width="1"/>
+    <path d="M-12 -2.5 H12" stroke="#3a7fc0" stroke-width="1.6"/>
+    <path d="M-6 0 V11 M-3 0 V11 M0 0 V11 M3 0 V11 M6 0 V11 M-8 2 H8 M-8 5.5 H8 M-8 9 H8" stroke="#d6a83a" stroke-width="0.9"/>
+    <rect x="-5.5" y="0.5" width="11" height="10" rx="0.8" fill="#1f6b43" stroke="#0e3a22" stroke-width="0.9"/>
+    <rect x="-3" y="3" width="6" height="5" rx="0.5" fill="#262b33"/><path d="M-2 4 H0" stroke="#7bd389" stroke-width="0.7"/>`,
+  datacenter: `<rect x="-11" y="-7" width="25" height="21" rx="1" fill="#000" opacity="0.24"/>
+    <path d="M-12 -5 L-9 -10 H12 V-5 Z" fill="#9aa4ae" stroke="#14181e" stroke-width="1" stroke-linejoin="round"/>
+    <circle cx="-3" cy="-7.5" r="1.9" fill="#3a4250" stroke="#14181e" stroke-width="0.7"/><circle cx="5" cy="-7.5" r="1.9" fill="#3a4250" stroke="#14181e" stroke-width="0.7"/>
+    <rect x="-12" y="-5" width="24" height="17" rx="1" fill="#d3d9df" stroke="#14181e" stroke-width="1.1"/>
+    <rect x="-10" y="-3" width="5.6" height="13" fill="#232a35" stroke="#14181e" stroke-width="0.6"/>
+    <rect x="-2.8" y="-3" width="5.6" height="13" fill="#232a35" stroke="#14181e" stroke-width="0.6"/>
+    <rect x="4.4" y="-3" width="5.6" height="13" fill="#232a35" stroke="#14181e" stroke-width="0.6"/>
+    <path d="M-8.6 0 H-5.8 M-1.4 4.5 H1.4 M5.8 0 H8.6" stroke="#7be08a" stroke-width="2"/>
+    <path d="M-8.6 4.5 H-5.8 M-1.4 0 H1.4 M5.8 4.5 H8.6" stroke="#5fe0f6" stroke-width="2"/>`,
+  computer: `<rect x="-10" y="-6" width="23" height="19" rx="1" fill="#000" opacity="0.22"/>
+    <path d="M-12.5 -2 L-9 -9 H9 L12.5 -2 Z" fill="#7a8794" stroke="#1a1e24" stroke-width="1" stroke-linejoin="round"/>
+    <path d="M-10 -4 H10" stroke="#a3b0bc" stroke-width="0.9"/>
+    <path d="M0 -9 V-12.5" stroke="#1a1e24" stroke-width="0.9"/><circle cx="0" cy="-12.8" r="1.5" fill="#9fd0ff" stroke="#1a1e24" stroke-width="0.6"/>
+    <rect x="-12" y="-2" width="24" height="13" rx="1" fill="#e6dfcc" stroke="#1a1e24" stroke-width="1.1"/>
+    <rect x="-10.6" y="-0.6" width="4.6" height="10.2" rx="0.5" fill="#cbbf9f" stroke="#4a4030" stroke-width="0.7"/>
+    <rect x="6" y="-0.6" width="4.6" height="10.2" rx="0.5" fill="#cbbf9f" stroke="#4a4030" stroke-width="0.7"/>
+    <circle cx="-8.3" cy="2.2" r="1.7" fill="#2b3038"/><circle cx="-8.3" cy="2.2" r="0.55" fill="#e6dfcc"/>
+    <circle cx="8.3" cy="2.2" r="1.7" fill="#2b3038"/><circle cx="8.3" cy="2.2" r="0.55" fill="#e6dfcc"/>
+    <path d="M-9.6 6 H-7 M-9.6 7.8 H-7 M7 6 H9.6 M7 7.8 H9.6" stroke="#8a7e62" stroke-width="0.8"/>
+    <rect x="-4.6" y="-0.6" width="9.2" height="7.4" rx="1" fill="#1d2633" stroke="#1a1e24" stroke-width="0.9"/>
+    <path d="M-3 1.4 H2.5 M-3 3.4 H1 M-3 5.2 H3" stroke="#7bd389" stroke-width="1"/>
+    <path d="M-4 9 H-2.6 M-0.7 9 H0.7 M2.6 9 H4" stroke="#d64045" stroke-width="1.1"/>`,
+  computerAI: `<defs><radialGradient id="computerAI-glow"><stop offset="0" stop-color="#9ff6ff" stop-opacity="0.9"/><stop offset="0.5" stop-color="#2fd6e8" stop-opacity="0.38"/><stop offset="1" stop-color="#00b8d4" stop-opacity="0"/></radialGradient>
+    <radialGradient id="computerAI-eye"><stop offset="0" stop-color="#ffffff"/><stop offset="0.35" stop-color="#bff8ff"/><stop offset="0.75" stop-color="#22c8e0"/><stop offset="1" stop-color="#0a5a70"/></radialGradient></defs>
+    <circle cx="0" cy="-2" r="15" fill="url(#computerAI-glow)"/>
+    <rect x="-11" y="1" width="25" height="13" rx="1" fill="#000" opacity="0.28"/>
+    <path d="M-13 12 L-10 3 H10 L13 12 Z" fill="#1b2230" stroke="#05080c" stroke-width="1" stroke-linejoin="round"/>
+    <path d="M-11.5 9 H-7 L-5.5 7 M11.5 9 H7 L5.5 7 M-10.5 6 H-8" stroke="#3ff0ff" stroke-width="0.8" fill="none"/>
+    <path d="M-12 3 L-9 -1 V3 Z M12 3 L9 -1 V3 Z" fill="#2a3446" stroke="#05080c" stroke-width="0.8"/>
+    <path d="M-10.5 -0.5 V-9 L-9 -11 L-7.5 -9 V2 M10.5 -0.5 V-9 L9 -11 L7.5 -9 V2" fill="#2a3446" stroke="#05080c" stroke-width="0.9" stroke-linejoin="round"/>
+    <circle cx="-9" cy="-11.6" r="1.1" fill="#bff8ff"/><circle cx="9" cy="-11.6" r="1.1" fill="#bff8ff"/>
+    <path d="M0 -14.5 L7 -9 V6 L0 9 L-7 6 V-9 Z" fill="#263044" stroke="#05080c" stroke-width="1.1" stroke-linejoin="round"/>
+    <path d="M0 -14.5 L7 -9 L0 -5 L-7 -9 Z" fill="#3c4a63" stroke="#05080c" stroke-width="0.8" stroke-linejoin="round"/>
+    <path d="M0 -5 V9" stroke="#05080c" stroke-width="0.6"/>
+    <circle cx="0" cy="1" r="4.8" fill="#0a1520" stroke="#05080c" stroke-width="0.9"/>
+    <circle cx="0" cy="1" r="3.8" fill="url(#computerAI-eye)"/><circle cx="0" cy="1" r="1.3" fill="#ffffff"/>
+    <path d="M-5.6 -3 H-3 M5.6 -3 H3 M-5.6 6.5 L-3.6 4.6 M5.6 6.5 L3.6 4.6" stroke="#3ff0ff" stroke-width="0.8"/>
+    <ellipse cx="0" cy="-9" rx="11" ry="2.4" fill="none" stroke="#7ff4ff" stroke-width="0.9" opacity="0.85"/>`,
   uranI: pix(['...GGG...', '..GLLLG..', '.GLHHLLG.', 'GLLHLLLLG', 'GLLLLLLLG', '.GLLLLLG.', '..GGGGG..'], { G: '#2e6b1f', L: '#7ee05a', H: '#d6ffb0' }),
-  reactor: `<rect x="-12" y="-10" width="27" height="24" fill="#000" opacity="0.2"/>
-    <path d="M-12 12 C-9 4 -9 -2 -11 -10 H1 C-1 -2 -1 4 2 12 Z" fill="#dfe4e8" stroke="#59616b" stroke-width="1"/>
-    <path d="M-11 -10 H1" stroke="#59616b" stroke-width="1.4"/><circle cx="-5" cy="-13" r="3" fill="#eef1f3" opacity="0.8"/>
-    <rect x="3" y="0" width="10" height="12" fill="#8fa3b8" stroke="#2b3038" stroke-width="0.9"/>
-    <circle cx="8" cy="5" r="2.6" fill="#7ee05a" stroke="#2e6b1f" stroke-width="0.7"/>`,
-  oilplant: `<rect x="-11" y="-9" width="25" height="23" fill="#000" opacity="0.2"/>
-    <rect x="-12" y="-2" width="20" height="13" fill="#59616b" stroke="#2b3038" stroke-width="1"/>
-    <rect x="8" y="-13" width="4" height="24" fill="#3d434a" stroke="#1d2016" stroke-width="0.8"/>
-    <circle cx="10" cy="-15" r="2.6" fill="#2b2f36" opacity="0.7"/>
-    <path d="M-8 4 C-8 1 -5 -2 -5 -2 C-5 -2 -2 1 -2 4 A3 3 0 0 1 -8 4 Z" fill="#2b2f36"/>
-    <path d="M0 3 H6 M0 6 H6" stroke="#f2c14e" stroke-width="1.2"/>`,
+  reactor: `<defs><linearGradient id="reactor-ct" x1="0" x2="1"><stop offset="0" stop-color="#f4f6f8"/><stop offset="0.45" stop-color="#dfe4e8"/><stop offset="1" stop-color="#9ea7b0"/></linearGradient>
+<radialGradient id="reactor-glow"><stop offset="0" stop-color="#b8ff9a" stop-opacity="0.9"/><stop offset="1" stop-color="#5fe06a" stop-opacity="0"/></radialGradient></defs>
+<rect x="-11" y="-6" width="25" height="19.5" fill="#000" opacity="0.22"/>
+<circle cx="-6" cy="-12" r="2.6" fill="#f4f6f8" opacity="0.85"/><circle cx="-3" cy="-13.2" r="2.2" fill="#f4f6f8" opacity="0.75"/><circle cx="-8.8" cy="-12.8" r="1.8" fill="#f4f6f8" opacity="0.7"/>
+<path d="M-12.5 11 C-10 5 -10 -1 -11.5 -8 H-0.5 C-2 -1 -2 5 0.5 11 Z" fill="url(#reactor-ct)" stroke="#3d454e" stroke-width="1"/>
+<ellipse cx="-6" cy="-8" rx="5.5" ry="1.6" fill="#7d8690" stroke="#3d454e" stroke-width="0.9"/>
+<path d="M-12 8 H0" stroke="#3d454e" stroke-width="0.6" opacity="0.6"/>
+<ellipse cx="-6" cy="11" rx="6.5" ry="1.2" fill="#9ea7b0" stroke="#3d454e" stroke-width="0.8"/>
+<rect x="1" y="3" width="12" height="9" fill="#8fa0b2" stroke="#22262c" stroke-width="1"/>
+<path d="M1 6 H13" stroke="#6f7f90" stroke-width="0.6"/>
+<path d="M2 3 V-1 A5 5 0 0 1 12 -1 V3 Z" fill="#d9dee3" stroke="#22262c" stroke-width="1"/>
+<path d="M3.6 -1.5 A3.5 3.5 0 0 1 6 -4.6" stroke="#fff" stroke-width="0.9" fill="none"/>
+<circle cx="7" cy="8.2" r="4" fill="url(#reactor-glow)"/>
+<circle cx="7" cy="8.2" r="2.3" fill="#2b3038" stroke="#22262c" stroke-width="0.5"/>
+<circle cx="7" cy="8.2" r="0.6" fill="#7ee05a"/>
+<path d="M7 8.2 L5.8 6.3 A2.2 2.2 0 0 1 8.2 6.3 Z M7 8.2 L9.2 8.2 A2.2 2.2 0 0 1 8 10.1 Z M7 8.2 L6 10.1 A2.2 2.2 0 0 1 4.8 8.2 Z" fill="#7ee05a"/>
+<path d="M2.2 4.4 H4.2 M9.8 4.4 H11.8" stroke="#7ee05a" stroke-width="0.9"/>`,
+  oilplant: `<rect x="-11" y="-7" width="25" height="20.5" fill="#000" opacity="0.22"/>
+<rect x="-4" y="-12.5" width="3.4" height="15" fill="#e9ecef" stroke="#22262c" stroke-width="0.9"/>
+<path d="M-4 -10 H-0.6 V-8 H-4 Z M-4 -5 H-0.6 V-3 H-4 Z" fill="#d6413a"/>
+<rect x="1.2" y="-11" width="3.4" height="13" fill="#e9ecef" stroke="#22262c" stroke-width="0.9"/>
+<path d="M1.2 -8.5 H4.6 V-6.5 H1.2 Z M1.2 -3.5 H4.6 V-1.5 H1.2 Z" fill="#d6413a"/>
+<circle cx="-2.3" cy="-13.8" r="1.6" fill="#4a4f56" opacity="0.75"/><circle cx="-0.6" cy="-14.4" r="1.2" fill="#4a4f56" opacity="0.6"/>
+<circle cx="2.9" cy="-12.4" r="1.4" fill="#4a4f56" opacity="0.7"/>
+<path d="M-13 1 L-10.5 -2.5 H4.5 L7 1 Z" fill="#7d8792" stroke="#22262c" stroke-width="1" stroke-linejoin="round"/>
+<rect x="-13" y="1" width="20" height="10.5" fill="#5a636d" stroke="#22262c" stroke-width="1"/>
+<path d="M-11 4 H5 M-11 6.5 H5" stroke="#f2c14e" stroke-width="1.1" stroke-dasharray="2 1.2"/>
+<rect x="-6" y="7.8" width="4.4" height="3.7" fill="#2b3038"/>
+<path d="M2.6 8 L1 10.2 H2.6 L1.6 11.8 L4.2 9.2 H2.8 L3.8 8 Z" fill="#f2c14e" stroke="#5a4310" stroke-width="0.3"/>
+<path d="M7 11.5 V-0.3 H12.6 V11.5 Z" fill="#cfd5db" stroke="#22262c" stroke-width="1"/>
+<ellipse cx="9.8" cy="-0.3" rx="2.8" ry="1.3" fill="#2b2f36" stroke="#22262c" stroke-width="0.9"/>
+<path d="M8 1 V10.5" stroke="#f4f6f8" stroke-width="0.9"/><path d="M11.6 1 V10.5" stroke="#9aa1a8" stroke-width="0.9"/>
+<path d="M9.8 3.5 C11.1 5.2 11.4 6 11.4 6.8 A1.6 1.6 0 0 1 8.2 6.8 C8.2 6 8.5 5.2 9.8 3.5 Z" fill="#1d2024"/>`,
   nuke: `<circle r="12" fill="#f2c14e" stroke="#141018" stroke-width="1.4"/><circle r="2.6" fill="#141018"/>` +
     [0, 120, 240].map(a => `<path d="M0 0 L-5 -9 A10.4 10.4 0 0 1 5 -9 Z" transform="rotate(${a}) translate(0 -1.5)" fill="#141018"/>`).join(''),
 });
 Object.assign(SHAPES, {
-  drill: `<rect x="-9" y="-8" width="22" height="22" fill="#000" opacity="0.2"/>
-    <rect x="-11" y="2" width="22" height="10" rx="2" fill="#dfe8ef" stroke="#3d4a56" stroke-width="1"/>
-    <circle cx="-5.5" cy="7" r="3" fill="#5fc4f0" stroke="#1d5a7a" stroke-width="0.8"/>
-    <rect x="3" y="4.5" width="6" height="5" rx="1" fill="#f2c14e" stroke="#5a4310" stroke-width="0.7"/>
-    <path d="M-6 2 L0 -12 L6 2" fill="none" stroke="#7a8794" stroke-width="2" stroke-linejoin="round"/>
-    <path d="M-3.5 -4 H3.5" stroke="#7a8794" stroke-width="1.4"/>
-    <path d="M0 -12 V11" stroke="#2b3038" stroke-width="1.8"/><circle cx="0" cy="-12" r="1.8" fill="#5fc4f0" stroke="#1d5a7a" stroke-width="0.7"/>`,
-  pad: `<rect x="-11" y="-10" width="26" height="25" fill="#000" opacity="0.22"/>
-    <rect x="-13" y="-13" width="26" height="26" rx="2" fill="#b3b9be" stroke="#2b3038" stroke-width="1"/>
-    <path d="M-13 -3 H-8 M-13 3 H-8" stroke="#6b737b" stroke-width="1.2"/>
-    <circle cx="-1" r="8.5" fill="#8a9198" stroke="#f2c14e" stroke-width="2" stroke-dasharray="3 2"/>
-    <circle cx="-1" r="5" fill="#2f353b" stroke="#14171b" stroke-width="0.8"/><circle cx="-1" r="2" fill="#5fc4f0"/>
-    <rect x="8" y="-12" width="4" height="15" fill="#c94b3c" stroke="#5a1f18" stroke-width="0.8"/>
-    <path d="M8 -8 H12 M8 -4 H12 M8 0 H12" stroke="#5a1f18" stroke-width="0.7"/>
-    <rect x="6" y="7" width="6" height="5" rx="1" fill="#dfe8ef" stroke="#3d4a56" stroke-width="0.7"/>`,
+  drill: `<defs><radialGradient id="drill-glow"><stop offset="0" stop-color="#d6fbff" stop-opacity="1"/><stop offset="1" stop-color="#4fd6ff" stop-opacity="0"/></radialGradient></defs>
+<ellipse cx="0.5" cy="8.2" rx="13" ry="4.8" fill="#d6eaf5" stroke="#7fa8c0" stroke-width="0.8"/>
+<path d="M-12 8.6 L-10 7.2 L-8.6 8.4 Z M9.5 11.2 L11.2 9.8 L12.3 11 Z" fill="#a8dcf2" stroke="#5f8fa8" stroke-width="0.4"/>
+<ellipse cx="2" cy="9" rx="11" ry="2.6" fill="#000" opacity="0.18"/>
+<path d="M-12.5 9.5 V3.5 L-10.5 1.5 H-4.5 V9.5 Z" fill="#eef3f7" stroke="#2b3a46" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-12.5 3.5 H-4.5" stroke="#b9c7d2" stroke-width="0.7"/>
+<rect x="-11.2" y="5" width="5.2" height="2.4" rx="0.8" fill="#5fc4f0" stroke="#1d5a7a" stroke-width="0.6"/>
+<path d="M5 10 V-1.5 A3.5 1.4 0 0 1 12 -1.5 V10 Z" fill="#e6eef4" stroke="#2b3a46" stroke-width="1"/>
+<ellipse cx="8.5" cy="-1.5" rx="3.5" ry="1.4" fill="#f8fbfd" stroke="#2b3a46" stroke-width="0.8"/>
+<rect x="7" y="1" width="3" height="7.6" rx="1" fill="#1a3a4a"/>
+<rect x="7" y="3.6" width="3" height="5" rx="1" fill="#5fd6ff"/>
+<path d="M7.6 4.3 V7.8" stroke="#e6fcff" stroke-width="0.6"/>
+<path d="M-4.5 7 H-2.5 M3 7 H5" stroke="#2b3a46" stroke-width="1"/>
+<circle cx="0.2" cy="9.4" r="4.2" fill="url(#drill-glow)"/>
+<ellipse cx="0.2" cy="9.6" rx="2.2" ry="1" fill="#1d5a7a"/>
+<path d="M-4 9 L0.2 -12.5 L4.4 9" fill="none" stroke="#3a1e14" stroke-width="3" stroke-linejoin="round"/>
+<path d="M-4 9 L0.2 -12.5 L4.4 9" fill="none" stroke="#e8743a" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M-2.7 2.5 H3.1 M-1.6 -3.5 H2 M-2.7 2.5 L2 -3.5 M3.1 2.5 L-1.6 -3.5" stroke="#3a1e14" stroke-width="1.1"/>
+<path d="M0.2 -12 V9.5" stroke="#2b3038" stroke-width="1.4"/>
+<path d="M0.2 4 V9.5" stroke="#cfe8f5" stroke-width="0.6"/>
+<circle cx="0.2" cy="-12.6" r="1.7" fill="#5fc4f0" stroke="#1d5a7a" stroke-width="0.7"/>`,
+  pad: `<rect x="-11" y="-9" width="26" height="24" rx="2" fill="#000" opacity="0.24"/>
+    <rect x="-13" y="-11" width="26" height="24" rx="2" fill="#c2c8cd" stroke="#1a1e24" stroke-width="1.1"/>
+    <path d="M-13 10 V11 A2 2 0 0 0 -11 13 H11 A2 2 0 0 0 13 11 V10 Z" fill="#7d858c"/>
+    <circle cx="1" cy="0" r="8.6" fill="#f2c14e" stroke="#1a1e24" stroke-width="1"/>
+    <circle cx="1" cy="0" r="8.6" fill="none" stroke="#1a1e24" stroke-width="2.4" stroke-dasharray="4.5 4.5"/>
+    <circle cx="1" cy="0" r="6" fill="#2b3038" stroke="#1a1e24" stroke-width="1"/>
+    <circle cx="1" cy="0" r="2.2" fill="#5fc4f0"/>
+    <rect x="-13" y="-14" width="5" height="25" rx="0.6" fill="#d24a3a" stroke="#3a120c" stroke-width="1"/>
+    <path d="M-12 -8 H-9 M-12 -2 H-9 M-12 4 H-9" stroke="#7a2418" stroke-width="1.2"/>
+    <path d="M-8 -9 H-4.5" stroke="#3a120c" stroke-width="1.8"/>`,
   rocket: `<ellipse cx="1.5" cy="12.5" rx="6.5" ry="2" fill="#000" opacity="0.25"/>
     <path d="M-5 3 L-9.5 11 L-5 9.5 Z M5 3 L9.5 11 L5 9.5 Z" fill="#d64045" stroke="#5a1f18" stroke-width="0.8" stroke-linejoin="round"/>
     <path d="M0 -14 C4 -10 5 -4 5 4 L5 10 L-5 10 L-5 4 C-5 -4 -4 -10 0 -14 Z" fill="#eef2f5" stroke="#2b3038" stroke-width="1"/>
@@ -890,53 +1373,183 @@ Object.assign(SHAPES, {
     <path d="M2.6 -6 V9" stroke="#c4ccd3" stroke-width="1.4"/>
     <circle cx="0" cy="-2" r="2" fill="#5fc4f0" stroke="#1d5a7a" stroke-width="0.8"/>
     <path d="M-3 10 L-2.2 13 L2.2 13 L3 10 Z" fill="#59616b" stroke="#2b3038" stroke-width="0.6"/>`,
-  terraformer: `<rect x="-10" y="-8" width="24" height="22" fill="#000" opacity="0.22"/>
-    <rect x="-12" y="4" width="24" height="8" rx="2" fill="#c9ced6" stroke="#2b3038" stroke-width="1"/>
-    <path d="M-7 4 V-6 Q0 -14 7 -6 V4 Z" fill="#7ed37a" stroke="#2b5a2b" stroke-width="1"/>
-    <path d="M-3 -6 Q0 -10 3 -6" stroke="#d8ffd0" stroke-width="1.4" fill="none"/>
-    <path d="M-4 0 H4 M0 -4 V3" stroke="#2b5a2b" stroke-width="1"/>
-    <circle cx="-8.5" cy="8" r="1.4" fill="#5fc4f0"/><circle cx="8.5" cy="8" r="1.4" fill="#f2c14e"/>`,
-  bomber: `<path d="M16 0 L6 -3 L-2 -16 L-6 -16 L-2 -3 L-12 -2.4 L-15 -8 L-17 -8 L-16 0 L-17 8 L-15 8 L-12 2.4 L-2 3 L-6 16 L-2 16 L6 3 Z" fill="#4a515c" stroke="#141820" stroke-width="1" stroke-linejoin="round"/>
-    <path d="M4 -8 h3 v2 h-3 Z M4 6 h3 v2 h-3 Z M0 -12 h3 v2 h-3 Z M0 10 h3 v2 h-3 Z" fill="#2b3038"/>
-    <path d="M12 -1 Q14 0 12 1" stroke="#9fd0ff" stroke-width="1.2" fill="none"/><circle cx="-6" cy="0" r="1.8" fill="#f2c14e" stroke="#141820" stroke-width="0.6"/>`,
-  receiver: `<rect x="-11" y="-7" width="24" height="21" fill="#000" opacity="0.22"/>
-    <rect x="-12" y="7" width="24" height="6" rx="1.5" fill="#9aa1a8" stroke="#2b3038" stroke-width="1"/>
-    <path d="M-2 7 L0 -1 L2 7 Z" fill="#59616b" stroke="#2b3038" stroke-width="0.8"/>
-    <path d="M-11 -4 Q0 6 11 -4 Q0 1 -11 -4 Z" fill="#e8edf2" stroke="#2b3038" stroke-width="1"/>
-    <path d="M0 -1 L0 -11" stroke="#59616b" stroke-width="1.2"/><circle cx="0" cy="-12" r="1.8" fill="#f2c14e" stroke="#7a5a10" stroke-width="0.6"/>`,
-  cargoplane: `<path d="M-3 -1.6 L-6 -14 L-9 -14 L-7.5 -1.6 Z M-3 1.6 L-6 14 L-9 14 L-7.5 1.6 Z" fill="#c9ced6" stroke="#2b3038" stroke-width="0.9" stroke-linejoin="round"/>
-    <path d="M-13 -0.9 L-15 -6 L-16.5 -6 L-15.5 -0.9 Z M-13 0.9 L-15 6 L-16.5 6 L-15.5 0.9 Z" fill="#c9ced6" stroke="#2b3038" stroke-width="0.8"/>
-    <path d="M13 0 C13 -2 11 -3 8 -3 L-14 -1.6 L-16 0 L-14 1.6 L8 3 C11 3 13 2 13 0 Z" fill="#eef1f3" stroke="#2b3038" stroke-width="1"/>
-    <path d="M-4 -1.4 H6 M-4 1.4 H6" stroke="#c13b2f" stroke-width="0.9"/>
-    <path d="M9.5 -1.6 Q11.6 0 9.5 1.6" stroke="#2a6f96" stroke-width="1.3" fill="none"/>
-    <rect x="-6.6" y="-9.5" width="2.6" height="1.6" rx="0.6" fill="#59616b"/><rect x="-6.6" y="7.9" width="2.6" height="1.6" rx="0.6" fill="#59616b"/>`,
-  jet: `<path d="M-1 -1.8 L-9 -15 L-11.5 -15 L-7 -1.8 Z M-1 1.8 L-9 15 L-11.5 15 L-7 1.8 Z" fill="#b9c2cc" stroke="#2b3038" stroke-width="0.9" stroke-linejoin="round"/>
-    <path d="M-12.5 -1 L-16 -6.5 L-17.5 -6.5 L-16 -1 Z M-12.5 1 L-16 6.5 L-17.5 6.5 L-16 1 Z" fill="#b9c2cc" stroke="#2b3038" stroke-width="0.8"/>
-    <path d="M15 0 C14 -1.8 11 -2.6 7 -2.6 L-15 -1.5 L-17 0 L-15 1.5 L7 2.6 C11 2.6 14 1.8 15 0 Z" fill="#f4f6f8" stroke="#2b3038" stroke-width="1"/>
-    <path d="M-5 -1.2 H9 M-5 1.2 H9" stroke="#2a6f96" stroke-width="0.9"/>
-    <path d="M11.5 -1.5 Q13.5 0 11.5 1.5" stroke="#1d3a55" stroke-width="1.4" fill="none"/>
-    <rect x="-6" y="-8.2" width="4" height="1.9" rx="0.9" fill="#4a515c"/><rect x="-6" y="6.3" width="4" height="1.9" rx="0.9" fill="#4a515c"/>`,
-  bridge: `<path d="M-15 6 H15 V11 H-15 Z" fill="#3a7fc0"/><path d="M-15 8 q4 -1.5 8 0 t8 0 t8 0 t7 0" stroke="#8fd0ff" stroke-width="0.9" fill="none"/>
-    <path d="M-15 -2 H15 V2 H-15 Z" fill="#b3aa9b" stroke="#4f4a44" stroke-width="1"/>
-    <path d="M-8 2 V10 M0 2 V10 M8 2 V10" stroke="#4f4a44" stroke-width="2.6"/>
-    <path d="M-15 -2 Q-8 -9 0 -2 Q8 -9 15 -2" stroke="#958c7e" stroke-width="1.4" fill="none"/>
-    <path d="M-13 0 H13" stroke="#958c7e" stroke-width="0.8" stroke-dasharray="1.5 2.5"/>`,
-  lpad: `<rect x="-11" y="-10" width="26" height="25" fill="#000" opacity="0.22"/>
-    <rect x="-13" y="-13" width="26" height="26" rx="13" fill="#7d858c" stroke="#2b3038" stroke-width="1"/>
-    <circle r="10" fill="none" stroke="#f2c14e" stroke-width="1.6" stroke-dasharray="3 2.2"/>
-    <path d="M-5 -6 V6 M5 -6 V6 M-5 0 H5" stroke="#f4f6f8" stroke-width="2.4" stroke-linecap="round"/>
-    <circle cx="-9.5" cy="-9.5" r="1.3" fill="#ff5a4a"/><circle cx="9.5" cy="9.5" r="1.3" fill="#7be08a"/>`,
-  shuttle: `<path d="M-5 4 L-10 12 L-5 10.5 Z M5 4 L10 12 L5 10.5 Z" fill="#59616b" stroke="#2b3038" stroke-width="0.8" stroke-linejoin="round"/>
-    <path d="M0 -14 C4 -10 5 -4 5 4 L5 11 L-5 11 L-5 4 C-5 -4 -4 -10 0 -14 Z" fill="#f4f6f8" stroke="#2b3038" stroke-width="1"/>
-    <path d="M-5 -1 H5 M-5 5 H5" stroke="#2b3038" stroke-width="0.9"/>
-    <path d="M0 -14 C2.6 -11.5 3.6 -9 4.2 -7 L-4.2 -7 C-3.6 -9 -2.6 -11.5 0 -14 Z" fill="#2b3038"/>
-    <circle cx="0" cy="-3" r="1.7" fill="#5fc4f0" stroke="#1d5a7a" stroke-width="0.7"/>
-    <path d="M-3 11 L-2.2 14 L2.2 14 L3 11 Z" fill="#59616b" stroke="#2b3038" stroke-width="0.6"/>`,
+  terraformer: `<rect x="-10" y="-6" width="24" height="20" rx="2" fill="#000" opacity="0.22"/>
+    <circle cx="-8.5" cy="-9" r="3.6" fill="#d8f2d0" stroke="#5f8f5a" stroke-width="0.7"/><circle cx="-10.5" cy="-12" r="2.5" fill="#eaf8e4" stroke="#5f8f5a" stroke-width="0.6"/>
+    <circle cx="9" cy="-10" r="3" fill="#d8f2d0" stroke="#5f8f5a" stroke-width="0.7"/><circle cx="11" cy="-12.6" r="1.9" fill="#eaf8e4" stroke="#5f8f5a" stroke-width="0.6"/>
+    <rect x="-12.5" y="5" width="25" height="7.5" rx="2" fill="#b9c0c8" stroke="#2b3038" stroke-width="1"/>
+    <path d="M-12 7.5 H12" stroke="#dfe4e8" stroke-width="0.9"/>
+    <rect x="-11" y="-5" width="4" height="10" fill="#8f979e" stroke="#2b3038" stroke-width="0.9"/><rect x="7" y="-5" width="4" height="10" fill="#8f979e" stroke="#2b3038" stroke-width="0.9"/>
+    <path d="M-11.5 -6 H-6.5 M6.5 -6 H11.5" stroke="#2b3038" stroke-width="1.6"/>
+    <path d="M-7 5 V-3 A7 7 0 0 1 7 -3 V5 Z" fill="#9fe39a" fill-opacity="0.9" stroke="#1f4a22" stroke-width="1"/>
+    <path d="M-5 5 V0 L-3 -3 L-1 0 V5 Z M1 5 V-2 L3.2 -6 L5.4 -2 V5 Z" fill="#2f8f3f"/>
+    <path d="M-4 -3.5 A5 5 0 0 1 2 -8" stroke="#eaffe4" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+    <path d="M0 -10 V-13" stroke="#2b3038" stroke-width="1"/><circle cx="0" cy="-13.4" r="1.2" fill="#5fc4f0" stroke="#1d5a7a" stroke-width="0.5"/>
+    <circle cx="-8" cy="9" r="1.3" fill="#5fc4f0"/><circle cx="8" cy="9" r="1.3" fill="#7be08a"/><path d="M-4 9 H4" stroke="#59616b" stroke-width="1.2"/>`,
+  bomber: `<g transform="scale(0.84)"><path d="M11 0 C8 -1.6 4 -4 -4.5 -14 L-7.5 -10.5 L-5 -7 L-9 -3.5 L-6.5 0 L-9 3.5 L-5 7 L-7.5 10.5 L-4.5 14 C4 4 8 1.6 11 0 Z" fill="none" stroke="#e4e9ef" stroke-width="3.2" stroke-linejoin="round"/>
+<path d="M11 0 C8 -1.6 4 -4 -4.5 -14 L-7.5 -10.5 L-5 -7 L-9 -3.5 L-6.5 0 L-9 3.5 L-5 7 L-7.5 10.5 L-4.5 14 C4 4 8 1.6 11 0 Z" fill="#5e6875" stroke="#0e1218" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="M9 -0.6 C6 -2 2 -5 -4.2 -12.4" stroke="#b4bec8" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+<path d="M8 0 C6 -1.6 1 -2.6 -5.5 -2.4 L-7.6 0 L-5.5 2.4 C1 2.6 6 1.6 8 0 Z" fill="#363c45" stroke="#0e1218" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M8.5 -0.9 Q10 0 8.5 0.9 L6.8 0.7 V-0.7 Z" fill="#9fd0ff" stroke="#0e1218" stroke-width="0.5"/>
+<path d="M2.5 -3 L0 -5.6 M2.5 3 L0 5.6" stroke="#1d2228" stroke-width="1.4" stroke-linecap="round"/>
+<circle cx="-2" cy="0" r="1.6" fill="#f2c14e" stroke="#0e1218" stroke-width="0.6"/>
+<path d="M-2 0 L-2 -1.3 M-2 0 L-0.9 0.65 M-2 0 L-3.1 0.65" stroke="#0e1218" stroke-width="0.6"/></g>`,
+  receiver: `<defs>
+<radialGradient id="receiver-dish" cx="0.45" cy="0.3" r="0.8"><stop offset="0" stop-color="#ffffff"/><stop offset="0.5" stop-color="#dde4ec"/><stop offset="1" stop-color="#8794a3"/></radialGradient>
+<linearGradient id="receiver-beam" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe680" stop-opacity="0.5"/><stop offset="1" stop-color="#ffd24a" stop-opacity="0.95"/></linearGradient>
+<radialGradient id="receiver-glow"><stop offset="0" stop-color="#fffbe0"/><stop offset="0.35" stop-color="#ffd24a" stop-opacity="0.85"/><stop offset="1" stop-color="#ffb020" stop-opacity="0"/></radialGradient>
+</defs>
+<ellipse cx="2" cy="9.5" rx="12" ry="3.8" fill="#000" opacity="0.22"/>
+<path d="M-11 9 L-8 6 H8 L11 9 L8 12.5 H-8 Z" fill="#9aa1a8" stroke="#22262c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-10 9 H10" stroke="#c4cad0" stroke-width="0.7"/>
+<path d="M-6.5 10.7 H-4 M4 10.7 H6.5" stroke="#f2c14e" stroke-width="0.9"/>
+<path d="M-3.2 9 L-1.6 2 H1.6 L3.2 9 Z" fill="#59616b" stroke="#22262c" stroke-width="0.9" stroke-linejoin="round"/>
+<g transform="rotate(12 0 0)">
+<ellipse cx="0" cy="1.4" rx="12.6" ry="6.6" fill="#5f6a76" stroke="#22262c" stroke-width="1"/>
+<ellipse cx="0" cy="-0.6" rx="12.6" ry="6.6" fill="url(#receiver-dish)" stroke="#22262c" stroke-width="1.1"/>
+<ellipse cx="0" cy="-0.6" rx="8.8" ry="4.6" fill="none" stroke="#a3afbc" stroke-width="0.6"/>
+<ellipse cx="0" cy="-0.6" rx="4.8" ry="2.5" fill="none" stroke="#a3afbc" stroke-width="0.6"/>
+<path d="M-12.6 -0.6 H12.6 M0 -7.2 V6" stroke="#b6c0ca" stroke-width="0.4"/>
+<circle cx="0" cy="-0.6" r="1.2" fill="#59616b" stroke="#22262c" stroke-width="0.5"/>
+<path d="M-10.5 -0.6 L0 -10.5 M10.5 -0.6 L0 -10.5 M0 4.8 L0 -10.5" stroke="#2b3038" stroke-width="0.9"/>
+</g>
+<path d="M2 -15.5 H12 L3.2 -10.4 L1.4 -11 Z" fill="url(#receiver-beam)"/>
+<path d="M7 -15.5 L2.3 -10.6" stroke="#ffc83a" stroke-width="1.8" opacity="0.8"/><path d="M7 -15.5 L2.3 -10.6" stroke="#fffbe0" stroke-width="0.8"/>
+<circle cx="2.2" cy="-10.3" r="5" fill="url(#receiver-glow)"/>
+<circle cx="2.2" cy="-10.3" r="1.7" fill="#ffe680" stroke="#7a5a10" stroke-width="0.6"/>
+<path d="M11 -11 l0.55 1.3 l1.3 0.55 l-1.3 0.55 l-0.55 1.3 l-0.55 -1.3 l-1.3 -0.55 l1.3 -0.55 Z" fill="#fff6c8"/>
+<path d="M-8 -13 l0.4 0.9 l0.9 0.4 l-0.9 0.4 l-0.4 0.9 l-0.4 -0.9 l-0.9 -0.4 l0.9 -0.4 Z" fill="#fff6c8"/>
+<path d="M13 -14 l0.3 0.7 l0.7 0.3 l-0.7 0.3 l-0.3 0.7 l-0.3 -0.7 l-0.7 -0.3 l0.7 -0.3 Z" fill="#fff6c8"/>`,
+  cargoplane: `<path d="M-12 -0.8 L-14 -6 H-11.5 L-9 -0.8 Z M-12 0.8 L-14 6 H-11.5 L-9 0.8 Z" fill="#c9ced6" stroke="#1e242c" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-6.5 -2 L-7.5 -13.5 H-3.6 L-1 -2 Z M-6.5 2 L-7.5 13.5 H-3.6 L-1 2 Z" fill="#d3d8de" stroke="#1e242c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-6.8 -12.6 H-4 M-6.8 12.6 H-4" stroke="#c23b2b" stroke-width="1.4"/>
+<path d="M-7 -9.6 H-1.6 Q-0.6 -8.1 -1.6 -6.6 H-7 Z M-7 6.6 H-1.6 Q-0.6 8.1 -1.6 9.6 H-7 Z" fill="#59616b" stroke="#1e242c" stroke-width="0.8" stroke-linejoin="round"/>
+<circle cx="-0.8" cy="-8.1" r="0.9" fill="#c23b2b"/><circle cx="-0.8" cy="8.1" r="0.9" fill="#c23b2b"/>
+<path d="M12 0 C12 -2.2 10 -2.8 7 -2.8 L-12 -1.6 L-14 0 L-12 1.6 L7 2.8 C10 2.8 12 2.2 12 0 Z" fill="#eef1f3" stroke="#1e242c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-11 0 H8" stroke="#c23b2b" stroke-width="1.3"/>
+<path d="M8.6 -1.8 Q10.8 0 8.6 1.8" stroke="#2a6f96" stroke-width="1.3" fill="none"/>
+<path d="M-3 -1.9 H6" stroke="#fff" stroke-width="0.8"/>`,
+  jet: `<path d="M-11 -1 L-14 -6.2 H-12.2 L-8.5 -1 Z M-11 1 L-14 6.2 H-12.2 L-8.5 1 Z" fill="#b9c2cc" stroke="#1e242c" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M1.5 -2 L-8 -13.8 H-10.2 L-6.5 -2 Z M1.5 2 L-8 13.8 H-10.2 L-6.5 2 Z" fill="#c9d1da" stroke="#1e242c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-9.4 -13.4 L-8.2 -12 M-9.4 13.4 L-8.2 12" stroke="#2a6f96" stroke-width="1.2"/>
+<rect x="-6.8" y="-8.3" width="5" height="2.2" rx="1" fill="#4a515c" stroke="#1e242c" stroke-width="0.7"/><rect x="-6.8" y="6.1" width="5" height="2.2" rx="1" fill="#4a515c" stroke="#1e242c" stroke-width="0.7"/>
+<path d="M14 0 C13.2 -1.8 10.5 -2.4 7 -2.4 L-12.5 -1.4 L-14.2 0 L-12.5 1.4 L7 2.4 C10.5 2.4 13.2 1.8 14 0 Z" fill="#f6f8fa" stroke="#1e242c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-12 -0.1 H10" stroke="#2a6f96" stroke-width="1.4"/>
+<path d="M-14 0 L-10.5 -0.9 V0.9 Z" fill="#2a6f96"/>
+<path d="M10.6 -1.4 Q12.6 0 10.6 1.4" stroke="#1d3a55" stroke-width="1.3" fill="none"/>`,
+  bridge: `<path d="M-15 3 H15 V12 H-15 Z" fill="#3a7fc0"/>
+    <path d="M-14 10 q2 -1 4 0 t4 0 M2 10 q2 -1 4 0 t4 0" stroke="#8fd0ff" stroke-width="0.8" fill="none"/>
+    <path d="M-15 -4 H15 V9 H11 V6 A6 6 0 0 0 -1 6 V9 H1 V6 A6 6 0 0 0 -11 6 V9 H-15 Z" transform="translate(0 0)" fill="none"/>
+    <path d="M-15 -4 H15 V10 H12.5 V7 A5.5 5.5 0 0 0 1.5 7 V10 H-1.5 V7 A5.5 5.5 0 0 0 -12.5 7 V10 H-15 Z" fill="#c2b49a" stroke="#4f4234" stroke-width="1" stroke-linejoin="round"/>
+    <path d="M-12.5 7 A5.5 5.5 0 0 1 -1.5 7 M1.5 7 A5.5 5.5 0 0 1 12.5 7" stroke="#8a7a62" stroke-width="1.4" fill="none"/>
+    <path d="M-15 0 H15" stroke="#a08f74" stroke-width="0.7"/><path d="M-10 0 V3 M-4 0 V3 M4 0 V3 M10 0 V3 M-13.5 4 V7 M-7 3 V1 M7 3 V1 M13.5 4 V7" stroke="#a08f74" stroke-width="0.6"/>
+    <path d="M-15 -7 H15 V-4 H-15 Z" fill="#8f8170" stroke="#4f4234" stroke-width="1"/>
+    <path d="M-15 -8.2 H15" stroke="#e0d6c2" stroke-width="1.4"/><path d="M-12 -7 V-4 M-6 -7 V-4 M0 -7 V-4 M6 -7 V-4 M12 -7 V-4" stroke="#6e6252" stroke-width="0.6"/>`,
+  lpad: `<path d="M-6 -11 H8 L15 -4 V10 L8 15 H-6 L-11 10 V-4 Z" fill="#000" opacity="0.22"/>
+    <path d="M-5.5 -13 H5.5 L13 -5.5 V7.5 L5.5 13 H-5.5 L-13 7.5 V-5.5 Z" fill="#5f666d" stroke="#2b3038" stroke-width="1" stroke-linejoin="round"/>
+    <path d="M-5.5 -13 H5.5 L13 -5.5 V5.5 L5.5 11 H-5.5 L-13 5.5 V-5.5 Z" fill="#8f979e" stroke="#2b3038" stroke-width="1" stroke-linejoin="round"/>
+    <circle cx="0" cy="-1" r="9.5" fill="none" stroke="#f2c14e" stroke-width="1.6"/>
+    <circle cx="0" cy="-1" r="7.6" fill="#5a6168" opacity="0.55"/>
+    <circle cx="0" cy="-1" r="7.6" fill="none" stroke="#f4f6f8" stroke-width="1.4"/>
+    <path d="M-3.8 -5.6 V3.6 M3.8 -5.6 V3.6 M-3.8 -1 H3.8" stroke="#f4f6f8" stroke-width="2.4" stroke-linecap="round"/>
+    <circle cx="-10.4" cy="-4.6" r="1.3" fill="#ff5a4a" stroke="#5a1410" stroke-width="0.5"/><circle cx="10.4" cy="-4.6" r="1.3" fill="#ff5a4a" stroke="#5a1410" stroke-width="0.5"/>
+    <circle cx="-10.4" cy="4.6" r="1.3" fill="#7be08a" stroke="#1d4a26" stroke-width="0.5"/><circle cx="10.4" cy="4.6" r="1.3" fill="#7be08a" stroke="#1d4a26" stroke-width="0.5"/>
+    <path d="M-5 12 V10.6 M0 12 V10.6 M5 12 V10.6" stroke="#2b3038" stroke-width="0.7"/>`,
+  shuttle: `<path d="M-3.4 2 L-12.5 10.5 L-12 12 H12 L12.5 10.5 L3.4 2 Z" fill="#eef1f3" stroke="#1e242c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-3.4 2 L-12.5 10.5 L-12 12 L-10.8 11 L-3.4 4.2 Z M3.4 2 L12.5 10.5 L12 12 L10.8 11 L3.4 4.2 Z" fill="#2b3038"/>
+<path d="M0 -14 C3 -11 3.6 -6 3.6 0 V12 H-3.6 V0 C-3.6 -6 -3 -11 0 -14 Z" fill="#f6f8fa" stroke="#1e242c" stroke-width="1" stroke-linejoin="round"/>
+<path d="M0 -14 C1.8 -12.2 2.6 -10.5 3 -9 H-3 C-2.6 -10.5 -1.8 -12.2 0 -14 Z" fill="#2b3038"/>
+<path d="M-2 -8 Q0 -9 2 -8 L1.6 -6.6 H-1.6 Z" fill="#1d3a55" stroke="#1e242c" stroke-width="0.5"/>
+<path d="M-2.2 -3 V9 M2.2 -3 V9" stroke="#c9d0d8" stroke-width="0.8"/>
+<path d="M-1 11 L-1.4 4 L0 1.5 L1.4 4 L1 11 Z" fill="#2b3038"/>
+<path d="M-4 12 L-4.6 14 H-1.6 L-2 12 Z M4 12 L4.6 14 H1.6 L2 12 Z M-1 12 L-1.4 14.4 H1.4 L1 12 Z" fill="#59616b" stroke="#1e242c" stroke-width="0.6" stroke-linejoin="round"/>
+<path d="M-6 6 H-3.6 M3.6 6 H6" stroke="#2a6f96" stroke-width="0" />
+<rect x="-2.6" y="-1" width="1.4" height="1.4" fill="#c23b2b"/><rect x="-1.2" y="-1" width="1.4" height="1.4" fill="#eef1f3"/><rect x="0.2" y="-1" width="1.4" height="1.4" fill="#2a6f96"/>`,
   // little people at work: a builder (hard hat, hammer), a lumberjack (axe), a miner (pick), a farmer (scythe)
-  builder: pix(['..YY..', '.YYYY.', '..SS..', '.OOOO.H', 'OOOOOOH', '.OOOO.H', '.B..B..', '.B..B..'], { Y: '#f2c14e', S: '#e0b48c', O: '#e07a2e', B: '#2b3038', H: '#8d969e' }),
-  lumberjack: pix(['..RR..', '.RRRR.', '..SS..', '.RKRK.A', 'RKRKRKA', '.RKRK.A', '.B..B..', '.B..B..'], { R: '#b8432f', K: '#2b3038', S: '#e0b48c', B: '#3d2a1c', A: '#8d969e' }),
-  miner: pix(['..GG..', '.GLLG.', '..SS..', '.BBBB.P', 'BBBBBBP', '.BBBB.P', '.K..K..', '.K..K..'], { G: '#59616b', L: '#ffe066', S: '#e0b48c', B: '#5b8fbf', K: '#2b3038', P: '#a0683e' }),
-  farmer: pix(['.TTTT.', 'TTTTTT', '..SS..', '.GGGG.C', 'GGGGGGC', '.GGGG.C', '.B..B..', '.B..B..'], { T: '#e8c652', S: '#e0b48c', G: '#4f8f3f', B: '#6b4222', C: '#c9ced6' }),
+  builder: `<ellipse cx="1" cy="12.6" rx="7" ry="1.8" fill="#000" opacity="0.22"/>
+
+<path d="M-4 4 V11.5 H-0.6 V6 H0.6 V11.5 H4 V4 Z" fill="#3a4a63" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-4.6 11 H-0.3 V12.6 H-4.6 Z M0.3 11 H4.6 V12.6 H0.3 Z" fill="#2b2018" stroke="#1e1610" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M-5 5 V-0.5 Q-5 -3.4 -2 -3.4 H2 Q5 -3.4 5 -0.5 V5 Z" fill="#e07a2e" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-5 1.4 H5" stroke="#f4f6f8" stroke-width="1.2"/><path d="M-1.6 -3.4 V5 M1.6 -3.4 V5" stroke="#f2c14e" stroke-width="0.9"/>
+<path d="M-4.6 -1.6 L-6.4 4.6" stroke="#1e1610" stroke-width="2.8" stroke-linecap="round"/><path d="M-4.6 -1.6 L-6.4 4.4" stroke="#e07a2e" stroke-width="1.4" stroke-linecap="round"/>
+<circle cx="-6.4" cy="5" r="1.2" fill="#e8b88e" stroke="#1e1610" stroke-width="0.7"/>
+<circle cx="0" cy="-7.2" r="3.6" fill="#e8b88e" stroke="#1e1610" stroke-width="1"/>
+<circle cx="1.4" cy="-7.2" r="0.55" fill="#1e1610"/>
+<path d="M-4.4 -8 C-4.4 -12 4.4 -12 4.4 -8 Z" fill="#f2c14e" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/><path d="M-5.4 -8 H5.6" stroke="#1e1610" stroke-width="1.8" stroke-linecap="round"/><path d="M-5.2 -8 H5.4" stroke="#f2c14e" stroke-width="0.8" stroke-linecap="round"/><path d="M-2.4 -10.4 Q-1 -11.4 0.6 -11.2" stroke="#fff2b0" stroke-width="0.9" fill="none" stroke-linecap="round"/>
+<path d="M4.4 -1.6 L7 1.6" stroke="#1e1610" stroke-width="2.8" stroke-linecap="round"/><path d="M4.4 -1.6 L7 1.4" stroke="#e07a2e" stroke-width="1.4" stroke-linecap="round"/>
+<path d="M7.2 1.6 L10 -6" stroke="#1e1610" stroke-width="2" stroke-linecap="round"/><path d="M7.2 1.6 L10 -6" stroke="#a0683e" stroke-width="0.9" stroke-linecap="round"/><path d="M7.6 -7.6 L12.6 -5.8 L12 -4.2 L7 -6 Z" fill="#9aa1a8" stroke="#1e1610" stroke-width="0.8" stroke-linejoin="round"/><circle cx="7.2" cy="1.6" r="1.3" fill="#e8b88e" stroke="#1e1610" stroke-width="0.7"/>`,
+  lumberjack: `<ellipse cx="1" cy="12.6" rx="7" ry="1.8" fill="#000" opacity="0.22"/>
+
+<path d="M-4 4 V11.5 H-0.6 V6 H0.6 V11.5 H4 V4 Z" fill="#3a4a63" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-4.6 11 H-0.3 V12.6 H-4.6 Z M0.3 11 H4.6 V12.6 H0.3 Z" fill="#2b2018" stroke="#1e1610" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M-5 5 V-0.5 Q-5 -3.4 -2 -3.4 H2 Q5 -3.4 5 -0.5 V5 Z" fill="#c0392b" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-5 -0.6 H5 M-5 2.4 H5 M-2 -3.4 V5 M2 -3.4 V5" stroke="#2b1a18" stroke-width="1"/>
+<path d="M-4.6 -1.6 L-6.4 4.6" stroke="#1e1610" stroke-width="2.8" stroke-linecap="round"/><path d="M-4.6 -1.6 L-6.4 4.4" stroke="#c0392b" stroke-width="1.4" stroke-linecap="round"/>
+<circle cx="-6.4" cy="5" r="1.2" fill="#e8b88e" stroke="#1e1610" stroke-width="0.7"/>
+<circle cx="0" cy="-7.2" r="3.6" fill="#e8b88e" stroke="#1e1610" stroke-width="1"/>
+<circle cx="1.4" cy="-7.2" r="0.55" fill="#1e1610"/>
+<path d="M-3.8 -8.2 C-3.8 -12.4 3.8 -12.4 3.8 -8.2 Z" fill="#b8432f" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/><path d="M-4 -8.4 H4" stroke="#7d2219" stroke-width="1.2"/><circle cx="0" cy="-11.8" r="1.1" fill="#f4f6f8" stroke="#1e1610" stroke-width="0.6"/><path d="M-3.2 -5.6 Q0 -2.6 3.2 -5.6 Q3 -3.2 0 -3.2 Q-3 -3.2 -3.2 -5.6 Z" fill="#7a4a26"/>
+<path d="M4.4 -1.6 L7 1.6" stroke="#1e1610" stroke-width="2.8" stroke-linecap="round"/><path d="M4.4 -1.6 L7 1.4" stroke="#c0392b" stroke-width="1.4" stroke-linecap="round"/>
+<path d="M7.2 1.6 L11 -9" stroke="#1e1610" stroke-width="2" stroke-linecap="round"/><path d="M7.2 1.6 L11 -9" stroke="#c08a52" stroke-width="0.9" stroke-linecap="round"/><path d="M9.6 -8.2 Q13.6 -9 14 -5 L10.6 -5.6 Z" fill="#c9d0d8" stroke="#1e1610" stroke-width="0.9" stroke-linejoin="round"/><path d="M13.3 -7 L14 -5" stroke="#fff" stroke-width="0.7"/><circle cx="7.2" cy="1.6" r="1.3" fill="#e8b88e" stroke="#1e1610" stroke-width="0.7"/>`,
+  miner: `<ellipse cx="1" cy="12.6" rx="7" ry="1.8" fill="#000" opacity="0.22"/>
+
+<path d="M-4 4 V11.5 H-0.6 V6 H0.6 V11.5 H4 V4 Z" fill="#2f4a6b" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-4.6 11 H-0.3 V12.6 H-4.6 Z M0.3 11 H4.6 V12.6 H0.3 Z" fill="#2b2018" stroke="#1e1610" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M-5 5 V-0.5 Q-5 -3.4 -2 -3.4 H2 Q5 -3.4 5 -0.5 V5 Z" fill="#5b8fbf" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-3 -3.4 V5 M3 -3.4 V5" stroke="#2f4a6b" stroke-width="1.2"/><rect x="-1.8" y="0" width="3.6" height="3" fill="#2f4a6b"/>
+<path d="M-4.6 -1.6 L-6.4 4.6" stroke="#1e1610" stroke-width="2.8" stroke-linecap="round"/><path d="M-4.6 -1.6 L-6.4 4.4" stroke="#5b8fbf" stroke-width="1.4" stroke-linecap="round"/>
+<circle cx="-6.4" cy="5" r="1.2" fill="#e8b88e" stroke="#1e1610" stroke-width="0.7"/>
+<circle cx="0" cy="-7.2" r="3.6" fill="#e8b88e" stroke="#1e1610" stroke-width="1"/>
+<circle cx="1.4" cy="-7.2" r="0.55" fill="#1e1610"/>
+<path d="M-4.4 -8 C-4.4 -12.2 4.4 -12.2 4.4 -8 Z" fill="#6b737c" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/><path d="M-5 -8 H5.4" stroke="#1e1610" stroke-width="1.6" stroke-linecap="round"/><path d="M4.8 -11.8 L13 -13.8 L13 -6.8 Z" fill="#ffe680" opacity="0.4"/><circle cx="3.4" cy="-10" r="1.6" fill="#ffe066" stroke="#1e1610" stroke-width="0.7"/><circle cx="-0.4" cy="-6.6" r="0.6" fill="#3a3a3a" opacity="0.5"/>
+<path d="M4.4 -1.6 L7 1.6" stroke="#1e1610" stroke-width="2.8" stroke-linecap="round"/><path d="M4.4 -1.6 L7 1.4" stroke="#5b8fbf" stroke-width="1.4" stroke-linecap="round"/>
+<path d="M7.2 1.6 L10.6 -7.5" stroke="#1e1610" stroke-width="2" stroke-linecap="round"/><path d="M7.2 1.6 L10.6 -7.5" stroke="#a0683e" stroke-width="0.9" stroke-linecap="round"/><path d="M5.6 -7.4 Q10.6 -11 14.6 -6 Q10.6 -8.6 5.6 -7.4 Z" fill="#9aa1a8" stroke="#1e1610" stroke-width="0.9" stroke-linejoin="round"/><circle cx="7.2" cy="1.6" r="1.3" fill="#e8b88e" stroke="#1e1610" stroke-width="0.7"/>`,
+  farmer: `<ellipse cx="1" cy="12.6" rx="7" ry="1.8" fill="#000" opacity="0.22"/>
+
+<path d="M-4 4 V11.5 H-0.6 V6 H0.6 V11.5 H4 V4 Z" fill="#6b4222" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-4.6 11 H-0.3 V12.6 H-4.6 Z M0.3 11 H4.6 V12.6 H0.3 Z" fill="#2b2018" stroke="#1e1610" stroke-width="0.8" stroke-linejoin="round"/>
+<path d="M-5 5 V-0.5 Q-5 -3.4 -2 -3.4 H2 Q5 -3.4 5 -0.5 V5 Z" fill="#4f8f3f" stroke="#1e1610" stroke-width="1" stroke-linejoin="round"/>
+<path d="M-3 -3.4 L-2 5 M3 -3.4 L2 5" stroke="#6b4222" stroke-width="1.1"/>
+<path d="M-4.6 -1.6 L-6.4 4.6" stroke="#1e1610" stroke-width="2.8" stroke-linecap="round"/><path d="M-4.6 -1.6 L-6.4 4.4" stroke="#4f8f3f" stroke-width="1.4" stroke-linecap="round"/>
+<circle cx="-6.4" cy="5" r="1.2" fill="#e8b88e" stroke="#1e1610" stroke-width="0.7"/>
+<circle cx="0" cy="-7.2" r="3.6" fill="#e8b88e" stroke="#1e1610" stroke-width="1"/>
+<circle cx="1.4" cy="-7.2" r="0.55" fill="#1e1610"/>
+<path d="M-3.4 -8.6 C-3.2 -12 3.2 -12 3.4 -8.6 Z" fill="#e8c652" stroke="#1e1610" stroke-width="0.9" stroke-linejoin="round"/><path d="M-7 -8.4 Q0 -10.4 7 -8.4 Q0 -6.6 -7 -8.4 Z" fill="#f0d36a" stroke="#1e1610" stroke-width="0.9" stroke-linejoin="round"/><path d="M-3.2 -9.2 H3.2" stroke="#c23b2b" stroke-width="1"/>
+<path d="M4.4 -1.6 L7 1.6" stroke="#1e1610" stroke-width="2.8" stroke-linecap="round"/><path d="M4.4 -1.6 L7 1.4" stroke="#4f8f3f" stroke-width="1.4" stroke-linecap="round"/>
+<path d="M7.2 1.6 L10.4 -6.6 M7.2 1.6 L6.2 4.2" stroke="#1e1610" stroke-width="2" stroke-linecap="round"/><path d="M7.2 1.6 L10.4 -6.6 M7.2 1.6 L6.2 4.2" stroke="#c08a52" stroke-width="0.9" stroke-linecap="round"/><path d="M8.6 -6.4 L10 -12 M10.4 -6.6 L12 -11.6 M12.2 -6 L14 -10.6 M8.6 -6.4 L12.6 -5.4" stroke="#59616b" stroke-width="1.1" stroke-linecap="round" fill="none"/><circle cx="7.2" cy="1.6" r="1.3" fill="#e8b88e" stroke="#1e1610" stroke-width="0.7"/>`,
+});
+// new sprites from the art pass (the computer levels between the first and the AI)
+Object.assign(SHAPES, {
+  computer2: `<rect x="-11" y="-9" width="25" height="23" rx="1" fill="#000" opacity="0.24"/>
+    <path d="M-13 1 L-10.5 -3 H13 V1 Z" fill="#4f6273" stroke="#141a22" stroke-width="1" stroke-linejoin="round"/>
+    <rect x="-13" y="1" width="26" height="11" rx="1" fill="#2c3a48" stroke="#141a22" stroke-width="1.1"/>
+    <path d="M-11.5 2.5 V10.5 M-9 2.5 V10.5 M-6.5 2.5 V10.5 M6.5 2.5 V10.5 M9 2.5 V10.5 M11.5 2.5 V10.5" stroke="#18212b" stroke-width="1.6"/>
+    <path d="M-12 4 H-10.6 M-9.5 6 H-8 M-12 8 H-10.6 M-7 4.5 H-5.6 M-7 9 H-5.6 M6 4 H7.4 M8.5 7 H10 M11 4.5 H12.4 M6 9 H7.4 M11 9 H12.4" stroke="#7bd389" stroke-width="1.1"/>
+    <path d="M-9.5 3 H-8 M-12 10 H-10.6 M-7 6.8 H-5.6 M8.5 3 H10 M6 6.5 H7.4 M11 6.8 H12.4" stroke="#5fd8f0" stroke-width="1.1"/>
+    <path d="M-8 -3 L-6 -7 H8 V-3 Z" fill="#7d93a6" stroke="#141a22" stroke-width="1" stroke-linejoin="round"/>
+    <rect x="-8" y="-3" width="16" height="15" rx="0.8" fill="#4a5f72" stroke="#141a22" stroke-width="1.1"/>
+    <rect x="-6.5" y="-1.5" width="13" height="6.5" rx="0.6" fill="#0f1a24" stroke="#141a22" stroke-width="0.7"/>
+    <path d="M-5 0.3 H2 M-5 2.2 H4.5 M-5 4 H0" stroke="#5fd8f0" stroke-width="0.9"/>
+    <path d="M-6 7 H-4.6 M-3.4 7 H-2 M-0.8 7 H0.6 M1.8 7 H3.2 M4.4 7 H5.8 M-6 9.5 H-4.6 M-3.4 9.5 H-2 M-0.8 9.5 H0.6 M1.8 9.5 H3.2 M4.4 9.5 H5.8" stroke="#f2c14e" stroke-width="1.1"/>
+    <path d="M-4.5 -7 V-12 M4.5 -7 V-13.5" stroke="#141a22" stroke-width="0.9"/>
+    <circle cx="-4.5" cy="-12.4" r="1.1" fill="#d64045"/><circle cx="4.5" cy="-13.8" r="1.1" fill="#5fd8f0"/>
+    <path d="M-1.5 -7.2 A3 3 0 0 1 1.5 -10 L2.6 -8.8 Z" fill="#e6e9ec" stroke="#141a22" stroke-width="0.6"/>`,
+  computer3: `<defs><radialGradient id="computer3-glow"><stop offset="0" stop-color="#b59cff" stop-opacity="0.85"/><stop offset="0.55" stop-color="#7a5cff" stop-opacity="0.45"/><stop offset="1" stop-color="#5a3cff" stop-opacity="0"/></radialGradient>
+    <linearGradient id="computer3-cyl" x1="0" x2="1"><stop offset="0" stop-color="#8f90c8"/><stop offset="0.35" stop-color="#eef2ff"/><stop offset="0.7" stop-color="#bcb8ee"/><stop offset="1" stop-color="#6e6aa8"/></linearGradient></defs>
+    <circle cx="0" cy="-3" r="14" fill="url(#computer3-glow)"/>
+    <rect x="-11" y="2" width="25" height="12" rx="1" fill="#000" opacity="0.24"/>
+    <path d="M-13 4 L-11 1 H11 L13 4 Z" fill="#59647e" stroke="#12141f" stroke-width="1" stroke-linejoin="round"/>
+    <rect x="-13" y="4" width="26" height="8" rx="1" fill="#2e3348" stroke="#12141f" stroke-width="1.1"/>
+    <path d="M-12 6 H-9.5 M-12 8.5 H-9.5 M-12 11 H-9.5 M9.5 6 H12 M9.5 8.5 H12 M9.5 11 H12" stroke="#a98bff" stroke-width="1.1"/>
+    <path d="M-8.6 7 H-7 M7 7 H8.6 M-8.6 9.6 H-7 M7 9.6 H8.6" stroke="#5fd8f0" stroke-width="1"/>
+    <path d="M-6.5 -8.5 V7 A6.5 2.4 0 0 0 6.5 7 V-8.5 Z" fill="url(#computer3-cyl)" stroke="#1d2036" stroke-width="1.1"/>
+    <ellipse cx="0" cy="-8.5" rx="6.5" ry="2.4" fill="#e4e9fb" stroke="#1d2036" stroke-width="1.1"/>
+    <ellipse cx="0" cy="-8.5" rx="3" ry="1.1" fill="#b8a4ff" stroke="#4a3a9a" stroke-width="0.5"/>
+    <path d="M-6.5 -4 A6.5 2.4 0 0 0 6.5 -4 M-6.5 2 A6.5 2.4 0 0 0 6.5 2" stroke="#7a56ff" stroke-width="2.1" fill="none"/>
+    <path d="M-6.5 -4 A6.5 2.4 0 0 0 6.5 -4 M-6.5 2 A6.5 2.4 0 0 0 6.5 2" stroke="#e6dcff" stroke-width="0.5" fill="none"/>
+    <path d="M-2.2 -2 H2.2 V0.4 H-2.2 Z" fill="#6a4cff" stroke="#2a1d6a" stroke-width="0.6"/><path d="M-1.4 -0.8 H1.4" stroke="#f3eeff" stroke-width="0.9"/><path d="M-2.2 4.4 H2.2 V6.2 H-2.2 Z" fill="#6a4cff" stroke="#2a1d6a" stroke-width="0.5"/>
+    <path d="M-4.6 -7.4 V5.6" stroke="#fff" stroke-width="0.8" opacity="0.75"/>
+    <circle cx="-8.5" cy="1" r="1.1" fill="#eef4ff" opacity="0.8"/><circle cx="8.6" cy="0" r="0.9" fill="#eef4ff" opacity="0.8"/><circle cx="-9.6" cy="-1.4" r="0.7" fill="#eef4ff" opacity="0.7"/>`,
 });
 const SVG = {}, SPR = {}, RAS = {};
 for (const [name, inner] of Object.entries(SHAPES)) {
@@ -1042,7 +1655,7 @@ const game = {
   shipments: [],                   // traded goods on their way (truck, boat or plane)
   flights: [], orbitals: [], supplyRuns: [], shuttles: [], flying: null, stationOrders: [], shipIns: [],
   colonyShips: [], colonyPick: false, colonyFrom: null,
-  dyson: null, bombers: [], ipbms: [],             // the Dyson swarm project; bombers in the air; missiles between worlds   // colony ships on their way to another world; picking where one lands   // rockets in flight, space stations, supply rockets, reusable rockets
+  dyson: null, warp: null, bombers: [], ipbms: [],             // the Dyson swarm project; bombers in the air; missiles between worlds   // colony ships on their way to another world; picking where one lands   // rockets in flight, space stations, supply rockets, reusable rockets
   bridges: [],                     // { s, b, tiles, len }: from your land tile s over the water to land tile b
   warhead: 'conventional',         // what your next missile carries
   wallFrom: -1,                    // the fort you're building a wall from (waiting for you to pick the other)
@@ -2052,7 +2665,7 @@ function aiResearch(n, dt) {
   if (!n.rcur) return;
   // paced by the same things as yours: its people (scientists), its treasury of gold, its research pacts, its computers
   n.rpts += (n.people * CFG.research.perPerson * CFG.research.aiMult * n.pers.research * (treaty('research', n.id) ? 1.1 : 1) * aiCompBoost(n) + goldBoost(((n.stock && n.stock.gold) || 0) / CFG.gold.perRate).research) * MODE().research * dt;
-  const cost = techCost(n.R);
+  const cost = techCost(n.R, n.rcur);
   if (n.rpts >= cost) {
     n.rpts -= cost; n.R.add(n.rcur);
     if (['gunpowder', 'firearms', 'armor', 'rocketry'].includes(n.rcur) && touchesYou(n)) toast(`${n.full} has discovered ${TECH[n.rcur].name}.`);
@@ -2236,7 +2849,7 @@ function aiFire() {
     if (!n.alive || !n.hostile || treaty('truce', n.id)) continue;
     if ((n.iron || 0) < (Wp.cost.iron || 0)) continue;              // can't afford the shot: same price as yours
     const bx = b.i % W + 0.5, by = ((b.i / W) | 0) + 0.5;
-    let tgt = null, bd = Wp.range;
+    let tgt = null, bd = def.weapon === 'shell' ? shellRange(b) : Wp.range;   // better guns reach further
     for (const e of game.expeditions) { const d = Math.hypot(e.x - bx, e.y - by); if (!e.done && d < bd) { bd = d; tgt = [e.x, e.y]; } }
     if (!tgt) {
       yours = yours || game.buildings.filter(q => owner[q.i]);
@@ -3272,7 +3885,7 @@ function nearestCountryTo(tx, ty) {
 // ======================================================================
 const TECH = Object.fromEntries(CFG.techs.map((t, k) => [t.id, { ...t, k }]));
 const isUnlocked = type => { const t = CFG.buildings[type].tech; return !t || game.research.done.has(t); };
-const techCost = R => CFG.research.base * Math.pow(CFG.research.growth, R.size);
+const techCost = (R, id) => CFG.research.base * Math.pow(CFG.research.growth, R.size) * ((id && TECH[id] && TECH[id].costMult) || 1);   // a few techs cost several times more
 // what a tech does, in a few words: the buildings it opens, its effects, the unit it brings
 function techSummary(id) {
   const parts = [];
@@ -3345,6 +3958,18 @@ function goldBoost(g = game.debug ? 0.5 : (game.goldStock ?? treasury()) / CFG.g
   return { train: Math.min(G.trainMax, G.train * r), power: Math.min(G.powerMax, G.power * r), research: g * CFG.research.goldPts };
 }
 // troops: the newest kind your techs allow, and how strong, tough and fast they are (yours get the gold bonus)
+// ---------- guns: range ----------
+// Each gun tech lets troops shoot from further off (and guns on buildings reach further and hit harder). In a fight,
+// the side that outranges the other hits it while it closes in, and takes less in return.
+const GUN_RANGE = { gunpowder: 1, firearms: 2, armor: 1, electronics: 1.5, computing: 1.5, cais: 2 };   // tiles added by each
+const gunRange = (R = game.research.done) => { let r = 0; for (const t in GUN_RANGE) if (R.has(t)) r += GUN_RANGE[t]; return r; };
+const gunTechs = (R = game.research.done) => Object.keys(GUN_RANGE).filter(t => R.has(t)).length;
+const gunMult = (R = game.research.done) => 1 + 0.15 * gunTechs(R);   // guns on buildings: reach and firepower
+const techOfTile = i => (aiOf[i] ? game.nations[aiOf[i] - 1].R || new Set() : game.research.done);
+const turretRange = b => CFG.turret.range * gunMult(techOfTile(b.i));
+const shellRange = b => CFG.weapons.shell.range * gunMult(techOfTile(b.i));
+// the edge one side's range gives it over the other: + for us, - for them (at most +-45%)
+const rangeEdge = (ours, theirs) => clamp((ours - theirs) * 0.07, -0.45, 0.45);
 function unitStats(R = unitTech()) {
   let hp = 1, atk = 1, speed = CFG.military.speed, type = CFG.units[0];
   for (const id of R) {
@@ -3354,7 +3979,7 @@ function unitStats(R = unitTech()) {
   for (const u of CFG.units) if (!u.tech || R.has(u.tech)) type = u;
   const mine = R === game.research.done || R === unitTech();
   if (mine) { const g = goldBoost().power; hp *= 1 + g; atk *= 1 + g; }
-  return { hp, atk, speed, type, power: hp * atk, helm: type.helm };
+  return { hp, atk, speed, type, power: hp * atk, helm: type.helm, range: gunRange(R) };
 }
 // bases and fortresses hold more, and bases train faster, the more you know
 function techFactor(R) {
@@ -3369,7 +3994,7 @@ function researchTick(dt, gold) {
   RS.rate = (researchPeople() + stationPeople() * CFG.station.research) * CFG.research.perPerson * pactBoost();   // people in space are all scientists; research pacts help
   RS.gold = goldBoost(gold).research;
   RS.pts += (RS.rate + RS.gold) * dt;
-  const cost = techCost(RS.done);
+  const cost = techCost(RS.done, RS.cur);
   if (RS.pts >= cost) { RS.pts -= cost; completeTech(RS.cur); }
 }
 function completeTech(id, quiet = false) {
@@ -3386,7 +4011,7 @@ function completeTech(id, quiet = false) {
   if (buildOpen) renderBuildMenu();
 }
 // research progress as a share of the current tech
-const researchFrac = () => { const RS = game.research; return RS.cur ? clamp(RS.pts / techCost(RS.done), 0, 1) : 1; };
+const researchFrac = () => { const RS = game.research; return RS.cur ? clamp(RS.pts / techCost(RS.done, RS.cur), 0, 1) : 1; };
 
 // ---------- route finding ----------
 const gScore = new Float32Array(N), cameFrom = new Int32Array(N);
@@ -4830,7 +5455,7 @@ function launchAttack(n, tx, ty) {
   const bases = opts.filter(o => o.b.type === 'base').sort((p, q) => p.r.len - q.r.len);
   const nearFort = forts.length ? forts[0].r.len : Infinity;
   const order = [...bases.filter(o => o.r.len < nearFort), ...forts, ...bases.filter(o => o.r.len >= nearFort)];
-  const at = { id: attackId++, nation: n.id, tx, ty, units: 0, coming: 0, work: 0, lx: sx, ly: sy, country: T.id, start: 0, far, beach: plan.theirs };
+  const at = { id: attackId++, nation: n.id, tx, ty, units: 0, coming: 0, work: 0, lx: sx, ly: sy, country: T.id, start: 0, far, beach: plan.theirs, kite: !!game.fallback && canFallBack() };
   let left = want;
   for (const o of order) {
     if (left < 1) break;
@@ -4860,12 +5485,14 @@ function stepAttack(at, dt) {
   const eng = Math.min(at.units, foeN, 25 + at.units * 0.5);   // how many meet at the front
   if (foeN >= 0.5) {
     const k = M.kill * dt * eng, home = at.defend ? 1.15 : 1;  // defenders fight on home ground
-    const ourKill = Math.min(foeN, k * us.atk * home / them.hp);
-    const theirKill = Math.min(at.units, k * them.atk * them.def / us.hp);
+    const edge = rangeEdge(us.range, them.range), kite = at.kite ? FALLBACK : null;   // longer guns hit first; falling back, they keep their distance
+    const ourKill = Math.min(foeN, k * us.atk * home / them.hp * (1 + edge) * (kite ? kite.kill : 1));
+    const theirKill = Math.min(at.units, k * them.atk * them.def / us.hp * (1 - edge) * (kite ? kite.hurt : 1));
     if (raid) { raid.budget -= ourKill; raid.killed = (raid.killed || 0) + ourKill; } else n.units -= ourKill;
     n.lost = (n.lost || 0) + ourKill;
     at.units -= theirKill; at.killed = (at.killed || 0) + ourKill; at.lost = (at.lost || 0) + theirKill;
   }
+  if (at.kite) return fallBack(at, dt);            // the fighting withdrawal: no ground taken, they back away while shooting
   if (at.defend && raid) return;                   // first beat the wave; then take back what it took
   const odds = at.units / (at.units + (!at.defend && n.units >= 0.5 ? eng * them.def : 0) + 1e-6);
   at.work += (1.5 + 1.2 * Math.sqrt(at.units)) * odds * dt * Math.sqrt(us.speed / M.speed);
@@ -4954,7 +5581,7 @@ function autoDefend(dt) {
       .filter(o => o.r && o.r.len < 90).sort((p, q) => (q.home - p.home) || (p.b.type === 'fort' ? -1 : 1) - (q.b.type === 'fort' ? -1 : 1) || p.r.len - q.r.len);
     if (!src.length) continue;
     if (!def) {
-      def = { id: attackId++, nation: r.n, tx: r.lx, ty: r.ly, units: 0, coming: 0, work: 0, lx: mx, ly: my, country: T.id, start: 0, defend: true };
+      def = { id: attackId++, nation: r.n, tx: r.lx, ty: r.ly, units: 0, coming: 0, work: 0, lx: mx, ly: my, country: T.id, start: 0, defend: true, kite: !!game.fallback && canFallBack() };
       game.attacks.push(def);
     }
     let left = want;
@@ -5036,6 +5663,29 @@ function nearestFrontierOwned(i) {
   return i;
 }
 // an attack that's over: the survivors go back to the nearest fortress (or base) with room
+// ---------- the fighting withdrawal (Artificial Intelligence): ranged troops back away while they shoot ----------
+// They give no ground of yours and take none of theirs: they keep their distance, still shooting (a little less
+// often), and the enemy, always closing in, barely lands a hit. They stop at the nearest fortress or base.
+const FALLBACK = { kill: 0.8, hurt: 0.3, speed: 0.6 };
+const canFallBack = () => game.research.done.has('cais') && gunRange() > 0;
+function fallBack(at, dt) {
+  const C = liveCountry(at.country);
+  if (!at.home) {
+    const g = garrisons().filter(b => !C || countryAt(b.i) === C).sort((p, q) => tileDist(p.i, at.lx, at.ly) - tileDist(q.i, at.lx, at.ly))[0];
+    at.home = g ? g.i : -1;
+  }
+  if (at.home < 0) { at.done = true; return; }
+  const [hx, hy] = tileCenter(at.home), d = Math.hypot(hx - at.lx, hy - at.ly), step = FALLBACK.speed * dt;
+  if (d <= 1.5) { at.done = true; return; }
+  at.lx += (hx - at.lx) / d * Math.min(step, d); at.ly += (hy - at.ly) / d * Math.min(step, d);
+}
+function setFallBack(on) {
+  if (on && !canFallBack()) { toast(game.research.done.has('cais') ? 'Your troops need guns to fight from a distance.' : `A fighting withdrawal needs ${TECH.cais.name}: your troops' AI keeps them out of reach while they shoot.`); return false; }
+  const live = game.attacks.filter(a => !a.done && a.units + a.coming >= 1);
+  for (const a of live) { a.kite = on; a.home = null; }
+  toast(on ? (live.length ? `${live.length} of your fights fall back while firing: they give no ground and take far fewer losses.` : 'No fight going on right now.') : 'Your troops stop falling back and press on.');
+  return true;
+}
 function endAttack(at) {
   if (at.units >= 1) {
     const C = liveCountry(at.country);
@@ -5415,7 +6065,7 @@ function worldSave() {
         for (const r of RESOURCES) res[r] = c.res[r] + back[c.id][r];
         return { short: c.short, full: c.full, tier: c.tier, alive: c.alive, mergedInto: c.mergedInto, hex: c.hex, sign: c.sign, people: c.people + back[c.id].people, res };
       }),
-      dip: { op: game.dip.op, wars: [...game.dip.wars] }, treaties: game.treaties, alliances: game.alliances, autoDefend: game.autoDefend,
+      dip: { op: game.dip.op, wars: [...game.dip.wars] }, treaties: game.treaties, alliances: game.alliances, autoDefend: game.autoDefend, fallback: !!game.fallback,
       nations: game.nations.map(n => ({ people: n.people, alive: n.alive, hostile: !!n.hostile, iron: n.iron ?? CFG.iron.aiStart, stock: n.stock,
         units: n.units + n._back, R: [...n.R], rpts: n.rpts, pers: n.pers, lastRaid: n.lastRaid ?? null, outposts: n.outposts || null, trades: n.trades || null, war0: n.war0 || null, engaged: !!n.engaged })),
       buildings: game.buildings.map(b => ({ i: b.i, t: b.type, ready: b.ready || 0, units: (b.units || 0) + (homeUnits.get(b.i) || 0), oil: b.oil || 0,
@@ -5434,7 +6084,7 @@ function worldSave() {
         orbitals: game.orbitals,
         shuttles: game.shuttles.map(sh => ({ id: sh.id, w: sh.state === 'fly' ? sh.launchW ?? sh.w : sh.w, c: sh.c, pad: sh.state === 'fly' ? sh.launchAt ?? sh.pad : sh.pad, fuel: sh.state === 'docked' ? sh.fuel : 0, runs: sh.runs, cargo: sh.cargo })),
         returning: game.supplyRuns.map(r => r.cargo),
-        colonyShips: game.colonyShips, dyson: game.dyson, orders: game.stationOrders, shipIns: game.shipIns.map(o => ({ ...o, sh: null })),
+        colonyShips: game.colonyShips, dyson: game.dyson, warp: game.warp ? { ...game.warp, busy: null } : null, orders: game.stationOrders, shipIns: game.shipIns.map(o => ({ ...o, sh: null })),
       },
       runs, cam: { x: cam.x, y: cam.y, zoom: cam.zoom },
     };
@@ -5532,7 +6182,7 @@ function loadGame(sv) {
   if (home) {
     Object.assign(game, { debugSnap: sv.debugSnap || null, murderSet: true, gmode: MODES[sv.gmode] ? sv.gmode : 'normal', debug: !!sv.debug, time: sv.time, peakPop: sv.peakPop, sendPct: sv.sendPct || 25, troopPct: sv.troopPct || 50, recruit: sv.recruit !== false, warhead: sv.warhead || 'conventional' });
     game.dip = { op: (sv.dip && sv.dip.op) || {}, wars: new Set((sv.dip && sv.dip.wars) || []) }; game.treaties = sv.treaties || [];
-    game.alliances = sv.alliances || []; game.autoDefend = sv.autoDefend !== false;
+    game.alliances = sv.alliances || []; game.autoDefend = sv.autoDefend !== false; game.fallback = !!sv.fallback;
     game.fleetTarget = { car: 0, boat: 0, plane: 0, rail: 0, ...(sv.fleetTarget || {}) };
     if (!sv.tv) { if (game.fleetTarget.car >= 4) game.fleetTarget.car++; game.fleetTarget.rail = 9; }   // Caravans slot in before Trucks; old trains keep running as they did
   }
@@ -5548,7 +6198,7 @@ function loadGame(sv) {
     for (const cargo of SP.returning || []) { const st = game.orbitals[0]; if (st && st.nation == null) unloadStation(st, cargo, cargo.people); }
     game.colonyShips = SP.colonyShips || []; game.stationOrders = SP.orders || [];
     game.shipIns = SP.shipIns || []; shipInId = game.shipIns.reduce((m, o) => Math.max(m, o.id), 0);
-    game.dyson = SP.dyson || null; game.bombers = []; game.ipbms = [];
+    game.dyson = SP.dyson || null; game.warp = SP.warp || null; game.bombers = []; game.ipbms = [];
     scanNationTiles();
   }
   buildFronts();
@@ -5636,7 +6286,7 @@ function yourMortars() {
     let tgt = null, best = Infinity;
     for (const q of theirs) {
       const d = tileDist(q.i, bx, by);
-      if (d > Wp.range) continue;
+      if (d > shellRange(b)) continue;
       const def = CFG.buildings[q.type], score = d + (def.weapon || def.defense || def.gun ? 0 : q.type === 'settlement' ? 200 : 100);
       if (score < best) { best = score; tgt = q; }
     }
@@ -5656,8 +6306,8 @@ function gunStep(dt) {
     if (!mine && !aiOf[b.i]) continue;
     const waves = mine ? game.raids : game.attacks, key = mine ? 'budget' : 'units';
     for (const w of waves) {
-      if (w.done || w.lx == null || w[key] <= 0 || (!mine && w.nation !== aiOf[b.i] - 1) || Math.hypot(w.lx - bx, w.ly - by) > T.range) continue;
-      const kill = Math.min(w[key], T.kills * dt * 0.25), cost = kill * T.iron * 4;
+      if (w.done || w.lx == null || w[key] <= 0 || (!mine && w.nation !== aiOf[b.i] - 1) || Math.hypot(w.lx - bx, w.ly - by) > turretRange(b)) continue;
+      const kill = Math.min(w[key], T.kills * dt * 0.25 * gunMult(techOfTile(b.i))), cost = kill * T.iron * 4;
       if (mine) { const C = countryAt(b.i); if (!C || C.res.iron < cost) break; C.res.iron -= cost; }
       else { const n = game.nations[aiOf[b.i] - 1]; if (!n.alive || (n.iron || 0) < cost) break; n.iron -= cost; }
       w[key] -= kill;
@@ -7077,6 +7727,9 @@ function drawLockHover(z) {
   canvas.style.cursor = 'pointer';
 }
 
+// a building's look: its type, or for the central computer the level it's been upgraded to
+const COMP_SPR = ['computer', 'computer2', 'computer3', 'computerAI'];
+const spriteOf = b => (b.type === 'computer' ? COMP_SPR[clamp(b.lvl || 0, 0, 3)] : b.type);
 function drawSprite(name, wx, wy, sizePx, alpha = 1) {
   const ras = RAS[name];
   if (!ras) return;
@@ -7370,56 +8023,150 @@ function drawTroops(z) {
 // itself to the sun and spends a while building the swarm. From then on every Dyson receiver, on any world, pours
 // out power. game.dyson: { stage: 'none'|'building'|'ready'|'flying'|'swarming'|'done', pad, t, T, x, y }
 const DYSON = { cost: { iron: 4000, stone: 2500, uranium: 400, oil: 1200, silicon: 400, chips: 150, cobalt: 120 }, build: 90, fly: 40, swarm: 120 };
-function dysonStage() { return (game.dyson && game.dyson.stage) || 'none'; }
-function buildDysonRocket(b) {
-  if (needsComputer('The Dyson swarm rocket')) return;
-  const C = countryAt(b.i), miss = missingFor(DYSON.cost, C);
-  if (dysonStage() !== 'none') return toast('There is already a Dyson swarm rocket');
-  if (miss) return toast(`The Dyson swarm rocket needs ${costText(DYSON.cost)}: ${C.short} is short of ${miss}`);
-  for (const r in DYSON.cost) C.res[r] -= DYSON.cost[r];
-  game.dyson = { stage: 'building', pad: b.i, t: 0, T: DYSON.build };
-  if (b.rocket) { b.rocket = null; }
-  toast(`Work has begun on the Dyson swarm rocket at ${C.short}'s launch pad: ${DYSON.build} s.`);
-}
-function launchDyson() {
+// ---------- megaprojects: the Dyson swarm and the Alcubierre drive ----------
+// Both are assembled in space a rocketload at a time. A launch pad sends its loads up as its domain can pay for them
+// (each run costs a tenth or so of the whole); the structure grows from a bare frame to the finished thing.
+// The swarm is built round the sun. The drive is built in orbit round the world its launch pad is on, and stays in
+// orbit round whichever world it last carried a rocket to.
+// game.dyson / game.warp: { stage: 'building'|'done'|'ready', pad, padW, w, runs, run: { leg, t, T } | null, ang, short }
+const MEGA = {
+  dyson: { name: 'Dyson swarm', cost: DYSON.cost, runs: 10, out: 16, back: 10 },
+  warp:  { name: 'Alcubierre drive', cost: { iron: 3500, stone: 1500, cobalt: 700, chips: 900, silicon: 700, uranium: 450, gold: 600 }, runs: 8, out: 7, back: 6 },
+};
+const megaOf = k => (k === 'dyson' ? game.dyson : game.warp);
+const megaFrac = k => { const M = megaOf(k); return !M ? 0 : M.stage === 'building' ? clamp(M.runs / MEGA[k].runs, 0, 1) : 1; };
+const megaChunk = k => Object.fromEntries(Object.entries(MEGA[k].cost).map(([r, n]) => [r, Math.ceil(n / MEGA[k].runs)]));
+const worldAnchor = w => (w && LOCK[WORLDS[w].body] ? LOCK[WORLDS[w].body].pos().slice(0, 2) : [DISK.cx, DISK.cy]);
+const worldOrbitR = w => (w && LOCK[WORLDS[w].body] ? LOCK[WORLDS[w].body].r() * 2.2 + 8 : DISK.R * 1.16);
+function dysonStage() { const D = game.dyson; if (!D) return 'none'; normalizeDyson(); return D.stage; }
+// saves from before: the rocket built on the pad and flown to the sun becomes this many loads delivered
+function normalizeDyson() {
   const D = game.dyson;
+  if (!D || D.runs != null) return;
+  const done = D.stage === 'done', part = D.stage === 'swarming' ? 5 + Math.floor(clamp(D.t / D.T, 0, 1) * 5) : D.stage === 'building' ? Math.floor(clamp(D.t / D.T, 0, 1) * 6) : 7;
+  Object.assign(D, { stage: done ? 'done' : 'building', padW: 0, w: 0, runs: done ? MEGA.dyson.runs : part, run: null, ang: 0 });
+}
+function megaPos(k) {                              // where it hangs in space, in home's coordinates
+  const M = megaOf(k);
+  if (k === 'dyson') return sunPos().slice(0, 2);
+  const [cx, cy] = worldAnchor(M.w), r = worldOrbitR(M.w), a = (M.ang || 0) + game.time * 0.04;
+  return [cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.85];
+}
+function startMega(k, b) {
+  const K = MEGA[k], M = megaOf(k);
+  if (needsComputer(`The ${K.name}`)) return false;
+  if (M && M.stage !== 'building') return toast(`You already have the ${K.name}.`), false;
+  if (M) { M.pad = b.i; M.padW = WORLD; M.short = null; toast(`The ${K.name}'s loads now go up from this launch pad.`); return true; }
+  const st = { stage: 'building', pad: b.i, padW: WORLD, w: WORLD, runs: 0, run: null, ang: Math.random() * Math.PI * 2 };
+  if (k === 'dyson') game.dyson = st; else game.warp = st;
+  toast(`Work begins on the ${K.name}: ${K.runs} rocketloads of ${costText(megaChunk(k))} each, ${k === 'dyson' ? 'flown to the sun' : `assembled in orbit round ${WORLDS[WORLD].name}`}.`);
+  return true;
+}
+function stepMega(k, dt) {
+  const M = megaOf(k), K = MEGA[k];
+  if (k === 'dyson') normalizeDyson();
+  if (!M || M.stage !== 'building') return;
+  if (M.run) {
+    M.run.t += dt;
+    if (M.run.t < M.run.T) return;
+    if (M.run.leg === 'out') {                     // a load delivered: the structure grows
+      M.runs++;
+      M.run = { leg: 'back', t: 0, T: K.back };
+      M.flash = game.time;
+      if (M.runs >= K.runs) {
+        M.run = null;
+        if (k === 'dyson') { M.stage = 'done'; notify('☀ The Dyson swarm is complete', 'Millions of mirrors circle the sun. Every Dyson receiver you build, on any world, now pours out power.'); }
+        else { M.stage = 'ready'; notify('🌀 The Alcubierre drive is ready', `It waits in orbit round ${WORLDS[M.w].name}. A reusable rocket or colony ship bound further than it can fly docks with it and arrives almost at once.`); }
+      }
+    } else M.run = null;
+    return;
+  }
+  if (!worldGenerated(M.padW) && M.padW) return;
+  const res = onWorld(M.padW, () => {              // the next load, from the launch pad's domain
+    const b = buildingAt(M.pad);
+    if (!b || b.type !== 'pad' || !owner[b.i] || underway(b)) return 'its launch pad is gone: pick another pad';
+    const C = countryAt(b.i), ch = megaChunk(k), miss = missingFor(ch, C);
+    if (miss) return `waiting for ${miss}`;
+    for (const r in ch) C.res[r] -= ch[r];
+    return 'go';
+  });
+  if (res !== 'go') { M.short = res; return; }
+  M.short = null;
+  M.run = { leg: 'out', t: 0, T: K.out };
+}
+function stepDyson(dt) { stepMega('dyson', dt); stepMega('warp', dt); stepWarpUsers(); }
+const dysonPower = () => (dysonStage() === 'done' ? 1 : dysonStage() === 'building' ? megaFrac('dyson') * 0.5 : 0);   // half power while it's built
+function buildDysonRocket(b) { return startMega('dyson', b); }
+function launchDyson() { /* the swarm needs no launch any more: it is built in place */ }
+function buildWarp(b) { return startMega('warp', b); }
+// where a supply run is, in home's coordinates
+function megaRunPos(k, lead = 0) {
+  const M = megaOf(k), R = M.run, u = clamp((R.t + lead) / R.T, 0, 1), e = u * u * (3 - 2 * u);
+  const pad = M.padW ? worldAnchor(M.padW) : tileCenter(M.pad), to = megaPos(k);
+  const [ax, ay] = R.leg === 'out' ? pad : to, [bx, by] = R.leg === 'out' ? to : pad;
+  let x = lerp(ax, bx, e), y = lerp(ay, by, e);
+  const dx = x - DISK.cx, dy = y - DISK.cy, d = Math.hypot(dx, dy) || 1, bow = Math.sin(Math.PI * u) * (k === 'dyson' ? 140 : 50);
+  return [x + dx / d * bow, y + dy / d * bow];
+}
+// ---------- the Alcubierre drive at work ----------
+// A rocket bound further than it can fly (any kind: a colony ship, or a reusable rocket of any mark) rises to the
+// drive, docks, and the drive folds space: both appear in orbit round the destination, the rocket casts off and
+// lands. The drive stays there until the next rocket needs it.
+const WARP = { trip: 11, dockAt: 0.36, jumpAt: 0.5, castAt: 0.62 };
+const warpFree = (w, me = null) => { const D = game.warp; return !!D && D.stage === 'ready' && D.w === w && (D.busy == null || D.busy === me); };
+const warpUsers = () => [...game.shuttles.filter(sh => sh.state === 'fly' && sh.plan[0] && sh.plan[0].warp).map(sh => ({ o: sh, u: sh.t / sh.T, to: sh.plan[0].w || 0 })),
+  ...game.colonyShips.filter(c => c.warp && !c.done).map(c => ({ o: c, u: c.t / c.T, to: c.w }))];
+function stepWarpUsers() {
+  const D = game.warp;
   if (!D || D.stage !== 'ready') return;
-  if (needsComputer('The Dyson swarm rocket')) return;
-  const [x, y] = tileCenter(D.pad);
-  Object.assign(D, { stage: 'flying', t: 0, T: DYSON.fly, x0: x, y0: y });
-  toast('The Dyson swarm rocket is away, flying itself to the sun.');
+  const U = warpUsers()[0];
+  if (!U) { D.busy = null; D.jump = null; return; }
+  D.busy = U.o.id ?? 'colony';
+  if (U.u >= WARP.jumpAt && !U.o.jumped) {          // the jump: the drive and its rocket are now at the destination
+    U.o.jumped = true;
+    D.from = D.w; D.w = U.to; D.jump = game.time;
+    toast(`The Alcubierre drive folds space: ${WORLDS[D.from].name} to ${WORLDS[U.to].name} in a blink.`);
+  }
+  if (U.u >= WARP.castAt + 0.06) D.busy = null;
 }
-function stepDyson(dt) {
-  const D = game.dyson;
-  if (!D || D.stage === 'done' || D.stage === 'ready' || D.stage === 'none') return;
-  if (D.stage === 'building' && !buildingAt(D.pad)) { game.dyson = null; toast('The launch pad was lost, and the Dyson rocket with it.'); return; }
-  if (D.stage === 'building' && onWorld(0, () => padBusy(buildingAt(D.pad)))) return;   // a reusable rocket has the pad: work waits
-  D.t += dt;
-  if (D.t < D.T) return;
-  if (D.stage === 'building') { D.stage = 'ready'; toast('The Dyson swarm rocket is ready: launch it from its launch pad.'); }
-  else if (D.stage === 'flying') { Object.assign(D, { stage: 'swarming', t: 0, T: DYSON.swarm }); toast('The rocket has reached the sun and is unfolding the swarm.'); }
-  else if (D.stage === 'swarming') { D.stage = 'done'; notify('☀ The Dyson swarm is complete', 'Millions of mirrors circle the sun. Every Dyson receiver you build, on any world, now pours out power.'); }
+// a rocket's way through the drive: up to it, docked through the jump, then down from it at the far end
+function warpPath(fromPt, toPt, u, D) {
+  const at = megaPos('warp');
+  if (u < WARP.dockAt) { const e = u / WARP.dockAt, f = e * e * (3 - 2 * e); return [lerp(fromPt[0], at[0], f), lerp(fromPt[1], at[1], f)]; }
+  if (u < WARP.castAt) return at;
+  const e = (u - WARP.castAt) / (1 - WARP.castAt), f = e * e;
+  return [lerp(at[0], toPt[0], f), lerp(at[1], toPt[1], f)];
 }
-const dysonPower = () => dysonStage() === 'done' ? 1 : dysonStage() === 'swarming' ? clamp(game.dyson.t / game.dyson.T, 0, 1) * 0.5 : 0;
-function dysonRocketPos(lead = 0) {
-  const D = game.dyson, u = clamp((D.t + lead) / D.T, 0, 1), [sx, sy] = sunPos(), e = u * u * (3 - 2 * u);
-  return [lerp(D.x0, sx, e), lerp(D.y0, sy, e)];
-}
-// the swarm: mirrors in rings round the sun, more of them as it's built
+// ---------- drawing the megaprojects ----------
 function drawDyson(z) {
+  for (const k of ['dyson', 'warp']) { const M = megaOf(k); if (M && M.run) { const [x, y] = megaRunPos(k), [x2, y2] = megaRunPos(k, 0.05); drawMovingRocket(x, y, x2, y2, z * 1.5, 'rocket', M.run.leg === 'back' && M.run.t / M.run.T > 0.75); } }
+  drawSwarm(z);
+  drawWarp(z);
+  drawReceiverBeams(z);
+}
+function drawSwarm(z) {
   const D = game.dyson;
   if (!D) return;
-  if (D.stage === 'flying') { const [x, y] = dysonRocketPos(), [x2, y2] = dysonRocketPos(0.05); drawMovingRocket(x, y, x2, y2, z * 1.6, 'rocket'); return; }
-  if (D.stage !== 'swarming' && D.stage !== 'done') return;
-  const [cx, cy] = sunPos(), [sx, sy] = toScreen(cx, cy), R = Math.max(6, SUN.r * z), frac = D.stage === 'done' ? 1 : clamp(D.t / D.T, 0, 1);
+  normalizeDyson();
+  const [cx, cy] = sunPos(), [sx, sy] = toScreen(cx, cy), R = Math.max(6, SUN.r * z), frac = megaFrac('dyson'), done = D.stage === 'done';
   if (sx < -R * 3 || sy < -R * 3 || sx > cw + R * 3 || sy > ch + R * 3) return;
-  // three tilted bands of mirrors, each filling in round the sun as the swarm is built; a soft glow where they are
   for (let ring = 0; ring < 3; ring++) {
     const rx = R * (1.45 + ring * 0.28), ry = rx * (0.32 + ring * 0.12), rot = -0.5 + ring * 0.55, spin = game.time * (0.12 - ring * 0.03);
-    const n = Math.max(24, Math.floor(rx * 0.9)), shown = Math.floor(n * frac);
+    const n = Math.max(24, Math.floor(rx * 0.9)), rf = clamp(frac * 3 - ring * 0.6, 0, 1), shown = Math.floor(n * (done ? 1 : rf));
     ctx.save(); ctx.translate(sx, sy); ctx.rotate(rot);
-    ctx.strokeStyle = `rgba(255,200,110,${0.10 + 0.12 * frac})`; ctx.lineWidth = Math.max(1.5, R * 0.08);
-    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, spin, spin + Math.PI * 2 * frac); ctx.stroke();
+    if (!done) {                                   // the frame: a thin grey scaffold all the way round, mirrors fill it in
+      ctx.setLineDash([Math.max(2, R * 0.06), Math.max(3, R * 0.09)]);
+      ctx.strokeStyle = 'rgba(170,180,195,0.45)'; ctx.lineWidth = Math.max(1, R * 0.025);
+      ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+      for (let q = 0; q < 12; q++) {               // struts out from the sun to the frame
+        const a = q / 12 * Math.PI * 2, px = Math.cos(a) * rx, py = Math.sin(a) * ry;
+        if (py < 0 && Math.hypot(px, py) < R * 1.05) continue;
+        ctx.strokeStyle = 'rgba(150,160,175,0.35)'; ctx.lineWidth = Math.max(0.6, R * 0.012);
+        ctx.beginPath(); ctx.moveTo(px * 0.92, py * 0.92); ctx.lineTo(px, py); ctx.stroke();
+      }
+    }
+    ctx.strokeStyle = `rgba(255,200,110,${0.10 + 0.14 * (done ? 1 : rf)})`; ctx.lineWidth = Math.max(1.5, R * 0.08);
+    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, spin, spin + Math.PI * 2 * (done ? 1 : rf)); ctx.stroke();
     const s2 = Math.max(1, R * 0.03);
     for (let k = 0; k < shown; k++) {
       const a = spin + (k / n) * Math.PI * 2, px = Math.cos(a) * rx, py = Math.sin(a) * ry, glint = 0.5 + 0.5 * Math.sin(game.time * 2.5 + k * 1.7);
@@ -7427,9 +8174,152 @@ function drawDyson(z) {
       ctx.fillStyle = `rgba(255,${Math.round(205 + glint * 50)},${Math.round(130 + glint * 110)},${0.6 + 0.4 * glint})`;
       ctx.fillRect(px - s2, py - s2 * 0.6, s2 * 2, s2 * 1.2);
     }
+    if (!done && shown > 0 && shown < n) {          // the build front: welding sparks where the newest mirrors go on
+      const a = spin + (shown / n) * Math.PI * 2, px = Math.cos(a) * rx, py = Math.sin(a) * ry;
+      for (let q = 0; q < 5; q++) { const f = (game.time * 3 + q * 0.37) % 1; ctx.fillStyle = `rgba(255,240,200,${1 - f})`; ctx.beginPath(); ctx.arc(px + Math.cos(q * 2.1) * f * R * 0.12, py + Math.sin(q * 2.1) * f * R * 0.12, Math.max(0.8, R * 0.02), 0, Math.PI * 2); ctx.fill(); }
+    }
     ctx.restore();
   }
-  if (z * SUN.r < 40 && frac > 0) pill(sx, sy - R * 2.1, D.stage === 'done' ? 'Dyson swarm' : `Dyson swarm ${Math.floor(frac * 100)}%`, { size: 10, fg: '#f2c14e' });
+  if (done) {                                      // a finished swarm hums: a slow golden halo
+    const g = ctx.createRadialGradient(sx, sy, R, sx, sy, R * 2.6), p = 0.10 + 0.05 * Math.sin(game.time * 1.4);
+    g.addColorStop(0, `rgba(255,210,120,${p})`); g.addColorStop(1, 'rgba(255,210,120,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx, sy, R * 2.6, 0, Math.PI * 2); ctx.fill();
+  }
+  if (z * SUN.r < 40) pill(sx, sy - R * 2.1, done ? 'Dyson swarm' : `Dyson swarm: under construction ${Math.floor(frac * 100)}%${D.short ? ' · ' + D.short : ''}`, { size: 10, fg: '#f2c14e' });
+}
+// The Alcubierre drive: a great tilted warp ring round a docking spine, two exotic-matter pods at its ends.
+// Under construction: a bare scaffold, ring segments bolted on as loads arrive, sparks and blinking work lights.
+// Ready: the ring glows blue-violet and hums. A rocket docking: clamps close round it; the jump: a flash and
+// ripples of folded space; casting off: clamps open and the rocket drifts free.
+function drawWarp(z) {
+  const D = game.warp;
+  if (!D) return;
+  const [wx, wy] = megaPos("warp"), [sx, sy] = toScreen(wx, wy), s = clamp(z * 9, 34, 160);
+  if (sx < -s * 3 || sy < -s * 3 || sx > cw + s * 3 || sy > ch + s * 3) return;
+  const U = warpUsers()[0], frac = megaFrac('warp'), ready = D.stage === 'ready';
+  let clamp01 = 0, docked = null;
+  if (U && ready) {
+    const u = U.u;
+    clamp01 = u < WARP.dockAt - 0.06 ? 0 : u < WARP.dockAt ? (u - (WARP.dockAt - 0.06)) / 0.06 : u < WARP.castAt ? 1 : u < WARP.castAt + 0.06 ? 1 - (u - WARP.castAt) / 0.06 : 0;
+    if (u >= WARP.dockAt - 0.02 && u < WARP.castAt) docked = U.o.kit ? 'rocket' : 'shuttle';
+  }
+  drawWarpDrive(ctx, sx, sy, s, { frac, ready, clamp: clamp01, docked, t: game.time, jump: D.jump ? game.time - D.jump : 99 });
+  if (z < 4) pill(sx, sy + s * 0.75, ready ? `Alcubierre drive · over ${WORLDS[D.w].short}` : `Alcubierre drive: under construction ${Math.floor(frac * 100)}%${D.short ? ' · ' + D.short : ''}`, { size: 10, fg: ready ? '#b9a6ff' : '#f2c14e' });
+}
+function drawWarpDrive(g, x, y, s, o) {
+  const t = o.t, built = o.ready ? 1 : o.frac, lit = o.ready ? 1 : 0;
+  g.save(); g.translate(x, y); g.rotate(-0.28 + (cam.rot || 0));
+  const rx = s * 0.62, ry = s * 0.24, spin = t * (o.ready ? 0.9 : 0.15) + (o.jump < 1.2 ? (1.2 - o.jump) * 18 : 0);
+  // the aura of a working drive (and the shock of a jump)
+  if (lit) {
+    const pulse = 0.55 + 0.25 * Math.sin(t * 2.2);
+    const a = g.createRadialGradient(0, 0, s * 0.05, 0, 0, s * 0.95);
+    a.addColorStop(0, `rgba(150,120,255,${0.32 * pulse})`); a.addColorStop(0.5, `rgba(70,190,255,${0.14 * pulse})`); a.addColorStop(1, 'rgba(70,190,255,0)');
+    g.fillStyle = a; g.beginPath(); g.ellipse(0, 0, s * 0.95, s * 0.6, 0, 0, Math.PI * 2); g.fill();
+  }
+  if (o.jump < 1.6) {                              // folded space: ripples racing out, and a white flash
+    for (let q = 0; q < 4; q++) {
+      const f = clamp(o.jump * 1.4 - q * 0.18, 0, 1);
+      if (f <= 0 || f >= 1) continue;
+      g.strokeStyle = `rgba(200,180,255,${(1 - f) * 0.8})`; g.lineWidth = Math.max(1, s * 0.03 * (1 - f));
+      g.beginPath(); g.ellipse(0, 0, rx * (1 + f * 2.2), ry * (1 + f * 2.2), 0, 0, Math.PI * 2); g.stroke();
+    }
+    const fl = clamp(1 - o.jump * 2.2, 0, 1);
+    if (fl > 0) { const w = g.createRadialGradient(0, 0, 0, 0, 0, s * 1.2); w.addColorStop(0, `rgba(255,255,255,${fl})`); w.addColorStop(1, 'rgba(200,180,255,0)'); g.fillStyle = w; g.beginPath(); g.arc(0, 0, s * 1.2, 0, Math.PI * 2); g.fill(); }
+  }
+  // the scaffold (only while it's built): a dashed frame where the ring will be, and work lights
+  if (!o.ready) {
+    g.setLineDash([Math.max(2, s * 0.04), Math.max(2, s * 0.04)]); g.strokeStyle = 'rgba(160,170,185,0.55)'; g.lineWidth = Math.max(1, s * 0.012);
+    g.beginPath(); g.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); g.stroke(); g.setLineDash([]);
+    for (let q = 0; q < 10; q++) { const a = q / 10 * Math.PI * 2, on = Math.sin(t * 4 + q * 1.3) > 0.3; g.fillStyle = on ? '#ffb347' : 'rgba(120,90,50,0.6)'; g.beginPath(); g.arc(Math.cos(a) * rx, Math.sin(a) * ry, Math.max(1, s * 0.016), 0, Math.PI * 2); g.fill(); }
+  }
+  // the warp ring: the far half first (behind the spine), in segments bolted on as they arrive
+  const SEG = 16, have = Math.round(SEG * built);
+  const ringSeg = (front) => {
+    for (let q = 0; q < SEG; q++) {
+      if (q >= have) continue;
+      const a0 = q / SEG * Math.PI * 2 + spin * (o.ready ? 0 : 0), a1 = a0 + Math.PI * 2 / SEG * 0.86, mid = (a0 + a1) / 2;
+      if ((Math.sin(mid) > 0) !== front) continue;
+      g.strokeStyle = '#2a3140'; g.lineWidth = s * 0.075; g.lineCap = 'butt';
+      g.beginPath(); g.ellipse(0, 0, rx, ry, 0, a0, a1); g.stroke();
+      g.strokeStyle = o.ready ? '#7d8aa3' : '#8c95a3'; g.lineWidth = s * 0.05;
+      g.beginPath(); g.ellipse(0, 0, rx, ry, 0, a0, a1); g.stroke();
+      if (o.ready) {                               // the energised inner face, flowing round
+        const f = 0.5 + 0.5 * Math.sin(t * 3 - q * 0.8 + spin * 2);
+        g.strokeStyle = `rgba(${Math.round(120 + 80 * f)},${Math.round(150 + 60 * f)},255,${0.55 + 0.45 * f})`; g.lineWidth = s * 0.022;
+        g.beginPath(); g.ellipse(0, 0, rx * 0.97, ry * 0.93, 0, a0, a1); g.stroke();
+      }
+    }
+  };
+  ringSeg(false);
+  // the spine and docking cradle through the middle
+  g.fillStyle = '#3a4352'; g.fillRect(-s * 0.5, -s * 0.03, s, s * 0.06);
+  g.fillStyle = '#5b6676'; g.fillRect(-s * 0.5, -s * 0.03, s, s * 0.018);
+  for (const side of [-1, 1]) {                    // exotic-matter pods at the ends of the spine
+    const px = side * s * 0.53;
+    g.fillStyle = '#262c37'; g.beginPath(); g.ellipse(px, 0, s * 0.07, s * 0.05, 0, 0, Math.PI * 2); g.fill();
+    if (built >= (side < 0 ? 0.3 : 0.7)) {
+      const p = o.ready ? 0.6 + 0.4 * Math.sin(t * 3 + side) : 0.25;
+      const pg = g.createRadialGradient(px, 0, 0, px, 0, s * 0.09); pg.addColorStop(0, `rgba(230,220,255,${p})`); pg.addColorStop(1, 'rgba(140,110,255,0)');
+      g.fillStyle = pg; g.beginPath(); g.arc(px, 0, s * 0.09, 0, Math.PI * 2); g.fill();
+    }
+  }
+  // the docked rocket, lying in the cradle
+  if (o.docked && RAS[o.docked]) { g.save(); g.rotate(Math.PI / 2); const rs = s * 0.34; g.drawImage(RAS[o.docked][rs * dpr > 44 ? 0 : 1], -rs / 2, -rs / 2, rs, rs); g.restore(); }
+  // the clamps: open (angled out) to closed (hugging the cradle)
+  if (built >= 0.5) for (const side of [-1, 1]) for (const end of [-1, 1]) {
+    const ang = (1 - o.clamp) * 0.9 * side;
+    g.save(); g.translate(end * s * 0.11, side * s * 0.035); g.rotate(ang);
+    g.fillStyle = o.clamp > 0.95 ? '#9fe0ff' : '#aab4c2'; g.fillRect(-s * 0.012, 0, s * 0.024, side * s * 0.075);
+    g.restore();
+  }
+  ringSeg(true);                                   // the near half, over the spine
+  if (!o.ready && built < 1 && have < SEG) {        // sparks at the newest segment
+    const a = (have + 0.5) / SEG * Math.PI * 2, px = Math.cos(a) * rx, py = Math.sin(a) * ry;
+    for (let q = 0; q < 6; q++) { const f = (t * 3.3 + q * 0.29) % 1; g.fillStyle = `rgba(255,236,180,${1 - f})`; g.beginPath(); g.arc(px + Math.cos(q * 2.3) * f * s * 0.08, py + Math.sin(q * 2.3) * f * s * 0.08, Math.max(0.8, s * 0.012), 0, Math.PI * 2); g.fill(); }
+  }
+  g.restore();
+}
+// receivers catching the swarm's power: a beam from the sun down to each one, and a glow round its dish
+function drawReceiverBeams(z) {
+  if (dysonPower() <= 0) return;
+  const [ux, uy] = sunPos(), [sx0, sy0] = toScreen(ux, uy), p = dysonPower();
+  for (const b of game.buildings) {
+    if (b.type !== 'receiver' || !owner[b.i] || underway(b)) continue;
+    const [bx, by] = toScreen(...tileCenter(b.i));
+    if (bx < -50 || by < -50 || bx > cw + 50 || by > ch + 50) continue;
+    const gr = ctx.createLinearGradient(sx0, sy0, bx, by), f = 0.5 + 0.5 * Math.sin(game.time * 5 + b.i);
+    gr.addColorStop(0, `rgba(255,220,140,${0.05 * p})`); gr.addColorStop(0.85, `rgba(255,230,160,${(0.25 + 0.2 * f) * p})`); gr.addColorStop(1, `rgba(255,255,230,${0.9 * p})`);
+    ctx.strokeStyle = gr; ctx.lineWidth = Math.max(2, z * 0.5); ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(bx, by); ctx.stroke();
+    ctx.strokeStyle = `rgba(255,255,240,${0.6 * p})`; ctx.lineWidth = Math.max(1, z * 0.15); ctx.beginPath(); ctx.moveTo(sx0 + (bx - sx0) * 0.9, sy0 + (by - sy0) * 0.9); ctx.lineTo(bx, by); ctx.stroke();
+    drawReceiverGlow(bx, by, z, p);
+  }
+}
+function drawReceiverGlow(bx, by, z, p) {
+  const r = Math.max(10, z * 1.6), f = 0.5 + 0.5 * Math.sin(game.time * 4);
+  const gl = ctx.createRadialGradient(bx, by, 0, bx, by, r * 1.6);
+  gl.addColorStop(0, `rgba(255,250,210,${0.7 * p})`); gl.addColorStop(0.4, `rgba(255,200,110,${0.3 * p})`); gl.addColorStop(1, 'rgba(255,200,110,0)');
+  ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(bx, by, r * 1.6, 0, Math.PI * 2); ctx.fill();
+  for (let q = 0; q < 3; q++) {                    // power rippling out from the dish
+    const k = (game.time * 0.8 + q / 3) % 1;
+    ctx.strokeStyle = `rgba(255,230,150,${(1 - k) * 0.6 * p})`; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(bx, by, r * (0.6 + k * 1.4), r * (0.3 + k * 0.7), 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  void f;
+}
+// on another world: the beam comes straight down out of the sky
+function drawReceiverSkyBeams(z) {
+  if (!WORLD || dysonPower() <= 0) return;
+  const p = dysonPower();
+  for (const b of game.buildings) {
+    if (b.type !== 'receiver' || !owner[b.i] || underway(b)) continue;
+    const [bx, by] = toScreen(...tileCenter(b.i));
+    if (bx < -50 || by < -50 || bx > cw + 50 || by > ch + 50) continue;
+    const top = Math.max(-40, by - ch), gr = ctx.createLinearGradient(bx, top, bx, by);
+    gr.addColorStop(0, 'rgba(255,220,140,0)'); gr.addColorStop(1, `rgba(255,250,210,${0.85 * p})`);
+    ctx.fillStyle = gr; const w = Math.max(3, z * 0.45); ctx.fillRect(bx - w / 2, top, w, by - top);
+    drawReceiverGlow(bx, by, z, p);
+  }
 }
 
 // ---------- nuclear bombers: from an airport, anywhere on this world; terribly expensive, and easy to shoot down ----------
@@ -8066,9 +8956,11 @@ function pickColonySite(t) {
   C.people -= COLONY.people;
   b.rocket = null;
   const [fx, fy] = tileCenter(b.i);
-  game.colonyShips.push({ w: F.w, tx, ty, n: COLONY.people, kit: { ...COLONY.kit }, t: 0, T: WORLDS[F.w].trip, fx, fy, from: WORLD });
+  const warp = warpFree(WORLD) && WORLDS[F.w].trip > 40;   // a long way: through the Alcubierre drive, if it's here
+  game.colonyShips.push({ w: F.w, tx, ty, n: COLONY.people, kit: { ...COLONY.kit }, t: 0, T: warp ? WARP.trip : WORLDS[F.w].trip, fx, fy, from: WORLD, warp });
+  if (warp) game.warp.busy = 'colony';
   floatText(fx, fy - 1.5, `Colony ship to ${WORLDS[F.w].short}!`, '#f2c14e');
-  toast(`The colony ship is on its way to ${WORLDS[F.w].name}: ${WORLDS[F.w].trip} s.`);
+  toast(warp ? `The colony ship docks with the Alcubierre drive: ${WORLDS[F.w].name} in ${WARP.trip} s.` : `The colony ship is on its way to ${WORLDS[F.w].name}: ${WORLDS[F.w].trip} s.`);
   game.colonyFrom = null;
 }
 function stepColonyShips(dt) {
@@ -8112,6 +9004,7 @@ function stepColonyShips(dt) {
 function colonyShipPos(s, lead = 0) {
   const P = WORLDS[s.w], body = LOCK[P.body], u = clamp((s.t + lead) / s.T, 0, 1);
   const [bx, by] = body ? body.pos() : [DISK.cx + DISK.R * 4, DISK.cy];
+  if (s.warp && game.warp) return warpPath([s.fx, s.fy], [bx, by], u, game.warp);
   const e = u * u * (3 - 2 * u);
   let x = lerp(s.fx, bx, e), y = lerp(s.fy, by, e);
   const dx = x - DISK.cx, dy = y - DISK.cy, d = Math.hypot(dx, dy) || 1, bow = Math.sin(Math.PI * u) * 120;
@@ -8561,12 +9454,12 @@ function planShuttle(sh) {
   const plan = [], load = {};
   let people = 0, st = null, room = cap;
   // an order for materials from another of your worlds comes first
-  const ord = game.shipIns.find(o => o.from === sh.w && o.src === sh.c && o.sh == null && canReachWorld(sh, o.to || o.from));
+  const ord = game.shipIns.find(o => o.from === sh.w && o.src === sh.c && o.sh == null && (canReachWorld(sh, o.to || o.from) || warpFree(sh.w)));
   if (ord) {
     for (const r in ord.res) { const k = Math.floor(Math.min(ord.res[r], room, Math.max(0, C.res[r]))); if (k >= 1) { load[r] = k; room -= k; } }
     if (boxSum(load) >= 1) {
       ord.sh = sh.id;
-      plan.push({ w: ord.to, i: ord.lpad, leg: 'trip', order: ord.id, ...(sh.w ? { from: sh.w } : {}), ...(ord.to === 0 ? { home: true } : {}) });
+      plan.push({ w: ord.to, i: ord.lpad, leg: 'trip', order: ord.id, ...(sh.w ? { from: sh.w } : {}), ...(ord.to === 0 ? { home: true } : {}), ...(!canReachWorld(sh, ord.to || ord.from) ? { warp: true } : {}) });
       return { plan, load, people: 0, fuel: L.trip };
     }
   }
@@ -8581,7 +9474,7 @@ function planShuttle(sh) {
     // a colony that needs goods: the one shortest of things home has plenty of
     let col = null, cs = 0;
     for (const P of WORLDS.slice(1)) for (const { b, c } of [...worldBuildings(P.id, 'lpad'), ...worldBuildings(P.id, 'pad')]) {
-      if (!canReachWorld(sh, P.id)) continue;      // out of this rocket's range: upgrade it (or the computer steering it)
+      if (!canReachWorld(sh, P.id) && !warpFree(sh.w)) continue;      // out of this rocket's range: upgrade it, or dock with the Alcubierre drive
       const D = worldCountry(P.id, c);
       if (!D || !D.alive) continue;
       const sc = shortages(D).reduce((t, [r, n]) => t + Math.min(n, Math.max(0, C.res[r] - 80)), 0);
@@ -8596,7 +9489,7 @@ function planShuttle(sh) {
     }
     if (col) {
       for (const [r, n] of shortages(col.D)) { const k = Math.floor(Math.min(n, room, Math.max(0, C.res[r] - 80) * 0.8)); if (k >= 5) { load[r] = (load[r] || 0) + k; room -= k; } if (room < 5) break; }
-      plan.push({ w: col.w, i: col.i, leg: 'trip' });
+      plan.push({ w: col.w, i: col.i, leg: 'trip', ...(!canReachWorld(sh, col.w) ? { warp: true } : {}) });
     } else {                                       // back down at home: a landing pad if there is one, else its own pad
       const lp = worldBuildings(0, 'lpad').map(x => x.b).sort((p, q) => tileDist(p.i, ...tileCenter(sh.pad)) - tileDist(q.i, ...tileCenter(sh.pad)))[0];
       plan.push({ w: 0, i: lp ? lp.i : sh.pad, leg: 'down', home: true });
@@ -8606,7 +9499,7 @@ function planShuttle(sh) {
     const lp = worldBuildings(0, 'lpad')[0] || worldBuildings(0, 'pad')[0];
     if (!lp) return null;
     for (const r of CARGO_RES) { if (!C.store || !C.store[r]) continue; const k = Math.floor(Math.min(room, Math.max(0, C.res[r] - C.store[r] * 0.6))); if (k >= 10) { load[r] = k; room -= k; } }
-    plan.push({ w: 0, i: lp.b.i, leg: 'trip', home: true, from: sh.w });
+    plan.push({ w: 0, i: lp.b.i, leg: 'trip', home: true, from: sh.w, ...(warpFree(sh.w) && WORLDS[sh.w].trip > 40 ? { warp: true } : {}) });
   }
   const fuel = plan.reduce((a, p) => a + L[p.leg], 0);
   return { plan, load, people, fuel };
@@ -8660,7 +9553,12 @@ function stepShuttlesGround(dt) {
     const heavy = 1 + 0.5 * clamp((boxSum(sh.cargo || {}) + (sh.wantPeople || 0) * 2) / shCargo(sh), 0, 1);   // a full hold burns half as much fuel again
     if (bestComputer() < 0) { if (!sh.toldComp) { sh.toldComp = true; needsComputer('A reusable rocket'); } continue; }   // nothing to steer it
     sh.toldComp = false;
+    const warpNext = sh.plan[0] && sh.plan[0].warp;
+    if (warpNext && !warpFree(sh.w, sh.id)) {      // the drive has moved on (or is busy): wait for it, or fly the normal way if we can
+      if (canReachWorld(sh, sh.plan[0].w || sh.plan[0].from || 1)) delete sh.plan[0].warp; else { sh.note = 'Waiting for the Alcubierre drive'; continue; }
+    }
     if (sh.fuel >= Math.min(CFG.shuttle.tank, sh.needFuel * heavy) - 0.5 && (loaded || waited)) {
+      if (sh.plan[0] && sh.plan[0].warp) { game.warp.busy = sh.id; sh.jumped = false; }
       sh.needFuel = Math.min(sh.fuel, sh.needFuel * heavy);
       sh.people = Math.floor(Math.max(0, Math.min(sh.wantPeople || 0, C.people - 30))); C.people -= sh.people;
       sh.want = {}; sh.claimed = 0;
@@ -8714,11 +9612,12 @@ function startLeg(sh, from) {
   const next = sh.plan[0];
   if (!next) { sh.state = 'docked'; return; }
   sh.from = from; sh.t = 0; sh.leg = next.leg;
-  sh.T = (next.leg === 'trip' ? WORLDS[next.w || next.from || sh.w || 1].trip * CFG.shuttle.time.trip : CFG.shuttle.time[next.leg]) / shMk(sh).speed;   // later marks fly faster
+  sh.T = next.warp ? WARP.trip : (next.leg === 'trip' ? WORLDS[next.w || next.from || sh.w || 1].trip * CFG.shuttle.time.trip : CFG.shuttle.time[next.leg]) / shMk(sh).speed;   // later marks fly faster; the drive, near instantly
 }
 // where a reusable rocket is, seen from home: up curves bow out from the world, landings drop in from above
 function shuttlePos(sh, lead = 0) {
   const to = stopPos(sh.plan[0]) || tileCenter(sh.pad), u = clamp((sh.t + lead) / sh.T, 0, 1);
+  if (sh.plan[0] && sh.plan[0].warp && game.warp) return warpPath(sh.from, to, u, game.warp);
   const e = sh.leg === 'up' ? u * u : sh.leg === 'down' ? 1 - (1 - u) * (1 - u) : u * u * (3 - 2 * u);
   let x = lerp(sh.from[0], to[0], e), y = lerp(sh.from[1], to[1], e);
   const dx = x - DISK.cx, dy = y - DISK.cy, d = Math.hypot(dx, dy) || 1;
@@ -8833,7 +9732,11 @@ function drawDome(b, z) {
   for (const k of [-0.5, 0, 0.5]) { ctx.beginPath(); ctx.ellipse(sx, sy, r * Math.abs(Math.cos(k * 1.2)) + 0.1, r, 0, 0, Math.PI * 2); ctx.stroke(); }
 }
 function drawColonyShips(z) {
-  for (const s of game.colonyShips) { const [x, y] = colonyShipPos(s), [x2, y2] = colonyShipPos(s, 0.05); drawMovingRocket(x, y, x2, y2, z * 1.3, 'rocket'); }
+  for (const s of game.colonyShips) {
+    const u = s.t / s.T;
+    if (s.warp && u >= WARP.dockAt - 0.02 && u < WARP.castAt) continue;   // in the drive's cradle
+    const [x, y] = colonyShipPos(s), [x2, y2] = colonyShipPos(s, 0.05); drawMovingRocket(x, y, x2, y2, z * 1.3, 'rocket');
+  }
 }
 function drawExhaust(size, k) {
   const L = size * k * (0.85 + 0.3 * Math.random());
@@ -8900,6 +9803,7 @@ function drawStations(z) {
   for (const sh of game.shuttles) {
     if (sh.state !== 'fly') continue;
     const [x, y] = shuttlePos(sh), [x2, y2] = shuttlePos(sh, 0.05), u = sh.t / sh.T;
+    if (sh.plan[0] && sh.plan[0].warp && u >= WARP.dockAt - 0.02 && u < WARP.castAt) continue;   // in the drive's cradle: the drive draws it
     drawMovingRocket(x, y, x2, y2, z, 'shuttle', sh.leg === 'down' && u > 0.7);
   }
   for (const st of game.orbitals) drawStation(st, z);
@@ -9305,7 +10209,7 @@ function render() {
     for (const b of game.buildings) {
       const x = b.i % W, y = (b.i / W) | 0;
       if (b.type === 'settlement' || x < x0 || x > x1 || y < y0 || y > y1) continue;
-      drawSprite(b.type, x + 0.5, y + 0.5 + (DRILL_ANIM[b.type] ? drillJolt(b) : 0), z * (b.type === 'solar' ? 1.15 : 1.25), underway(b) ? 0.45 : 1);
+      drawSprite(spriteOf(b), x + 0.5, y + 0.5 + (DRILL_ANIM[b.type] ? drillJolt(b) : 0), z * (b.type === 'solar' ? 1.15 : 1.25), underway(b) ? 0.45 : 1);
       if (z >= 6 && DRILL_ANIM[b.type] && !underway(b)) drawDrill(b, z);
     }
     drawWorkers(x0, y0, x1, y1, z);
@@ -9337,7 +10241,7 @@ function render() {
   if (!WORLD) drawShipments(z);
   drawSites(z);
   drawPuffs(z);
-  if (!WORLD) { drawStations(z); drawFlights(z); drawColonyShips(z); drawDyson(z); drawStationOrders(z); drawStationHint(z); } else drawShuttlesHere(z);
+  if (!WORLD) { drawStations(z); drawFlights(z); drawColonyShips(z); drawDyson(z); drawStationOrders(z); drawStationHint(z); } else { drawShuttlesHere(z); drawReceiverSkyBeams(z); }
   drawBombers(z); drawIPBMs(z);
   drawBuildPreview(z);
   drawReachHover(z);
@@ -9539,8 +10443,8 @@ function drawReachHover(z) {
   const t = hoverTile();
   if (t && building[t.i] === BLD_CODE.settlement) reachRing(t.i, '#f2c14e', z);
   else if (t && building[t.i] && HARVESTS[buildingAt(t.i).type]) reachRing(t.i, '#f2c14e', z, [5, 5], CFG.collectorReach);
-  else if (t && building[t.i] === BLD_CODE.mortar) reachRing(t.i, aiOf[t.i] ? 'rgba(255,122,107,0.9)' : '#f2c14e', z, [4, 5], CFG.weapons.shell.range);
-  else if (t && building[t.i] === BLD_CODE.turret) reachRing(t.i, aiOf[t.i] ? 'rgba(255,122,107,0.9)' : '#f2c14e', z, [4, 5], CFG.turret.range);
+  else if (t && building[t.i] === BLD_CODE.mortar) reachRing(t.i, aiOf[t.i] ? 'rgba(255,122,107,0.9)' : '#f2c14e', z, [4, 5], shellRange(t));
+  else if (t && building[t.i] === BLD_CODE.turret) reachRing(t.i, aiOf[t.i] ? 'rgba(255,122,107,0.9)' : '#f2c14e', z, [4, 5], turretRange(t));
   else if (t && building[t.i] === BLD_CODE.airdef) reachRing(t.i, aiOf[t.i] ? 'rgba(120,200,255,0.9)' : '#f2c14e', z, [6, 5], CFG.airDefense.range);
 }
 
@@ -10109,6 +11013,7 @@ function initUI() {
   $('cm-close').addEventListener('click', () => toggleCmdMenu(false));
   $('cf-ok').addEventListener('click', confirmGhost);
   $('cf-cancel').addEventListener('click', () => setTool(null));
+  $('fallback').addEventListener('click', () => { const on = !game.fallback; if (setFallBack(on)) game.fallback = on; updateCmdMenu(); });
   $('autodef').addEventListener('click', () => { game.autoDefend = !game.autoDefend; toast(game.autoDefend ? 'Your forts will send troops to meet invaders' : 'Your forts will only defend their own walls'); updateCmdMenu(); });
   $('recruit').addEventListener('click', () => { game.recruit = !game.recruit; toast(game.recruit ? 'Your bases are training troops' : 'Your bases have stopped training troops'); updateCmdMenu(); });
   $('cmdmenu').addEventListener('click', e => {
@@ -10239,7 +11144,7 @@ function toggleCmdMenu(force, keepMode) {
 function researchHtml() {
   const RS = game.research, t = RS.cur && TECH[RS.cur], known = RS.done.size, all = CFG.techs.length;
   if (!t) return `<div class="rs-top">🔬 <b>Every technology discovered</b> (${known} of ${all})</div>`;
-  const cost = techCost(RS.done), f = researchFrac(), rate = RS.rate + RS.gold, eta = rate > 0 ? (cost - RS.pts) / rate : Infinity;
+  const cost = techCost(RS.done, RS.cur), f = researchFrac(), rate = RS.rate + RS.gold, eta = rate > 0 ? (cost - RS.pts) / rate : Infinity;
   return `<div class="rs-top"><span class="rs-ic">${SVG.research}</span><div class="rs-txt"><div class="lbl">TECHNOLOGY RESEARCH IN PROGRESS · ${known} OF ${all} KNOWN</div>
     <div class="rs-name">${t.name} <span class="rs-pct">${Math.floor(f * 100)}%</span><span class="rs-eta">${eta < 1e6 ? '~' + fmtTime(eta) + ' left' : 'paused: no people'}</span></div></div></div>
     <div class="rbar big"><span style="width:${(f * 100).toFixed(1)}%"></span></div>
@@ -10322,10 +11227,14 @@ function updateCmdMenu() {
   $('recruit').classList.toggle('on', game.recruit);
   $('autodef').textContent = game.autoDefend ? '✓ Forts defend by themselves' : '✕ Forts hold back';
   $('autodef').classList.toggle('on', game.autoDefend);
+  const fb = $('fallback');                         // the fighting withdrawal (Artificial Intelligence)
+  fb.hidden = !canFallBack();
+  fb.textContent = game.fallback ? '✓ Fall back while firing' : '⇠ Fall back while firing';
+  fb.classList.toggle('on', !!game.fallback);
   allianceRow();
   const us = unitStats(), g = garrisons(), bases = g.filter(b => b.type === 'base').length, forts = g.length - bases;
   const marching = game.armies.reduce((a, q) => a + q.n, 0), fighting = game.attacks.reduce((a, q) => a + q.units, 0);
-  $('army-info').innerHTML = isUnlocked('base') ? `<b class="g">${fmtNum(totalUnits())} ${us.type.name}</b> · reach ${strikeReach()} tiles · ${bases} base${bases === 1 ? '' : 's'}, ${forts} fortress${forts === 1 ? '' : 'es'}${marching >= 1 ? ` · ${fmtNum(marching)} marching` : ''}${fighting >= 1 ? ` · ${fmtNum(fighting)} fighting` : ''}<br><span class="d">attack ${us.atk.toFixed(1)} · toughness ${us.hp.toFixed(1)} · speed ${us.speed.toFixed(1)}</span>`
+  $('army-info').innerHTML = isUnlocked('base') ? `<b class="g">${fmtNum(totalUnits())} ${us.type.name}</b> · reach ${strikeReach()} tiles · ${bases} base${bases === 1 ? '' : 's'}, ${forts} fortress${forts === 1 ? '' : 'es'}${marching >= 1 ? ` · ${fmtNum(marching)} marching` : ''}${fighting >= 1 ? ` · ${fmtNum(fighting)} fighting` : ''}<br><span class="d">attack ${us.atk.toFixed(1)} · toughness ${us.hp.toFixed(1)} · speed ${us.speed.toFixed(1)}${us.range ? ` · range ${us.range} tile${us.range === 1 ? '' : 's'}` : ''}</span>`
     : `<span class="d">No army yet: research ${TECH.warrior.name} for military bases.</span>`;
   $('cm-sub').textContent = game.aiming ? 'Aiming: click a target in range' : { expand: 'Click past your border to claim land', attack: "Click a neighbour's land to attack", expedition: 'Click where the expedition should go' }[game.cmd];
 }
@@ -11573,13 +12482,18 @@ function showBuildingCard(b) {
       btns.push({ label: `Buy a reusable rocket · ${costText(CFG.shuttle.cost)}`, cls: mine.length ? '' : 'go', act: () => { buyShuttle(b); refreshCard(true); }, off: C && !!missingFor(CFG.shuttle.cost, C) });
       if (!WORLD) btns.push({ label: only ? 'Production: all rockets again' : 'Production: reusable rockets only', act: () => { b.shuttleOnly = !b.shuttleOnly; if (b.shuttleOnly && b.rocket) { C.res.iron += R.iron; b.rocket = null; } if (b.shuttleOnly) b.supply = null; refreshCard(true); } });
     }
-    if (game.research.done.has('dyson') && !WORLD && !only) {
-      const D = game.dyson, stg = dysonStage();
-      if (stg === 'none') { lines.push(`The Dyson swarm rocket: ${costText(DYSON.cost)}, ${DYSON.build} s to build. It flies itself to the sun and builds the swarm.`); btns.push({ label: `Build the Dyson swarm rocket · ${costText(DYSON.cost)}`, cls: C && !missingFor(DYSON.cost, C) && !busy ? 'go' : '', act: () => { buildDysonRocket(b); refreshCard(true); }, off: (C && !!missingFor(DYSON.cost, C)) || busy }); }
-      else if (D && D.pad === b.i && stg === 'building') lines.push(`<b>Building the Dyson swarm rocket:</b> ${Math.floor(D.t / D.T * 100)}%${busy ? ' (waiting while the pad is in use)' : ''}`);
-      else if (D && D.pad === b.i && stg === 'ready') { lines.push('<b>The Dyson swarm rocket is ready.</b>'); btns.push({ label: 'Launch the Dyson swarm rocket', cls: busy ? '' : 'go', act: () => { launchDyson(); refreshCard(true); }, off: busy }); }
-      else if (stg === 'flying' || stg === 'swarming') lines.push(`The Dyson swarm: ${stg === 'flying' ? 'on its way to the sun' : `building, ${Math.floor(D.t / D.T * 100)}%`}`);
-      else if (stg === 'done') lines.push('The Dyson swarm is complete: Dyson receivers on any world pour out power.');
+    for (const k of ['dyson', 'warp']) {             // the megaprojects, a rocketload at a time
+      const K = MEGA[k], M = megaOf(k);
+      if (!game.research.done.has(k === 'dyson' ? 'dyson' : 'casimir') || only || (k === 'dyson' && WORLD)) continue;
+      if (k === 'dyson') normalizeDyson();
+      const here = M && M.pad === b.i && M.padW === WORLD;
+      if (!M) {
+        lines.push(`<b>${K.name}:</b> ${k === 'dyson' ? 'a swarm of mirrors round the sun; Dyson receivers on any world then pour out power.' : 'assembled in orbit round this world; it carries any rocket that docks with it to another world almost at once, and stays where it last went.'} ${K.runs} rocketloads of ${costText(megaChunk(k))}.`);
+        btns.push({ label: `Build the ${K.name} · ${K.runs} loads`, cls: 'go', act: () => { startMega(k, b); refreshCard(true); } });
+      } else if (M.stage === 'building') {
+        lines.push(`<b>${K.name}: under construction, ${M.runs} of ${K.runs} loads</b>${here ? (M.run ? ` · a load is ${M.run.leg === 'out' ? 'on its way up' : 'coming back'}` : M.short ? ` · <span class="a">${M.short}</span>` : '') : ` (its loads go up from another launch pad${M.short ? `: <span class="a">${M.short}</span>` : ''})`}`);
+        if (!here) btns.push({ label: `Send the ${K.name}'s loads from this pad`, act: () => { startMega(k, b); refreshCard(true); } });
+      } else lines.push(k === 'dyson' ? '<span class="g">The Dyson swarm is complete: Dyson receivers on any world pour out power.</span>' : `<span class="g">The Alcubierre drive is ready, in orbit round ${WORLDS[M.w].name}.</span>`);
     }
     if (game.research.done.has('domes') && !WORLD && !only) {
       const why = colonyReady(b);
@@ -11588,7 +12502,7 @@ function showBuildingCard(b) {
     }
     btns.push({ label: b.paused ? 'Resume' : 'Pause', act: () => { b.paused = !b.paused; refreshCard(true); } });
   }
-  if (b.type === 'receiver' && !underway(b)) lines.push(dysonStage() === 'done' ? `<span class="g">Receiving ${CFG.buildings.receiver.gen} MW from the Dyson swarm.</span>` : dysonStage() === 'swarming' ? `Receiving ${Math.round(CFG.buildings.receiver.gen * dysonPower())} MW: the swarm is still being built.` : '<span class="a">Idle: there is no Dyson swarm yet. Build its rocket at a launch pad at home.</span>');
+  if (b.type === 'receiver' && !underway(b)) lines.push(dysonStage() === 'done' ? `<span class="g">Receiving ${CFG.buildings.receiver.gen} MW from the Dyson swarm round the sun.</span>` : dysonStage() === 'building' ? `Receiving ${Math.round(CFG.buildings.receiver.gen * dysonPower())} MW: the swarm is still being built.` : '<span class="a">Idle: there is no Dyson swarm yet. Start it from a launch pad at home. (Receivers can only draw on the nearest star: your sun.)</span>');
   if (b.type === 'terraformer' && !underway(b)) {
     lines.push(`Greening the desert within ${CFG.buildings.terraformer.reach} tiles${C && (C.sat ?? 1) < 0.3 ? ': <span class="r">not enough power</span>' : ''}. Green land holds people like home does.`);
     const P = terraOf(), have = poweredTerraformers(), need = terraNeed();
@@ -12439,8 +13353,8 @@ function drawBuildPreview(z) {
   if (type === 'settlement') drawReachPreview(i, z);
   if (HARVESTS[type]) drawHarvestPreview(i, type, z);
   if (def.farm) reachRing(i, '#e0bc4e', z, [4, 4], CFG.wheat.radius);
-  if (type === 'mortar') reachRing(i, '#7bd389', z, [4, 5], CFG.weapons.shell.range);
-  if (type === 'turret') reachRing(i, '#7bd389', z, [4, 5], CFG.turret.range);
+  if (type === 'mortar') reachRing(i, '#7bd389', z, [4, 5], CFG.weapons.shell.range * gunMult());
+  if (type === 'turret') reachRing(i, '#7bd389', z, [4, 5], CFG.turret.range * gunMult());
   if (def.defense) {
     for (const b of game.buildings) if (b.type === 'airdef' && owner[b.i]) reachRing(b.i, 'rgba(255,255,255,0.3)', z, [3, 7], CFG.airDefense.range);
     reachRing(i, '#7bd389', z, [6, 5], CFG.airDefense.range);
@@ -12734,9 +13648,9 @@ function toGuestView(sv, nid) {
 }
 // ---------- the friend's orders ----------
 // which of your actions are orders (sent to the host): only ones you make with a click or a key, never the world's own
-const MP_ORDERS = ['setInsignia', 'tryBuildShipped', 'tryBuild', 'startPush', 'launchAttack', 'launchExpedition', 'buyVehicle', 'orderUpgrade', 'buyShuttle', 'upgradeShuttle', 'orderStation',
+const MP_ORDERS = ['setFallBack', 'setInsignia', 'tryBuildShipped', 'tryBuild', 'startPush', 'launchAttack', 'launchExpedition', 'buyVehicle', 'orderUpgrade', 'buyShuttle', 'upgradeShuttle', 'orderStation',
   'buildBridge', 'connectToRoad', 'buildWall', 'provoke', 'craft', 'dipAction', 'askAll', 'marketTrade', 'rushSite', 'hireTroops', 'upgradeComputer', 'buyWallUpgrade',
-  'setPct', 'setTroopPct', 'removeBuilding', 'buildDysonRocket', 'launchDyson', 'startColony', 'fireMissile', 'fireIPBM', 'sendBomber', 'setGameMode', 'toggleDebug'];
+  'setPct', 'setTroopPct', 'removeBuilding', 'buildDysonRocket', 'launchDyson', 'startMega', 'startColony', 'fireMissile', 'fireIPBM', 'sendBomber', 'setGameMode', 'toggleDebug'];
 const MP_HOST_ONLY = ['setGameMode', 'toggleDebug'];   // the rules of the game: the host's call
 const MP_RIVAL = { startPush: 'expand', tryBuild: 'build', launchAttack: 'attack', guardedAttack: 'attack', provoke: 'war', dipAction: 'dip', setPct: 'local', setTroopPct: 'local' };
 function mpRef(x) {
@@ -12940,5 +13854,5 @@ window.__game = { TOUCH, mouse, game, cam, CFG, SEED, tick: tickAll, tickOne: ti
   render, followBody, stopFollow, sunPos, wallGarrisons, buildDysonRocket, launchDyson, sendBomber, fireIPBM, setBombing, dysonPower, buildBridge, bridgePlan, POLAR, claim, isLand, launchRocket, makeStation, buyShuttle, toggleEngine, orbitOf, DISK, keys, showBuildingCard, refreshCard, openDiplomacy, aiConsider, doTrade, aiPeace, aiAlly, allianceOf, getOp, addOp, atWar, setWar, settlementLand, guardedAttack, autoDefend, buyVehicle, orderUpgrade, fleetSummary, tierOpen, addCar, seaCrossing, settleExpedition, takeWheel, completeTech, setPct, setTroopPct, roadsList: () => roads, buildRoads, netGraph, findRoute, connectPlan, connectToRoad, wallPlan, pickWallEnd, strikePlan, strikeReach, techIn, goldBoost, haulProf, NET, defenseMult, nextVehicle, driveStep: (e, dt) => driveStep(e, dt), removeBuilding, TECH, unitStats, garrisons, totalUnits, launchAttack, frontWith, setTool, confirmGhost, setCmd, clickAt, commandClick,
   routesTo, dispatchSupplies, linkStats, techCost, pickTech, playerTechScore, resourceProfile, research: () => game.research, hasDep, oilKnown, W, frontier, tileCenter,
   stopSaving: () => { noSave = true; }, scanAiBorders, dbgAI: () => ({ borders: [...aiBorders.keys()], gaps: [...aiGap.entries()].map(([k, v]) => k + ':' + Math.round(v.d)), dipTimer, borderTimer, offerTimer }), aiOffers, aiRelations, driftOpinions, SVG, RAS, SPR, debugOff, terraOf, planetTerra, poweredTerraformers, terraNeed, stepPlanetTerraform, compFx, compOf, bestComputer, upgradeComputer, researchPeople, SHUTTLE_MK, upgradeShuttle, shRange, canReachWorld, craft, CRAFTS, aiCompute, aiState, showAIPanel, stepAIs, aiDoRoads, aiDoGambit, aiDoWar, aiDoBuild, aiDoTrade, roadsList2: () => roads, invPull, invOf, lootSettlement, lootNation, sourceSettlement, stepInventories, skyWorldPos, foreignSkyClick, setGameMode, MODE, modePicker, aiUnitCap, aiTreaty, signTreaty, treaty, aiSurrender, doSurrender, warLosing, nationWorth, termsValue, askAll, openDiplomacyAll, aiNeeds, surrenderDialog, fearOf, showMarket, marketTrade, rushSite, rushCost, hireTroops, mercCost, treasury, orderStation, padBusy, myStations, wallState, fortState, damageWall, damageFort, wallMax, fortMax, showWallCard, wallNear, fortNear, buyWallUpgrade, upgradeCost, wallGroupOf, wallsAfterWar, stepRepairs, ironWallCross, viaLink, landWay, keepOnLand, shipGoods, crossesWater, tradePath, shoreOf, landGroup, overland, wet, tradeEnd, tilePath, intraArrive, stationNearSettlement, carProf };
-Object.assign(window.__game, { carGo, landOf, sameLand, markNet, roadWorks, setInsignia, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, mpSnapshot, toGuestView, mpApply, mpRunRival, buildWall, sowFields, stepSowing });
+Object.assign(window.__game, { startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, mpSnapshot, toGuestView, mpApply, mpRunRival, buildWall, sowFields, stepSowing });
 init();
