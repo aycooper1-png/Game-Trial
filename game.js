@@ -1655,7 +1655,7 @@ const game = {
   shipments: [],                   // traded goods on their way (truck, boat or plane)
   flights: [], orbitals: [], supplyRuns: [], shuttles: [], flying: null, stationOrders: [], shipIns: [],
   colonyShips: [], colonyPick: false, colonyFrom: null,
-  dyson: null, warp: null, bombers: [], ipbms: [],             // the Dyson swarm project; bombers in the air; missiles between worlds   // colony ships on their way to another world; picking where one lands   // rockets in flight, space stations, supply rockets, reusable rockets
+  dyson: null, warp: null, troopFlights: [], bombers: [], ipbms: [],             // the Dyson swarm project; bombers in the air; missiles between worlds   // colony ships on their way to another world; picking where one lands   // rockets in flight, space stations, supply rockets, reusable rockets
   bridges: [],                     // { s, b, tiles, len }: from your land tile s over the water to land tile b
   warhead: 'conventional',         // what your next missile carries
   wallFrom: -1,                    // the fort you're building a wall from (waiting for you to pick the other)
@@ -2546,10 +2546,12 @@ function tradePath(a, b, seaCost = 0.6, board = 25, maxExp = 700000) {
   for (let p = b; p !== -1; p = TP_FROM[p]) out.push(p);
   return out.reverse();
 }
-function shipGoods(from, to, res) {
+// opt (all optional): a, b = start and end tiles; troops = how many soldiers ride along (they walk where carts would
+// go); on = what happens when it arrives (troops into a garrison, or onto a rocket)
+function shipGoods(from, to, res, opt = {}) {
   const cen = e => e.side === 'P' ? [e.C.lx, e.C.ly] : [game.nations[e.side].lx, game.nations[e.side].ly];
-  const a = tradeEnd(from, cen(to)), b = tradeEnd(to, cen(from));
-  const R = techOf(from.side), cart = roadTier(R), boat = boatTier(R), air = R.has('flight') ? (R.has('computing') ? 'cargojet' : R.has('rocketry') ? 'jet' : 'plane') : null;
+  const a = opt.a ?? tradeEnd(from, cen(to)), b = opt.b ?? tradeEnd(to, cen(from));
+  const R = techOf(from.side), cart = opt.troops ? 'soldier' : roadTier(R), boat = boatTier(R), air = R.has('flight') ? (R.has('computing') ? 'cargojet' : R.has('rocketry') ? 'jet' : 'plane') : null;
   const [ax, ay] = tileCenter(a), [bx, by] = tileCenter(b);
   const smooth = P => {                           // straight stretches between corners, never over water
     const all = P.map(t => [t % W + 0.5, ((t / W) | 0) + 0.5]), key = [all[0]];
@@ -2571,7 +2573,91 @@ function shipGoods(from, to, res) {
     } else if (r.tiles.length > 1) legs.push(legOf('land', cart, smooth(r.tiles), tierSpeed(cart) * 0.9));
   }
   if (!legs.length) legs.push(legOf('sea', boat, straightLeg(ax, ay, bx, by), tierSpeed(boat)));   // no way at all: straight over, by boat
-  game.shipments.push({ legs, li: 0, d: 0, res: { ...res }, to: to.side === 'P' ? { side: 'P', c: to.C.id } : { side: to.side } });
+  if (opt.troops) for (const L of legs) if (L.kind === 'land') L.speed = Math.max(L.speed, unitStats().speed * 0.6);   // soldiers march (or ride their own trucks)
+  game.shipments.push({ legs, li: 0, d: 0, res: { ...res }, w: WORLD, ...(opt.troops ? { troops: opt.troops } : {}), ...(opt.on ? { on: opt.on } : {}), to: to.side === 'P' ? { side: 'P', c: to.C.id } : { side: to.side } });
+}
+// ---------- moving troops between your territories ----------
+// From a fort or base: how many, and to which territory (on any world). They go by road, rail, boat or plane as the
+// way allows, through your other territories if need be; to another world, to a launch pad first, then by rocket to
+// the destination's landing pad (both territories need a launch pad and a landing pad), then on to its garrison.
+const garrisonsOf = (w, cid) => [...worldBuildings(w, 'fort'), ...worldBuildings(w, 'base')].filter(x => x.c === cid);
+function transferTroops(from, n, toW, toC) {
+  const b = buildingAt(from), A = countryAt(from);
+  n = Math.floor(Math.min(n, b ? b.units || 0 : 0));
+  if (!b || !A || n < 1) { toast('No troops to send.'); return false; }
+  const D = worldCountry(toW, toC), G = garrisonsOf(toW, toC);
+  if (!D || !D.alive || !G.length) { toast('That territory has no fortress or base to take them.'); return false; }
+  const g = G.sort((p, q) => (q.b.units || 0) - (p.b.units || 0))[0].b;
+  if (toW === WORLD) {
+    if (D === A && g.i === from) { toast('They are already there.'); return false; }
+    b.units -= n;
+    shipGoods({ side: 'P', C: A }, { side: 'P', C: D }, {}, { a: from, b: g.i, troops: n, on: { kind: 'troops', n, w: toW, c: toC, g: g.i } });
+    toast(`${n} troops set off from ${A.short} for ${D.short}.`);
+    return true;
+  }
+  // another world: by rocket, between launch pads and landing pads
+  const here = game.countries.filter(C => C.alive).map(C => ({ C, p: rocketPorts(WORLD, C.id) })).filter(x => x.p).sort((p, q) => (p.C === A ? -1 : 0) - (q.C === A ? -1 : 0))[0];
+  const there = rocketPorts(toW, toC);
+  if (!here || !there) { toast(`Troops cross between worlds only by rocket: ${!here ? `a territory on ${WORLDS[WORLD].name}` : ''}${!here && !there ? ' and ' : ''}${!there ? D.short : ''} need${!here && !there ? '' : 's'} a launch pad and a landing pad.`); return false; }
+  b.units -= n;
+  shipGoods({ side: 'P', C: A }, { side: 'P', C: here.C }, {}, { a: from, b: here.p.pad, troops: n, on: { kind: 'troops', n, w: toW, c: toC, g: g.i, rocket: { from: WORLD, pad: here.p.pad, lpad: there.lpad } } });
+  toast(`${n} troops set off for the launch pad: then by rocket to ${D.short} on ${WORLDS[toW].name}.`);
+  return true;
+}
+function arriveTroops(on, at) {
+  if (on.rocket && on.rocket.from === WORLD) {    // at the launch pad: up they go
+    const trip = Math.max(12, worldGap(WORLD, on.w) * 0.6);
+    game.troopFlights.push({ n: on.n, from: WORLD, to: on.w, c: on.c, g: on.g, lpad: on.rocket.lpad, pad: on.rocket.pad, t: 0, T: trip });
+    floatText(at[0], at[1] - 1, `${on.n} troops lift off for ${WORLDS[on.w].short}`, '#f2c14e');
+    return;
+  }
+  let g = buildingAt(on.g);
+  if (!g || !['fort', 'base'].includes(g.type) || !owner[g.i]) {   // their garrison is gone: the nearest one of theirs
+    const C = liveCountry(on.c) || nearestDomain(at[0], at[1]);
+    g = garrisons().filter(q => countryAt(q.i) === C)[0] || garrisons()[0];
+  }
+  if (!g) return;
+  g.units = (g.units || 0) + on.n;
+  floatText(g.i % W + 0.5, ((g.i / W) | 0) - 1, `+${on.n} troops arrived`, '#7bd389');
+}
+function stepTroopFlights(dt) {
+  for (const f of game.troopFlights) {
+    f.t += dt;
+    if (f.t < f.T) continue;
+    f.done = true;
+    const land = () => { const C = liveCountry(f.c); if (!C) return; const g = buildingAt(f.g); shipGoods({ side: 'P', C }, { side: 'P', C }, {}, { a: f.lpad, b: g ? g.i : f.lpad, troops: f.n, on: { kind: 'troops', n: f.n, w: f.to, c: f.c, g: f.g } }); };
+    if (worldGenerated(f.to)) onWorld(f.to, land);
+    notify(`🚀 ${f.n} troops landed on ${WORLDS[f.to].name}`, 'They march from the landing pad to their garrison.');
+  }
+  if (game.troopFlights.some(f => f.done)) game.troopFlights = game.troopFlights.filter(f => !f.done);
+}
+function drawTroopFlights(z) {
+  for (const f of game.troopFlights) {
+    const pos = lead => { const u = clamp((f.t + lead) / f.T, 0, 1), e = u * u * (3 - 2 * u), a = f.from ? worldAnchor(f.from) : tileCenter(f.pad), b = f.to ? worldAnchor(f.to) : tileCenter(f.lpad);
+      const x = lerp(a[0], b[0], e), y = lerp(a[1], b[1], e), dx = x - DISK.cx, dy = y - DISK.cy, d = Math.hypot(dx, dy) || 1, bow = Math.sin(Math.PI * u) * 60; return [x + dx / d * bow, y + dy / d * bow]; };
+    const [x, y] = pos(0), [x2, y2] = pos(0.05);
+    drawMovingRocket(x, y, x2, y2, z * 1.3, 'rocket');
+    const [sx, sy] = toScreen(x, y); if (z >= 0.5) badge(sx, sy - 18, f.n, { icon: unitStats().helm });
+  }
+}
+// the transfer dialog: how many, then where (grouped by world), then confirm
+function showTransfer(b) {
+  const A = countryAt(b.i), have = Math.floor(b.units || 0);
+  if (have < 1) return toast('No troops here to send.');
+  let n = Math.max(1, Math.round(have / 2));
+  const groups = WORLDS.map(P => P.id).filter(w => worldGenerated(w)).map(w => ({ w, doms: (w === WORLD ? game.countries : worldData[w] ? worldData[w].g.countries : []).filter(D => D.alive && garrisonsOf(w, D.id).length && !(w === WORLD && D === A && garrisonsOf(w, D.id).length < 2)) })).filter(g => g.doms.length);
+  showModal(`<div class="md-title">Transfer troops from ${A.short}</div><div class="md-body">
+    <div class="lbl">HOW MANY</div><div class="tt-n"><input id="tt-range" type="range" min="1" max="${have}" value="${n}"><b id="tt-val">${n}</b> of ${have}</div>
+    <div class="lbl" style="margin-top:8px">TO WHICH TERRITORY</div>
+    ${groups.length ? groups.map(g => `<div class="tt-world">${WORLDS[g.w].name}</div><div class="tt-list">${g.doms.map(D => `<button class="mode-btn small" data-w="${g.w}" data-c="${D.id}"><b>${D.short}</b><span>${garrisonsOf(g.w, D.id).reduce((a, x) => a + Math.floor(x.b.units || 0), 0)} troops there</span></button>`).join('')}</div>`).join('') : '<span class="d">None of your other territories has a fortress or base to take them.</span>'}
+  </div>`, [{ label: 'Cancel', act: () => {} }]);
+  const R = $('tt-range');
+  R.oninput = () => { n = +R.value; $('tt-val').textContent = n; };
+  for (const el of document.querySelectorAll('#md-text [data-w]')) el.onclick = () => {
+    const w = +el.dataset.w, c = +el.dataset.c, D = worldCountry(w, c), far = w !== WORLD;
+    setTimeout(() => showModal(`<div class="md-title">Send ${n} troops to ${D.short}?</div><div class="md-body">From ${A.short} to ${D.short}${far ? ` on ${WORLDS[w].name}` : ''}. They travel by road, rail, boat or plane as the way allows${far ? ', then by rocket from a launch pad to its landing pad' : ''}, and join its garrison when they arrive.</div>`,
+      [{ label: 'Confirm', cls: 'go', act: () => transferTroops(b.i, n, w, c) }, { label: 'Cancel', act: () => {} }]), 0);
+  };
 }
 function nearestCoast(t) {
   const x0 = t % W, y0 = (t / W) | 0;
@@ -2590,8 +2676,12 @@ function stepShipments(dt) {
     if (S.d < L.len) continue;
     if (S.li < S.legs.length - 1) { S.li++; S.d = 0; continue; }
     S.done = true;
-    if (S.to.side === 'P') { const C = liveCountry(S.to.c) || nearestDomain(...L.pts[L.pts.length - 1]); if (C) storeIn(C, S.res); }
-    else { const n = game.nations[S.to.side]; if (n) for (const r in S.res) { if (r === 'iron') n.iron = (n.iron || 0) + S.res[r]; else n.stock[r] = (n.stock[r] || 0) + S.res[r]; } }
+    const arrive = () => {
+      if (S.on) return arriveTroops(S.on, L.pts[L.pts.length - 1]);
+      if (S.to.side === 'P') { const C = liveCountry(S.to.c) || nearestDomain(...L.pts[L.pts.length - 1]); if (C) storeIn(C, S.res); }
+      else { const n = game.nations[S.to.side]; if (n) for (const r in S.res) { if (r === 'iron') n.iron = (n.iron || 0) + S.res[r]; else n.stock[r] = (n.stock[r] || 0) + S.res[r]; } }
+    };
+    if (S.w && S.w !== WORLD && worldGenerated(S.w)) onWorld(S.w, arrive); else arrive();
   }
   if (game.shipments.some(S => S.done)) game.shipments = game.shipments.filter(S => !S.done);
 }
@@ -2605,7 +2695,7 @@ function shipmentPos(S) {
 }
 function drawShipments(z) {
   for (const S of game.shipments) {
-    if (!S.legs) continue;
+    if (!S.legs || (S.w || 0) !== WORLD) continue;   // goods on another world's roads
     const L = S.legs[S.li], [x, y, ang] = shipmentPos(S), [sx, sy] = toScreen(x, y);
     if (sx < -60 || sy < -60 || sx > cw + 60 || sy > ch + 60) continue;
     if (L.kind === 'air') drawPlane({ t: S.d, grounded: false, kind: 'plane', tier: Math.max(0, FLEET.plane.tiers.findIndex(t => t.id === L.spr)) }, sx, sy, ang, z, { path: { length: L.len + 1 } });
@@ -2615,7 +2705,7 @@ function drawShipments(z) {
       if (spr) ctx.drawImage(spr[s2 * dpr > 44 ? 0 : 1], -s2 / 2, L.kind === 'sea' ? -s2 / 2 : -s2 * 0.6, s2, s2);
       ctx.restore();
     }
-    if (z >= 2) cargoBadge(sx, sy - Math.max(16, z * 1.4), S.res);
+    if (z >= 2) { if (S.troops) badge(sx, sy - Math.max(16, z * 1.4), S.troops, { icon: unitStats().helm }); else cargoBadge(sx, sy - Math.max(16, z * 1.4), S.res); }
   }
 }
 // a settlement (and the land it serves) changes hands
@@ -3831,6 +3921,7 @@ function dispatchSupplies() {
     S.country = C.id;
     for (const r in S.need) { const take = Math.min(S.need[r], Math.max(0, C.res[r])); C.res[r] -= take; S.need[r] -= take; }
     if (boxSum(S.need) < 0.01) { if (!S.convoy) startDelivery(b); continue; }
+    if (S.imp) continue;                           // its goods are on their way from another territory: it waits for them
     const routes = routesTo(C), mv = moving.get(b.i) || resBox();
     S.waiting = null;
     for (const r in S.need) {
@@ -4308,6 +4399,46 @@ function rocketPorts(w, cid) {                      // a territory's launch pad 
   return pad && lp ? { pad: pad.b.i, lpad: lp.b.i } : null;
 }
 const hasAI = (w, cid) => worldBuildings(w, 'computer').some(x => x.c === cid && (x.b.lvl || 0) >= 3);
+// ---------- importing from your other territories on this world ----------
+// Nearest first, each giving what it can spare (it keeps a little and what its own building sites need).
+function importPlan(C, short) {
+  const doms = game.countries.filter(D => D.alive && D !== C && D.tiles).sort((a, b) => Math.hypot(a.lx - C.lx, a.ly - C.ly) - Math.hypot(b.lx - C.lx, b.ly - C.ly));
+  const left = { ...short }, from = [];
+  for (const D of doms) {
+    const give = {};
+    for (const r in left) { const k = Math.floor(Math.min(left[r], Math.max(0, (D.res[r] || 0) - 20))); if (k >= 1) { give[r] = k; left[r] -= k; } }
+    if (boxSum(give)) from.push({ id: D.id, res: give });
+    if (Object.values(left).every(n => n < 1)) return { to: C.id, from, short };
+  }
+  return null;                                     // this world can't cover it
+}
+function askImport(i, type, P) {
+  const def = CFG.buildings[type], C = game.countries[P.to], what = costText(P.short);
+  const srcs = P.from.map(f => `${game.countries[f.id].short} (${costText(f.res)})`).join(', ');
+  const go = () => importAndBuild(i, type, P);
+  if (buildAuto === 'ai') return go();             // the domain's AI decides for itself
+  if (buildAuto === 'remote') return false;
+  showModal(`<div class="md-title">Import from your other territories?</div><div class="md-body">${C.short} doesn't have the materials for a ${def.name.toLowerCase()}: it's short of <b>${what}</b>.
+    <br><br>Your nearest territories have it: ${srcs}. It goes over by road, boat or plane, whichever way is open, and the ${def.name.toLowerCase()} is built when it arrives.</div>`,
+    [{ label: `Import ${what}`, cls: 'go', act: go }, { label: 'No', act: () => {} }]);
+  return false;
+}
+function importAndBuild(i, type, P) {
+  const C = game.countries[P.to];
+  if (!C || !C.alive) return false;
+  for (const f of P.from) { const D = game.countries[f.id]; for (const r in f.res) if (!D.alive || (D.res[r] || 0) < f.res[r]) { toast(`${D.short} no longer has ${f.res[r]} ${r} to spare`); return false; } }
+  const was = buildAuto; buildAuto = 'imported';
+  let ok = false;
+  try { ok = tryBuild(i, type); } finally { buildAuto = was; }
+  if (!ok) return false;
+  for (const f of P.from) {                        // take it now and send it on its way
+    const D = game.countries[f.id];
+    for (const r in f.res) D.res[r] -= f.res[r];
+    shipGoods({ side: 'P', C: D }, { side: 'P', C }, f.res);
+  }
+  toast(`Importing ${costText(P.short)} into ${C.short} from ${P.from.map(f => game.countries[f.id].short).join(', ')}.`);
+  return true;
+}
 // what's short (beyond what this world's linked domains can send), and the nearest world that can send all of it
 function shipInPlan(C, i, short, linked) {
   if (!game.research.done.has('reusable')) return null;
@@ -4377,27 +4508,27 @@ function tryBuild(i, type) {
   const settlers = def.people || 0;                // a settlement is founded by people, like an expedition
   if (freePeople(C) < settlers) { toast(`${C.short} needs ${settlers} free people to found a settlement`); return false; }
   const short = shortfall(cost, C);
-  if (Object.keys(short).length) {
-    const linked = linkedStock(C), lack = Object.keys(short).find(r => linked[r] < short[r]);
-    if (lack) {
-      const fromWorld = shipInPlan(C, i, short, linked);   // another world's territory could send it by reusable rocket
-      if (fromWorld) return askShipIn(i, type, fromWorld);
-      const any = [...routesTo(C).values()].some(h => h);
-      toast(any ? `Not enough ${lack}: ${C.short} and the domains linked to it have ${fmtNum(Math.max(0, C.res[lack]) + linked[lack])} of ${cost[lack]}`
-        : `${C.short} has only ${fmtNum(Math.max(0, C.res[lack]))} ${lack} and no link to your other domains. Link them with ports, rail stations or airports.`);
-      return false;
-    }
+  if (Object.keys(short).length && buildAuto !== 'imported') {
+    // short here: first your other territories on this world (asked, then carried over by truck, boat or plane),
+    // and only if none of them has it, another world's (asked, then flown in by reusable rocket)
+    const here = importPlan(C, short);
+    if (here) return askImport(i, type, here);
+    const fromWorld = shipInPlan(C, i, short, {});
+    if (fromWorld) return askShipIn(i, type, fromWorld);
+    const lack = Object.keys(short)[0], all = game.countries.filter(D => D.alive).reduce((a, D) => a + Math.max(0, D.res[lack] || 0), 0);
+    toast(`Not enough ${lack}: ${C.short} needs ${fmtNum(cost[lack])}, and all your territories on ${WORLDS[WORLD].name} have ${fmtNum(all)} between them.`);
+    return false;
   }
   C.people -= settlers;
   for (const [r, n] of Object.entries(cost)) C.res[r] -= Math.min(n, Math.max(0, C.res[r]));
   // every building is a construction site until its materials arrive: carted out from the nearest settlement,
   // and shipped in from your linked domains first if this one is short
-  const site = { type, need: short, country: C.id, plan, cost };
+  const site = { type, need: short, country: C.id, plan, cost, ...(buildAuto === 'imported' ? { imp: true } : {}) };
   const old = buildingAt(i);
   let b = old;
   if (old) old.site = site;
   else { building[i] = BLD_CODE[type]; b = { i, type, site }; game.buildings.push(b); bldVer++; }
-  if (Object.keys(short).length) toast(`${def.name} under construction in ${C.short}: waiting for ${Object.entries(short).map(([r, n]) => `${Math.ceil(n)} ${r}`).join(', ')} from your other domains`);
+  if (Object.keys(short).length) toast(`${def.name} under construction in ${C.short}: waiting for ${Object.entries(short).map(([r, n]) => `${Math.ceil(n)} ${r}`).join(', ')} from your other territories`);
   else startDelivery(b);
   return true;
 }
@@ -6071,9 +6202,9 @@ function worldSave() {
       buildings: game.buildings.map(b => ({ i: b.i, t: b.type, ready: b.ready || 0, units: (b.units || 0) + (homeUnits.get(b.i) || 0), oil: b.oil || 0,
         buf: b.buf && boxSum(b.buf) >= 0.5 ? b.buf : null, lvl: b.lvl || undefined, ai: b.ai ? { ...b.ai, asked: 0 } : undefined, inv: b.type === 'settlement' && b.inv ? Object.fromEntries(Object.entries(b.inv).map(([r, v]) => [r, Math.round(v * 10) / 10])) : undefined,
         sp: b.type === 'pad' ? { rocket: b.rocket ? b.rocket.fuel : null, supply: b.supply || null, paused: !!b.paused, only: !!b.shuttleOnly } : undefined,
-        site: b.site ? { type: b.site.type, need: b.site.need, country: b.site.country, cost: b.site.cost, shipIn: b.site.shipIn } : null,
+        site: b.site ? { type: b.site.type, need: b.site.need, country: b.site.country, cost: b.site.cost, shipIn: b.site.shipIn, imp: b.site.imp } : null,
         field: b.field != null && deposits[b.field] ? deposits[b.field].tiles : null, sow: b.toSow && b.toSow.length ? b.toSow : undefined })),
-      shipments: game.shipments.map(S => ({ res: S.res, to: S.to })),
+      shipments: game.shipments.map(S => ({ res: S.res, to: S.to, w: S.w, troops: S.troops, on: S.on })),
       hubJobs: game.hubJobs.filter(H => !H.done).map(H => ({ c: H.c, at: H.at, res: H.res, then: H.then })),
       links: game.links.map(L => ({ kind: L.kind, a: L.a, b: L.b, path: L.path, out: L.out || null, req: L.req || null, owe: L.owe || null,
         ships: (L.ships || []).map(V => ({ kind: V.kind, tier: V.tier, paid: V.paid, t: V.t, dir: V.dir, cargo: V.cargo || null, to: V.to ?? -1 })) })),
@@ -6084,7 +6215,7 @@ function worldSave() {
         orbitals: game.orbitals,
         shuttles: game.shuttles.map(sh => ({ id: sh.id, w: sh.state === 'fly' ? sh.launchW ?? sh.w : sh.w, c: sh.c, pad: sh.state === 'fly' ? sh.launchAt ?? sh.pad : sh.pad, fuel: sh.state === 'docked' ? sh.fuel : 0, runs: sh.runs, cargo: sh.cargo })),
         returning: game.supplyRuns.map(r => r.cargo),
-        colonyShips: game.colonyShips, dyson: game.dyson, warp: game.warp ? { ...game.warp, busy: null } : null, orders: game.stationOrders, shipIns: game.shipIns.map(o => ({ ...o, sh: null })),
+        colonyShips: game.colonyShips, dyson: game.dyson, warp: game.warp ? { ...game.warp, busy: null } : null, troopFlights: game.troopFlights, orders: game.stationOrders, shipIns: game.shipIns.map(o => ({ ...o, sh: null })),
       },
       runs, cam: { x: cam.x, y: cam.y, zoom: cam.zoom },
     };
@@ -6198,7 +6329,7 @@ function loadGame(sv) {
     for (const cargo of SP.returning || []) { const st = game.orbitals[0]; if (st && st.nation == null) unloadStation(st, cargo, cargo.people); }
     game.colonyShips = SP.colonyShips || []; game.stationOrders = SP.orders || [];
     game.shipIns = SP.shipIns || []; shipInId = game.shipIns.reduce((m, o) => Math.max(m, o.id), 0);
-    game.dyson = SP.dyson || null; game.warp = SP.warp || null; game.bombers = []; game.ipbms = [];
+    game.dyson = SP.dyson || null; game.warp = SP.warp || null; game.troopFlights = SP.troopFlights || []; game.bombers = []; game.ipbms = [];
     scanNationTiles();
   }
   buildFronts();
@@ -8094,7 +8225,7 @@ function stepMega(k, dt) {
   M.short = null;
   M.run = { leg: 'out', t: 0, T: K.out };
 }
-function stepDyson(dt) { stepMega('dyson', dt); stepMega('warp', dt); stepWarpUsers(); }
+function stepDyson(dt) { stepMega('dyson', dt); stepMega('warp', dt); stepWarpUsers(); stepTroopFlights(dt); }
 const dysonPower = () => (dysonStage() === 'done' ? 1 : dysonStage() === 'building' ? megaFrac('dyson') * 0.5 : 0);   // half power while it's built
 function buildDysonRocket(b) { return startMega('dyson', b); }
 function launchDyson() { /* the swarm needs no launch any more: it is built in place */ }
@@ -8142,6 +8273,7 @@ function drawDyson(z) {
   for (const k of ['dyson', 'warp']) { const M = megaOf(k); if (M && M.run) { const [x, y] = megaRunPos(k), [x2, y2] = megaRunPos(k, 0.05); drawMovingRocket(x, y, x2, y2, z * 1.5, 'rocket', M.run.leg === 'back' && M.run.t / M.run.T > 0.75); } }
   drawSwarm(z);
   drawWarp(z);
+  drawTroopFlights(z);
   drawReceiverBeams(z);
 }
 function drawSwarm(z) {
@@ -12417,6 +12549,7 @@ function showBuildingCard(b) {
       if (!P.why) btns.push({ label: `Connect to road · ${P.cost.stone} stone`, cls: 'go', act: () => connectToRoad(b), off: C && C.res.stone < P.cost.stone });
     }
   }
+  if ((b.type === 'fort' || b.type === 'base') && !underway(b) && (b.units || 0) >= 1) btns.push({ label: 'Transfer troops…', act: () => showTransfer(b) });
   if (b.type === 'fort' && !underway(b) && isUnlocked('fort')) btns.push({ label: 'Build a wall…', act: () => { game.wallFrom = b.i; showBuildingCard(null); wallHint(); } });
   // a settlement, port or airport: your cars, boats or planes. Buy more; order the whole fleet upgraded.
   const fk = { settlement: 'car', port: 'boat', airport: 'plane' }[b.type];
@@ -13648,7 +13781,7 @@ function toGuestView(sv, nid) {
 }
 // ---------- the friend's orders ----------
 // which of your actions are orders (sent to the host): only ones you make with a click or a key, never the world's own
-const MP_ORDERS = ['setFallBack', 'setInsignia', 'tryBuildShipped', 'tryBuild', 'startPush', 'launchAttack', 'launchExpedition', 'buyVehicle', 'orderUpgrade', 'buyShuttle', 'upgradeShuttle', 'orderStation',
+const MP_ORDERS = ['importAndBuild', 'transferTroops', 'setFallBack', 'setInsignia', 'tryBuildShipped', 'tryBuild', 'startPush', 'launchAttack', 'launchExpedition', 'buyVehicle', 'orderUpgrade', 'buyShuttle', 'upgradeShuttle', 'orderStation',
   'buildBridge', 'connectToRoad', 'buildWall', 'provoke', 'craft', 'dipAction', 'askAll', 'marketTrade', 'rushSite', 'hireTroops', 'upgradeComputer', 'buyWallUpgrade',
   'setPct', 'setTroopPct', 'removeBuilding', 'buildDysonRocket', 'launchDyson', 'startMega', 'startColony', 'fireMissile', 'fireIPBM', 'sendBomber', 'setGameMode', 'toggleDebug'];
 const MP_HOST_ONLY = ['setGameMode', 'toggleDebug'];   // the rules of the game: the host's call

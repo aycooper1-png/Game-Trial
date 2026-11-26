@@ -476,3 +476,10 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
 .ins-sign { padding: 4px; border-radius: 7px; border: 2px solid transparent; background: #1c2431; cursor: pointer; line-height: 0; }
 .ins-col { width: 32px; height: 32px; border-radius: 50%; border: 2px solid rgba(0, 0, 0, 0.3); cursor: pointer; }
 .ins-sign.sel, .ins-col.sel { border-color: #f2c14e; box-shadow: 0 0 0 2px rgba(242, 193, 78, 0.35); }
+/* transferring troops */
+.tt-n { display: flex; align-items: center; gap: 10px; margin: 4px 0; }
+.tt-n input { flex: 1; accent-color: #7bd389; }
+.tt-n b { font-size: 18px; min-width: 2.5em; text-align: right; }
+.tt-world { margin: 8px 0 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.75; }
+.tt-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.tt-list .mode-btn { min-width: 130px; }
