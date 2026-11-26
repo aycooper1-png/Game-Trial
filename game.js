@@ -1609,11 +1609,11 @@ const BIOME_KEY = [null, 'grass', 'desert', 'mountain', null, null, 'polar'];
 
 const params = new URLSearchParams(location.search);
 // autosave lives in this browser (localStorage). Opening the game without ?seed= resumes it.
-const SAVE_KEY = 'game-trial-save-v2';
+const SAVE_KEY = params.get('join') ? 'game-trial-mp-' + params.get('join') : 'game-trial-save-v2';   // a friend's realm in a rivals game keeps its own save
 const SAVE_V = 1;
 const SAVED = (() => { try { const v = JSON.parse(localStorage.getItem(SAVE_KEY)); return v && v.v === SAVE_V ? v : null; } catch (e) { return null; } })();
 const SEED = params.has('seed') ? (parseInt(params.get('seed'), 10) || 1) : SAVED ? SAVED.seed : ((Math.random() * 1e6) | 0);
-const RESUME = SAVED && SAVED.seed === SEED && !params.get('join') ? SAVED : null;   // a friend joining a game never loads their own save
+const RESUME = SAVED && SAVED.seed === SEED && (!params.get('join') || params.get('style') === 'rivals') ? SAVED : null;   // a friend joining a game never loads their own save
 const W = CFG.mapW, H = CFG.mapH, N = W * H;
 let rng = mulberry32(SEED);
 const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -5845,6 +5845,7 @@ function tickAll(dt) {
   useWorld(0); tick(dt, true);
   for (let w = 1; w < WORLDS.length; w++) if (worldData[w]) { useWorld(w); tick(dt, false); }
   if (MP.role === 'host') { useWorld(0); mpHostTick(dt); }
+  if (MP.role) { useWorld(0); rivTick(dt); }
   let g = 0;                                       // the treasury: every domain's gold, on every world
   for (const P of WORLDS) { const cs = P.id === WORLD ? game.countries : worldData[P.id] ? worldData[P.id].g.countries : []; for (const c of cs) if (c.alive) g += Math.max(0, c.res.gold || 0); }
   game.goldStock = g;
@@ -6196,7 +6197,7 @@ function worldSave() {
         for (const r of RESOURCES) res[r] = c.res[r] + back[c.id][r];
         return { short: c.short, full: c.full, tier: c.tier, alive: c.alive, mergedInto: c.mergedInto, hex: c.hex, sign: c.sign, people: c.people + back[c.id].people, res };
       }),
-      dip: { op: game.dip.op, wars: [...game.dip.wars] }, treaties: game.treaties, alliances: game.alliances, autoDefend: game.autoDefend, fallback: !!game.fallback,
+      dip: { op: game.dip.op, wars: [...game.dip.wars] }, treaties: game.treaties, alliances: game.alliances, autoDefend: game.autoDefend, fallback: !!game.fallback, mpNid: game.mpNid ?? null,
       nations: game.nations.map(n => ({ people: n.people, alive: n.alive, hostile: !!n.hostile, iron: n.iron ?? CFG.iron.aiStart, stock: n.stock,
         units: n.units + n._back, R: [...n.R], rpts: n.rpts, pers: n.pers, lastRaid: n.lastRaid ?? null, outposts: n.outposts || null, trades: n.trades || null, war0: n.war0 || null, engaged: !!n.engaged })),
       buildings: game.buildings.map(b => ({ i: b.i, t: b.type, ready: b.ready || 0, units: (b.units || 0) + (homeUnits.get(b.i) || 0), oil: b.oil || 0,
@@ -6313,7 +6314,7 @@ function loadGame(sv) {
   if (home) {
     Object.assign(game, { debugSnap: sv.debugSnap || null, murderSet: true, gmode: MODES[sv.gmode] ? sv.gmode : 'normal', debug: !!sv.debug, time: sv.time, peakPop: sv.peakPop, sendPct: sv.sendPct || 25, troopPct: sv.troopPct || 50, recruit: sv.recruit !== false, warhead: sv.warhead || 'conventional' });
     game.dip = { op: (sv.dip && sv.dip.op) || {}, wars: new Set((sv.dip && sv.dip.wars) || []) }; game.treaties = sv.treaties || [];
-    game.alliances = sv.alliances || []; game.autoDefend = sv.autoDefend !== false; game.fallback = !!sv.fallback;
+    game.alliances = sv.alliances || []; game.autoDefend = sv.autoDefend !== false; game.fallback = !!sv.fallback; game.mpNid = sv.mpNid ?? null;
     game.fleetTarget = { car: 0, boat: 0, plane: 0, rail: 0, ...(sv.fleetTarget || {}) };
     if (!sv.tv) { if (game.fleetTarget.car >= 4) game.fleetTarget.car++; game.fleetTarget.rail = 9; }   // Caravans slot in before Trucks; old trains keep running as they did
   }
@@ -13054,6 +13055,17 @@ function dipAction(n, act, tx, ty) {
     return showModal(`<div class="md-title">Declare war on ${n.full}?</div><div class="md-body">${allied('P', n.id) ? '<b class="r">They are your ally: this betrays the alliance, and every member will remember it.</b><br>' : ''}Their allies may join in. Your cannons and their missile silos open fire.</div>`,
       [{ label: 'Declare war', cls: 'danger', act: () => { if (allied('P', n.id)) leaveAlliance('P', true); provoke(n); n.warSince = game.time; renderDiplomacy(); } }, { label: 'Cancel', act: () => {} }]);
   }
+  if (rivals() && n.human) {                        // the other human decides for themselves
+    if (act === 'peace') { rivOffer('peace'); return say2({ accept: true, why: 'Offer sent: they decide.' }); }
+    if (act === 'trade') {
+      const C = nearestDomain(n.lx, n.ly), give = { ...dipDraft.give.res }, ask = { ...dipDraft.ask.res };
+      for (const r in give) if (give[r] > (C.res[r] || 0)) return say2({ accept: false, why: `${C.short} only has ${fmtNum(C.res[r])} ${r}.` });
+      if (!boxSum(give) && !boxSum(ask)) return say2({ accept: false, why: 'Put something in the offer first.' });
+      rivOffer('trade', { give, ask }); dipDraft = { give: { res: {}, towns: [] }, ask: { res: {}, towns: [] } };
+      return say2({ accept: true, why: 'Offer sent: they decide.' });
+    }
+    if (!['war', 'attack', 'expand'].includes(act)) return say2({ accept: false, why: `${n.short} is another player: offer peace or a trade, or go to war.` });
+  }
   if (act === 'peace') return say2(aiPeace(n));
   if (act === 'all') return openDiplomacyAll();
   if (act === 'surrender') return surrenderDialog([n]);
@@ -13597,7 +13609,7 @@ function mpStart() {
     }, 500);
   }
   if (mpGuest()) {
-    noSave = true;                                 // the friend's browser keeps no save of its own: the host's game is the game
+    noSave = !mpRival() || !RESUME;                // co-op: the host's game is the game; rivals: your realm is saved here once it's set up
     mpJoinScreen();
   } else mpWaitingRoom();
   mpConnect();
@@ -13666,31 +13678,291 @@ function mpLive() {
   return out;
 }
 function mpHostTick(dt) {
-  if (MP.role !== 'host' || !MP.conn || MP.waiting) return;
+  if (MP.role !== 'host' || !MP.conn || MP.waiting || mpRival()) return;   // rivals: rivTick
   if ((MP.lastSnap += dt) < SNAP_EVERY) return;
   MP.lastSnap = 0;
   mpSend({ t: 'snap', sv: mpSnapshot() });
 }
+// =====================================================================================================
+// ---------- Rivals: two whole players ----------
+// Each browser runs a complete player: its own domains, farms and fields, haulers, research, fleets, space
+// programme, computers, walls, everything. On each side, nation slot MP.nid is the OTHER human's realm, mirrored
+// from their updates. The host's game decides for the computer nations; the friend's game mirrors them.
+// Updates every couple of seconds, both ways: the land and buildings each one holds, their people and troops.
+// When one side takes land from the other (or a computer nation does), the loser is told and gives it up; losses of
+// troops in fights the other side worked out are passed on the same way.
+// =====================================================================================================
+const RIV = { gain: {}, won: [], prev: {}, pend: {}, seen: {}, hostDmg: 0, lastUnits: null, lost: [], applying: false, at: 0, ready: false, agreed: {}, sentAt: {}, mb: {}, gone: {}, destroyed: [] };
+const rivals = () => MP.role && mpRival();
+function runsOf(f) { const out = []; let cur = f(0), n = 0; for (let i = 0; i < N; i++) { const v = f(i); if (v === cur) n++; else { out.push(cur, n); cur = v; n = 1; } } out.push(cur, n); return out; }
+function eachRun(runs, cb) { let i = 0; for (let k = 0; k < runs.length; k += 2) { const v = runs[k], n = runs[k + 1]; if (v) for (let j = 0; j < n; j++) cb(i + j, v); i += n; } }
+function aiRelease(n, i) {                         // a nation gives up a tile (to nobody)
+  if (!aiOf[i]) return;
+  const x = i % W, y = (i / W) | 0;
+  aiOf[i] = 0;
+  if (!WORLD) { n.tiles = Math.max(0, n.tiles - 1); n.sx -= x; n.sy -= y; if (n.tiles) { n.lx = n.sx / n.tiles + 0.5; n.ly = n.sy / n.tiles + 0.5; } }   // a nation's numbers count its home land only
+  paintTerr(i); for (const [dx, dy] of DIRS4) if (inb(x + dx, y + dy)) paintTerr(idx(x + dx, y + dy));
+  game.landDirty = true;
+}
+function setTileTo(i, nid) {                       // make a tile nation nid's (or free, for -1), whoever held it
+  const cur = aiOf[i] ? aiOf[i] - 1 : -1;
+  if (owner[i]) { if (nid < 0) return; aiTake(game.nations[nid], i); return; }
+  if (cur === nid) return;
+  if (cur >= 0) aiRelease(game.nations[cur], i);
+  if (nid >= 0 && isLand(i)) {
+    if (!WORLD) aiClaim(game.nations[nid], i);
+    else { aiOf[i] = nid + 1; paintTerr(i); for (const [dx, dy] of DIRS4) if (inb(i % W + dx, ((i / W) | 0) + dy)) paintTerr(idx(i % W + dx, ((i / W) | 0) + dy)); game.landDirty = true; }   // the other human's colony
+  }
+}
+// buildings on tiles that aren't ours: the other side's list is the truth. One of theirs that's gone here since the
+// last update (shelled, bombed, nuked) is reported back as destroyed, and not put back until they've removed it.
+function mirrorBuildings(list, mine, w, theirs = () => true) {
+  const want = new Map(list.map(([i, t, site, lvl]) => [i, { t, site, lvl }]));
+  const had = RIV.mb[w] || new Set(), gone = RIV.gone[w] || (RIV.gone[w] = new Set());
+  for (const i of had) if (!building[i] && theirs(i)) { RIV.destroyed.push([w, i]); gone.add(i); }
+  for (const i of [...gone]) if (!want.has(i)) gone.delete(i);
+  for (const b of [...game.buildings]) if (!mine(b.i) && !want.has(b.i)) removeBuilding(b.i);
+  const now = new Set();
+  for (const [i, d] of want) {
+    if (mine(i) || !CFG.buildings[d.t] || gone.has(i)) continue;
+    if (theirs(i)) now.add(i);
+    let b = buildingAt(i);
+    if (b && b.type !== d.t) { removeBuilding(i); b = null; }
+    if (!b) { building[i] = BLD_CODE[d.t]; b = { i, type: d.t }; game.buildings.push(b); bldVer++; game.bldDirty = true; }
+    b.lvl = d.lvl || 0; b.mirrorSite = !!d.site;
+  }
+  RIV.mb[w] = now;
+}
+// the other side destroyed some of my buildings: they go here too
+function rivDestroyed(list) {
+  for (const [w, i] of list || []) {
+    // mine, or (on the host) a computer nation's that the friend's guns hit
+    const go = () => { const b = buildingAt(i); if (b && (owner[i] || (MP.role === 'host' && aiOf[i] && aiOf[i] !== MP.nid + 1))) { removeBuilding(i); game.blasts.push({ x: i % W + 0.5, y: ((i / W) | 0) + 0.5, t: 0, R: 1.2, life: 1.1, big: false, seed: i | 0 }); floatText(i % W + 0.5, ((i / W) | 0) - 0.5, `${CFG.buildings[b.type].name} destroyed`, '#ff7a6b'); game.bldDirty = true; } };
+    if (w === WORLD) go(); else if (worldGenerated(w)) onWorld(w, go);
+  }
+}
+// what my realm's troops lost in fights the other side worked out: taken from my garrisons, biggest first
+function loseUnits(n) {
+  let left = n;
+  for (const b of garrisons().sort((p, q) => (q.units || 0) - (p.units || 0))) { if (left <= 0) break; const k = Math.min(b.units || 0, left); b.units -= k; left -= k; }
+}
+const myUnits = () => garrisons().reduce((a, b) => a + (b.units || 0), 0) + game.attacks.reduce((a, at) => a + (at.done ? 0 : at.units + at.coming), 0);
+function realmSummary() {
+  const C = game.countries.filter(c => c.alive), res = resBox();
+  for (const c of C) for (const r in c.res) res[r] = (res[r] || 0) + Math.max(0, c.res[r] || 0);
+  const top = C[0] || {};
+  return { people: C.reduce((a, c) => a + c.people, 0), units: Math.round(myUnits()), stock: res, iron: res.iron, R: [...game.research.done],
+    full: `${top.full || 'Your friend'} (your friend)`, short: top.short || 'Friend', hex: domHex(top), alive: C.length > 0, cx: top.lx, cy: top.ly };
+}
+// ---- the host: what the friend needs to know ----
+function rivWorldMsg() {
+  const nid1 = MP.nid + 1, worlds = [];
+  forWorlds(() => {
+    worlds.push({ w: WORLD, runs: runsOf(i => (owner[i] ? -nid1 : aiOf[i] === nid1 ? 1 : aiOf[i] ? -aiOf[i] : 0)),
+      blds: game.buildings.filter(b => aiOf[b.i] !== nid1).map(b => [b.i, b.type, b.site || b.mirrorSite ? 1 : 0, b.lvl || 0]) });
+  });
+  const me = realmSummary(), hn = game.nations[MP.nid];
+  const nations = game.nations.map(n => n.id === MP.nid
+    ? { ...me, war: !!hn.hostile }
+    : { alive: n.alive, people: n.people, units: n.units, iron: n.iron, stock: n.stock, R: [...(n.R || [])], war: atWar(n.id, MP.nid) });
+  const out = { t: 'world', worlds, nations, lost: RIV.lost, won: RIV.won, hostDmg: Math.round(RIV.hostDmg), destroyed: RIV.destroyed };
+  RIV.lost = []; RIV.won = []; RIV.hostDmg = 0; RIV.destroyed = [];
+  return out;
+}
+// ---- the friend: what the host needs to know ----
+function rivRealmMsg() {
+  const worlds = [];
+  forWorlds(() => worlds.push({ w: WORLD, runs: runsOf(i => (owner[i] ? 1 : 0)), blds: game.buildings.filter(b => owner[b.i]).map(b => [b.i, b.type, b.site ? 1 : 0, b.lvl || 0]) }));
+  const dmg = {};                                  // troops the nations lost to my attacks since the last update
+  for (const n of game.nations) { const was = RIV.seen[n.id]; if (was != null && n.units < was - 0.5) dmg[n.id] = Math.round(was - n.units); RIV.seen[n.id] = n.units; }
+  const destroyed = RIV.destroyed; RIV.destroyed = [];
+  return { t: 'realm', worlds, me: realmSummary(), dmg, destroyed };
+}
+// ---- the host applies the friend's realm ----
+function rivApplyRealm(m) {
+  const n = game.nations[MP.nid], nid1 = MP.nid + 1;
+  if (!n) return;
+  RIV.applying = true;
+  try {
+    for (const [k, lost] of Object.entries(m.dmg || {})) {   // fights the friend worked out
+      if (+k === MP.nid) loseUnits(lost);                     // against my realm
+      else { const a = game.nations[k]; if (a) a.units = Math.max(0, a.units - lost); }
+    }
+    if (RIV.lastUnits != null && n.units < RIV.lastUnits - 0.5) RIV.hostDmg += RIV.lastUnits - n.units;   // fights worked out here
+    for (const Wd of m.worlds || []) {
+      if (!worldGenerated(Wd.w)) genWorld(Wd.w);
+      onWorld(Wd.w, () => {
+        const want = new Set(); eachRun(Wd.runs, i => want.add(i));
+        const prev = RIV.prev[Wd.w] || new Set(), pend = RIV.pend[Wd.w] || (RIV.pend[Wd.w] = new Set()), gain = RIV.gain[Wd.w] || (RIV.gain[Wd.w] = new Set());
+        for (const i of prev) if (aiOf[i] !== nid1) { RIV.lost.push([Wd.w, i, owner[i] ? MP.nid : aiOf[i] ? aiOf[i] - 1 : -1]); pend.add(i); }   // taken from the friend here
+        for (let i = 0; i < N; i++) if (aiOf[i] === nid1 && !prev.has(i) && !want.has(i) && !gain.has(i)) { gain.add(i); RIV.won.push([Wd.w, i]); }   // won for the friend here (their wars with the nations)
+        for (const i of [...pend]) if (!want.has(i)) pend.delete(i);   // they've given it up: done
+        for (const i of [...gain]) if (want.has(i) || aiOf[i] !== nid1) gain.delete(i);   // they've taken it up (or lost it again)
+        for (let i = 0; i < N; i++) if (aiOf[i] === nid1 && !want.has(i) && !gain.has(i)) aiRelease(n, i);
+        for (const i of want) if (!pend.has(i) && aiOf[i] !== nid1) setTileTo(i, MP.nid);
+        const now = new Set(); for (const i of want) if (aiOf[i] === nid1) now.add(i);
+        for (const i of gain) now.add(i);
+        RIV.prev[Wd.w] = now;
+        mirrorBuildings(Wd.blds, i => aiOf[i] !== nid1, Wd.w);
+      });
+    }
+    rivDestroyed(m.destroyed);
+    const s = m.me || {};
+    Object.assign(n, { people: s.people || 0, units: s.units || 0, stock: s.stock || n.stock, iron: s.iron || 0, R: new Set(s.R || []), full: s.full || n.full, short: s.short || n.short, hex: s.hex || n.hex, human: true });
+    if (!s.alive && !n.tiles) n.alive = false;
+    RIV.lastUnits = n.units;
+    game.bldDirty = true;
+  } finally { RIV.applying = false; }
+}
+// ---- the friend applies the host's world ----
+function rivApplyWorld(m) {
+  RIV.applying = true;
+  try {
+    for (const Wd of m.worlds || []) {
+      if (!worldGenerated(Wd.w)) genWorld(Wd.w);
+      onWorld(Wd.w, () => {
+        const tgt = new Int32Array(N).fill(-1);   // -1 free; k: nation k; -2: says it's mine
+        eachRun(Wd.runs, (i, v) => { tgt[i] = v === 1 ? -2 : -v - 1; });
+        for (let i = 0; i < N; i++) { if (owner[i] || tgt[i] === -2) continue; const cur = aiOf[i] ? aiOf[i] - 1 : -1; if (cur !== tgt[i]) setTileTo(i, tgt[i]); }
+        for (const [w, i, by] of m.lost || []) if (w === Wd.w && owner[i]) { if (by >= 0) aiTake(game.nations[by], i); }   // land taken from me over there
+        for (const [w, i] of m.won || []) if (w === Wd.w && !owner[i]) {   // land my troops won over there: it joins my nearest domain
+          const x = i % W, y = (i / W) | 0, C = nearestDomain(x + 0.5, y + 0.5);
+          if (C) { if (aiOf[i]) aiRelease(game.nations[aiOf[i] - 1], i); claim(i, C.id); }
+        }
+        mirrorBuildings(Wd.blds, i => !!owner[i], Wd.w);
+      });
+    }
+    (m.nations || []).forEach((s, k) => {
+      const n = game.nations[k];
+      if (!n) return;
+      Object.assign(n, { alive: s.alive, people: s.people, units: s.units, iron: s.iron, stock: s.stock || n.stock, R: new Set(s.R || []) });
+      if (k === MP.nid) Object.assign(n, { full: s.full, short: s.short, hex: s.hex || n.hex, human: true });
+      if (k !== MP.nid && game.time - (RIV.sentAt[k] ?? -99) > 6 && !!n.hostile !== !!s.war) { setWar('P', k, !!s.war); }   // my wars with the nations, as the host's game has them
+      if (k !== MP.nid) RIV.agreed[k] = !!n.hostile;
+      RIV.seen[k] = n.units;
+    });
+    if (m.hostDmg) loseUnits(m.hostDmg);
+    rivDestroyed(m.destroyed);
+    game.bldDirty = true;
+  } finally { RIV.applying = false; }
+}
+// ---- every couple of seconds, both ways ----
+function rivTick(dt) {
+  if (!rivals() || !MP.conn || MP.waiting || (mpGuest() && !RIV.ready)) return;
+  if ((RIV.at += dt) < SNAP_EVERY) return;
+  RIV.at = 0;
+  const was = WORLD;
+  try { rivSyncWars(); mpSend(MP.role === 'host' ? rivWorldMsg() : rivRealmMsg()); } finally { useWorld(was); }
+}
+// the friend's first look: the nation picked for them becomes their own realm (a full player), the host's a nation
+function rivStart(sv) {
+  if (RESUME && game.mpNid === MP.nid) { RIV.ready = true; noSave = false; game.nations[MP.nid].human = true; return; }   // back again: their own save already has it all
+  noSave = false;
+  loadGame(toGuestView(sv, MP.nid));
+  const C = game.countries[0];
+  if (C) {
+    C.people = Math.max(C.people, 60);
+    for (const b of game.buildings) if (owner[b.i] && b.type === 'farm' && !b.field) sowFields(b.i, true);   // their fields, sown
+    for (const S of game.buildings.filter(b => owner[b.i] && b.type === 'settlement')) {   // and a farm by each settlement that has none
+      const sx = S.i % W, sy = (S.i / W) | 0;
+      if (game.buildings.some(b => b.type === 'farm' && owner[b.i] && Math.hypot(b.i % W - sx, ((b.i / W) | 0) - sy) < 7)) continue;
+      let at = -1, fd = Infinity;
+      for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { if (!inb(sx + dx, sy + dy)) continue; const i = idx(sx + dx, sy + dy), d = Math.abs(dx * dx + dy * dy - 16); if (owner[i] && biome[i] === GRASS && depositOf[i] < 0 && !building[i] && d < fd) { fd = d; at = i; } }
+      if (at >= 0) { placeBuilding(at, 'farm'); sowFields(at, true); }
+    }
+    const S = game.buildings.find(b => owner[b.i] && b.type === 'settlement');
+    if (S) for (let k = 0; k < 2; k++) addCar(C, S, 0);   // two porters to start, as any new realm has
+    cam.x = C.lx; cam.y = C.ly;
+  }
+  game.mpNid = MP.nid;
+  game.started = true;
+  markNet(); game.bldDirty = true; game.landDirty = true;
+  RIV.ready = true;
+  saveGame();
+}
+// wars, both ways. However a war starts or ends here (a declaration, a betrayal, a peace deal), the other game is
+// told; the host's game also has the friend's wars with the computer nations, and tells the friend of theirs.
+function rivSyncWars() {
+  const ks = MP.role === 'host' ? [MP.nid] : game.nations.map(n => n.id);
+  for (const k of ks) {
+    const n = game.nations[k]; if (!n) continue;
+    const cur = !!n.hostile;
+    if (RIV.agreed[k] === undefined) { RIV.agreed[k] = cur; continue; }
+    if (cur !== RIV.agreed[k]) { RIV.agreed[k] = cur; RIV.sentAt[k] = game.time; mpSend({ t: 'war', k, on: cur }); }
+  }
+}
+function rivOnWar(m) {
+  RIV.applying = true;
+  const against = m.k === MP.nid, n = game.nations[MP.nid];
+  try {
+    if (MP.role === 'host' && !against) setWar(m.k, MP.nid, m.on);   // the friend and a computer nation
+    else { setWar('P', MP.nid, m.on); RIV.agreed[MP.nid] = m.on; }   // the two of you
+  } finally { RIV.applying = false; }
+  if (against) notify(m.on ? `⚔ ${n.short} has declared war on you!` : `🕊 Peace with ${n.short}`, m.on ? 'Their troops may come at any moment.' : '');
+}
+function rivOffer(kind, offer) {                   // peace or a trade, to the other human
+  mpSend({ t: 'offer', kind, offer });
+  toast(kind === 'peace' ? 'Peace offered: waiting for their answer.' : 'Trade offered: waiting for their answer.');
+}
+function rivOnOffer(m) {
+  const n = game.nations[MP.nid], C = activeCountry();
+  if (m.kind === 'peace') return offerTo(n, 'peace?', `${n.full} asks for peace.`, () => { setWar('P', MP.nid, false); mpSend({ t: 'answer', kind: 'peace', yes: true }); }, () => mpSend({ t: 'answer', kind: 'peace', yes: false }), 'Make peace', 'Refuse');
+  if (m.kind === 'trade') {
+    const give = m.offer.give || {}, ask = m.offer.ask || {};   // theirs: give is what they give me
+    return offerTo(n, 'a trade?', `${n.short} offers ${resWord(give) || 'nothing'} for ${resWord(ask) || 'nothing'}.`, () => {
+      for (const r in ask) if ((C.res[r] || 0) < ask[r]) { toast(`You don't have ${ask[r]} ${r}.`); return mpSend({ t: 'answer', kind: 'trade', yes: false }); }
+      for (const r in ask) C.res[r] -= ask[r];
+      storeIn(C, give);
+      mpSend({ t: 'answer', kind: 'trade', yes: true, offer: m.offer });
+    }, () => mpSend({ t: 'answer', kind: 'trade', yes: false }), 'Accept', 'Decline');
+  }
+}
+function rivOnAnswer(m) {
+  const n = game.nations[MP.nid], C = activeCountry();
+  if (m.kind === 'peace') { notify(m.yes ? `🕊 ${n.short} agreed to peace` : `${n.short} refused peace`, ''); return; }
+  if (m.kind === 'trade') {
+    if (!m.yes) return notify(`${n.short} turned down your trade`, '');
+    const give = m.offer.give || {}, ask = m.offer.ask || {};
+    for (const r in give) C.res[r] = Math.max(0, (C.res[r] || 0) - give[r]);
+    storeIn(C, ask);
+    notify(`🤝 ${n.short} accepted your trade`, `You gave ${resWord(give) || 'nothing'} and got ${resWord(ask) || 'nothing'}.`);
+  }
+}
+
 function mpOnMsg(m) {
   if (MP.role === 'host') {
     if (m.t === 'join') {
       if (mpRival() && MP.nid < 0) { let k = -1; try { k = +(localStorage.getItem('gt-mp-' + MP.room) ?? -1); } catch (e) { /* storage blocked */ } MP.nid = game.nations[k] && game.nations[k].alive ? k : mpPickNation(); try { localStorage.setItem('gt-mp-' + MP.room, MP.nid); } catch (e) { /* storage blocked */ } }
-      if (mpRival()) { const n = game.nations[MP.nid]; n.human = true; n.hostile = n.hostile || false; }
+      if (mpRival()) { const n = game.nations[MP.nid]; n.human = true; n.hostile = n.hostile || false; RIV.prev = {}; RIV.pend = {}; RIV.lastUnits = null; }
       MP.waiting = false; closeModal();
       mpSend({ t: 'hello', style: MP.style, nid: MP.nid, sv: mpSnapshot() });
+      if (mpRival()) RIV.at = SNAP_EVERY;            // and the world straight after
       const c0 = MP.conn; MP.conn = null;          // (this one is for the host only)
-      notify('🎮 Your friend has joined', mpRival() ? `They run ${game.nations[MP.nid].full}. Trade, ally or fight: it's up to you both.` : 'You share this empire: both of you can give any order.');
+      notify('🎮 Your friend has joined', mpRival() ? `They run a realm of their own (where ${game.nations[MP.nid].full} was): every building, vehicle and tech, just like you. Trade, make peace or fight: it's up to you both.` : 'You share this empire: both of you can give any order.');
       MP.conn = c0;
       return;
     }
     if (m.t === 'cmd') return mpRunCmd(m);
-    if (m.t === 'rival') return mpRunRival(m);
+    if (m.t === 'realm') return rivApplyRealm(m);
+    if (m.t === 'war') return rivOnWar(m);
+    if (m.t === 'offer') return rivOnOffer(m);
+    if (m.t === 'answer') return rivOnAnswer(m);
     return;
   }
   // the friend
   if (m.t === 'full') return mpStatus('That game already has two players.');
-  if (m.t === 'hello') { MP.joined = true; MP.style = m.style; MP.nid = m.nid; mpApply(m.sv, true); closeModal(); notify('🎮 Joined', mpRival() ? 'You run your own realm on this map. Your orders go to the host\'s game, which runs the world.' : 'You share this empire with the host: your orders count as theirs.'); return; }
-  if (m.t === 'snap') return mpApply(m.sv, false);
+  if (m.t === 'hello') {
+    MP.joined = true; MP.style = m.style; MP.nid = m.nid;
+    if (mpRival()) rivStart(m.sv); else mpApply(m.sv, true);
+    closeModal();
+    notify('🎮 Joined', mpRival() ? 'Your own realm: every building, vehicle, technology and space programme, as in any game. The other human and the computer nations are your neighbours.' : 'You share this empire with the host: your orders count as theirs.');
+    return;
+  }
+  if (m.t === 'snap') return mpRival() ? null : mpApply(m.sv, false);
+  if (m.t === 'world') return rivApplyWorld(m);
+  if (m.t === 'war') return rivOnWar(m);
+  if (m.t === 'offer') return rivOnOffer(m);
+  if (m.t === 'answer') return rivOnAnswer(m);
   if (m.t === 'note') return notify(m.title, m.body);
   if (m.t === 'toast') return toast(m.text);
 }
@@ -13705,8 +13977,7 @@ function mpPickNation() {
 }
 // ---------- the friend: lay the host's world over this one ----------
 function mpApply(sv, first) {
-  const was = WORLD, camWas = { ...cam }, mine = { sendPct: game.sendPct, troopPct: game.troopPct }, home0 = game.nations[MP.nid] && { x: game.nations[MP.nid].lx, y: game.nations[MP.nid].ly };
-  if (mpRival()) sv = toGuestView(sv, MP.nid);
+  const was = WORLD, camWas = { ...cam };        // co-op only: in rivals each game runs its own realm (rivApplyWorld)
   delete sv.cam;
   const live = sv.live || {};
   useWorld(0);
@@ -13719,12 +13990,8 @@ function mpApply(sv, first) {
   MP.lastKey = keys;
   for (const k of ['armies', 'attacks', 'raids', 'pushes', 'missiles', 'blasts']) if (Array.isArray(live[k])) game[k] = live[k];
   if (Array.isArray(live.cars)) game.cars = live.cars;
-  if (mpRival()) { const n = game.nations[MP.nid]; if (n) { n.full = `${sv.mp.hostName} (the host)`; n.short = sv.mp.hostName; } }
-  if (mpRival() && !first) Object.assign(game, mine);
-  if (mpRival() && game.countries[0]) Object.assign(MP.me, { full: game.countries[0].full, tier: game.countries[0].tier });
   if (was && worldGenerated(was)) useWorld(was);
   if (!first) Object.assign(cam, camWas);
-  else if (mpRival() && home0) { cam.x = home0.x; cam.y = home0.y; }
   else if (sv.mpCam) { cam.x = sv.mpCam[0]; cam.y = sv.mpCam[1]; }
   game.started = true;
   if (buildOpen) renderBuildMenu();
@@ -13788,7 +14055,6 @@ const MP_ORDERS = ['importAndBuild', 'transferTroops', 'setFallBack', 'setInsign
   'buildBridge', 'connectToRoad', 'buildWall', 'provoke', 'craft', 'dipAction', 'askAll', 'marketTrade', 'rushSite', 'hireTroops', 'upgradeComputer', 'buyWallUpgrade',
   'setPct', 'setTroopPct', 'removeBuilding', 'buildDysonRocket', 'launchDyson', 'startMega', 'startColony', 'fireMissile', 'fireIPBM', 'sendBomber', 'setGameMode', 'toggleDebug'];
 const MP_HOST_ONLY = ['setGameMode', 'toggleDebug'];   // the rules of the game: the host's call
-const MP_RIVAL = { startPush: 'expand', tryBuild: 'build', launchAttack: 'attack', guardedAttack: 'attack', provoke: 'war', dipAction: 'dip', setPct: 'local', setTroopPct: 'local' };
 function mpRef(x) {
   if (x && typeof x === 'object') {
     if (x.pers && game.nations.includes(x)) return { $n: x.id };
@@ -13820,16 +14086,9 @@ function mpWrap() {
     const wrapped = function (...args) {
       if (!mpGuest() || !MP.ui || MP.depth) return orig.apply(this, args);   // only the outermost order is sent
       if (MP_HOST_ONLY.includes(name)) { toast('Only the host can change that.'); return false; }
+      if (mpRival()) return orig.apply(this, args);   // rivals: your realm runs in your own game
       // diplomacy that opens a question first (war) or hands on to another order (attack, expand): the inner order is what's sent
       if (name === 'dipAction' && ['war', 'attack', 'expand'].includes(args[1])) return orig.apply(this, args);
-      if (mpRival()) {
-        const op = MP_RIVAL[name];
-        if (!op || (name === 'dipAction' && !['peace', 'trade'].includes(args[1]))) { toast('As a rival realm you can expand, build, attack, and offer war, peace or trades.'); return false; }
-        if (op === 'local') return orig.apply(this, args);
-        mpSend({ t: 'rival', op, args: args.map(mpRef), pct: game.sendPct / 100, troops: game.troopPct / 100, draft: name === 'dipAction' ? dipDraft : null });
-        toast('Order sent to the host\'s game.');
-        return true;
-      }
       mpSend({ t: 'cmd', fn: name, args: args.map(mpRef), w: WORLD });
       MP.depth++;
       try { return orig.apply(this, args); }       // and here at once, for feedback (the next update from the host corrects it)
@@ -13843,79 +14102,6 @@ function mpRunCmd(m) {
   if (!fn) return;
   const go = () => { buildAuto = buildAuto || 'remote'; try { fn(...m.args.map(mpDeref)); } catch (e) { console.warn('mp order', m.fn, e); } finally { if (buildAuto === 'remote') buildAuto = null; } };
   if (m.w && worldGenerated(m.w)) onWorld(m.w, go); else go();
-}
-// ---------- rivals: the host carries out the friend's orders for their nation ----------
-function mpRunRival(m) {
-  const n = game.nations[MP.nid];
-  if (!n || !n.alive) return;
-  const a = m.args.map(x => (x && typeof x === 'object' && '$n' in x ? { nation: x.$n } : x));
-  const tell = t => mpSend({ t: 'toast', text: t });
-  const asTarget = id => (id === MP.nid ? 'P' : id);   // in the friend's view, the host's empire sits in their own nation's slot
-  if (m.op === 'expand') {
-    const [tx, ty] = a, budget = n.people * clamp(m.pct || 0.25, 0.05, 1);
-    const cand = [...n.front].filter(f => freeLand(f)).sort((p, q) => Math.hypot(p % W - tx, ((p / W) | 0) - ty) - Math.hypot(q % W - tx, ((q / W) | 0) - ty));
-    let spent = 0;
-    for (const f of cand.slice(0, 400)) { const c = tileCost(f); if (spent + c > budget) break; if (!freeLand(f)) continue; spent += c; aiClaim(n, f); }
-    n.people -= spent;
-    return tell(spent ? `Your people claim ${Math.round(spent)} worth of land.` : 'No free land to claim that way.');
-  }
-  if (m.op === 'build') {
-    const [i, type] = a, def = CFG.buildings[type];
-    if (!def || aiOf[i] !== n.id + 1 || building[i] || !isLand(i)) return tell("You can only build on your own empty land.");
-    if (def.tech && !n.R.has(def.tech)) return tell(`${def.name} needs ${TECH[def.tech].name}.`);
-    for (const r in def.cost) if ((r === 'iron' ? n.iron || 0 : (n.stock || {})[r] || 0) < def.cost[r]) return tell(`Not enough ${r} for a ${def.name.toLowerCase()}.`);
-    if (def.people && n.people < def.people + 10) return tell('Not enough people to found a settlement.');
-    for (const r in def.cost) { if (r === 'iron') n.iron -= def.cost[r]; else n.stock[r] -= def.cost[r]; }
-    if (def.people) n.people -= def.people;
-    placeBuilding(i, type); game.bldDirty = true;
-    return tell(`${def.name} built.`);
-  }
-  if (m.op === 'attack') {
-    const [tgt, tx, ty] = a, id = asTarget(tgt && tgt.nation != null ? tgt.nation : -1);
-    if (id === 'P') {
-      if (!MODE().war) return tell('Peaceful mode: no wars.');
-      if (!n.hostile) { setWar('P', n.id, true); notify(`⚔ ${n.short} (your friend) has declared war on you!`, 'Their troops are coming.'); }
-      const budget = Math.floor(n.units * clamp(m.troops || 0.5, 0.1, 1));
-      if (budget < 3) return tell('Not enough troops: your bases train them over time.');
-      if (!n.warFront.size) return tell("Your land doesn't touch the host's yet: expand toward them first.");
-      n.units -= budget; n.lastRaid = game.time;
-      game.raids.push({ n: n.id, budget, start: budget, work: 0, tx: tx + 0.5, ty: ty + 0.5, lx: null, ly: null });
-      return tell(`${budget} troops are marching on the host's land.`);
-    }
-    if (id >= 0 && game.nations[id]) { setWar(n.id, id, true); return tell(`You are at war with ${game.nations[id].short}: your troops fight along the border.`); }
-    return;
-  }
-  if (m.op === 'war') {
-    const [tgt] = a, id = asTarget(tgt && tgt.nation);
-    if (id === 'P') { setWar('P', n.id, true); notify(`⚔ ${n.short} (your friend) has declared war on you!`, ''); }
-    else if (id != null && game.nations[id]) setWar(n.id, id, true);
-    return tell('War declared.');
-  }
-  if (m.op === 'dip') {
-    const [tgt, act] = a, id = asTarget(tgt && tgt.nation);
-    if (id === 'P') {
-      if (act === 'peace') return offerTo(n, 'peace?', `Your friend (${n.full}) asks for peace.`, () => { setWar('P', n.id, false); mpSend({ t: 'toast', text: 'The host agreed to peace.' }); }, () => tell('The host refused peace.'), 'Make peace', 'Refuse');
-      if (act === 'war') { setWar('P', n.id, true); notify(`⚔ ${n.short} (your friend) has declared war on you!`, ''); return; }
-      if (act === 'trade' && m.draft) {
-        const give = m.draft.give.res || {}, ask = m.draft.ask.res || {}, C = nearestDomain(n.lx, n.ly);
-        for (const r in give) if ((r === 'iron' ? n.iron : n.stock[r] || 0) < give[r]) return tell(`You don't have ${give[r]} ${r}.`);
-        return offerTo(n, 'a trade?', `Your friend offers ${resWord(give) || 'nothing'} for ${resWord(ask) || 'nothing'}.`, () => {
-          for (const r in ask) if (C.res[r] < ask[r]) return toast(`You don't have ${ask[r]} ${r}.`);
-          for (const r in give) { if (r === 'iron') n.iron -= give[r]; else n.stock[r] -= give[r]; }
-          for (const r in ask) C.res[r] -= ask[r];
-          storeIn(C, give);
-          for (const r in ask) { if (r === 'iron') n.iron = (n.iron || 0) + ask[r]; else n.stock[r] = (n.stock[r] || 0) + ask[r]; }
-          mpSend({ t: 'toast', text: 'The host accepted your trade.' });
-        }, () => tell('The host turned down your trade.'), 'Accept', 'Decline');
-      }
-      return tell('The host can only be offered war, peace or trades.');
-    }
-    if (id != null && game.nations[id]) {
-      if (act === 'war') { setWar(n.id, id, true); return tell('War declared.'); }
-      if (act === 'peace') { if (atWar(n.id, id) && Math.random() < 0.5) { setWar(n.id, id, false); return tell('They agreed to peace.'); } return tell('They refused.'); }
-    }
-    return tell('That needs the host to do it.');
-  }
 }
 
 function init() {
@@ -13990,5 +14176,5 @@ window.__game = { TOUCH, mouse, game, cam, CFG, SEED, tick: tickAll, tickOne: ti
   render, followBody, stopFollow, sunPos, wallGarrisons, buildDysonRocket, launchDyson, sendBomber, fireIPBM, setBombing, dysonPower, buildBridge, bridgePlan, POLAR, claim, isLand, launchRocket, makeStation, buyShuttle, toggleEngine, orbitOf, DISK, keys, showBuildingCard, refreshCard, openDiplomacy, aiConsider, doTrade, aiPeace, aiAlly, allianceOf, getOp, addOp, atWar, setWar, settlementLand, guardedAttack, autoDefend, buyVehicle, orderUpgrade, fleetSummary, tierOpen, addCar, seaCrossing, settleExpedition, takeWheel, completeTech, setPct, setTroopPct, roadsList: () => roads, buildRoads, netGraph, findRoute, connectPlan, connectToRoad, wallPlan, pickWallEnd, strikePlan, strikeReach, techIn, goldBoost, haulProf, NET, defenseMult, nextVehicle, driveStep: (e, dt) => driveStep(e, dt), removeBuilding, TECH, unitStats, garrisons, totalUnits, launchAttack, frontWith, setTool, confirmGhost, setCmd, clickAt, commandClick,
   routesTo, dispatchSupplies, linkStats, techCost, pickTech, playerTechScore, resourceProfile, research: () => game.research, hasDep, oilKnown, W, frontier, tileCenter,
   stopSaving: () => { noSave = true; }, scanAiBorders, dbgAI: () => ({ borders: [...aiBorders.keys()], gaps: [...aiGap.entries()].map(([k, v]) => k + ':' + Math.round(v.d)), dipTimer, borderTimer, offerTimer }), aiOffers, aiRelations, driftOpinions, SVG, RAS, SPR, debugOff, terraOf, planetTerra, poweredTerraformers, terraNeed, stepPlanetTerraform, compFx, compOf, bestComputer, upgradeComputer, researchPeople, SHUTTLE_MK, upgradeShuttle, shRange, canReachWorld, craft, CRAFTS, aiCompute, aiState, showAIPanel, stepAIs, aiDoRoads, aiDoGambit, aiDoWar, aiDoBuild, aiDoTrade, roadsList2: () => roads, invPull, invOf, lootSettlement, lootNation, sourceSettlement, stepInventories, skyWorldPos, foreignSkyClick, setGameMode, MODE, modePicker, aiUnitCap, aiTreaty, signTreaty, treaty, aiSurrender, doSurrender, warLosing, nationWorth, termsValue, askAll, openDiplomacyAll, aiNeeds, surrenderDialog, fearOf, showMarket, marketTrade, rushSite, rushCost, hireTroops, mercCost, treasury, orderStation, padBusy, myStations, wallState, fortState, damageWall, damageFort, wallMax, fortMax, showWallCard, wallNear, fortNear, buyWallUpgrade, upgradeCost, wallGroupOf, wallsAfterWar, stepRepairs, ironWallCross, viaLink, landWay, keepOnLand, shipGoods, crossesWater, tradePath, shoreOf, landGroup, overland, wet, tradeEnd, tilePath, intraArrive, stationNearSettlement, carProf };
-Object.assign(window.__game, { startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, mpSnapshot, toGuestView, mpApply, mpRunRival, buildWall, sowFields, stepSowing });
+Object.assign(window.__game, { startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, mpSnapshot, toGuestView, mpApply, RIV, rivWorldMsg, rivRealmMsg, buildWall, sowFields, stepSowing });
 init();

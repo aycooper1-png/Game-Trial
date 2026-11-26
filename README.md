@@ -16,9 +16,9 @@ Pick one when you start a new map, and change it any time from the Command menu 
 
 ## Multiplayer
 Play with one friend: **New map → 🎮 Multiplayer**. Pick how you play, then copy the link and send it however you like (text, chat, email). The game waits until your friend opens the link, then starts for both of you.
-- **Rivals:** your friend runs a computer nation of about your size, somewhere else on the map. They can expand, build, attack, and offer you war, peace or trades. You answer their offers like any nation's.
+- **Rivals:** your friend plays a full realm of their own (taking over a nation's land), with everything you have: farms and industry, research, vehicles, armies, colonies and space. Each browser runs its own realm and the two stay in sync every couple of seconds; you see each other as a nation and can go to war, make peace or trade. Their game saves on their own device, so the same link brings their realm back.
 - **Co-op:** you both command one shared empire. Either of you can give any order, and you both see the news.
-- The two browsers connect directly, through the free PeerJS matchmaking service (bundled, no game server). The host's game runs the world, so the host keeps the tab open (in a hidden tab the game keeps going, but slower). If the friend drops out, the same link brings them back. In Rivals their realm is run by the computer until they do.
+- The two browsers connect directly, through the free PeerJS matchmaking service (bundled, no game server). The host's game runs the world, so the host keeps the tab open (in a hidden tab the game keeps going, but slower). If the friend drops out, the same link brings them back. In Rivals their realm waits, unchanged, until they do.
 - **Limits:** a rival friend has a simpler set of orders than the host: no vehicles, links, walls, space programme or computers of their own. They see stocks and land every couple of seconds, so things on the move can jump a little. Only the host can change the game mode or switch on creative mode.
 
 ## The art
