@@ -262,37 +262,40 @@ const CFG = {
     kill: 0.08,                        // units one engaged unit kills per second, at equal strength
   },
   // links: what one vehicle carries per trip and how fast it goes (tiles/s), before tech
+  // Cargo is in proportion to the real thing as far as the game allows: a porter carries about 30 kg, a pack horse 120,
+  // a wagon most of a tonne, a caravan 2.5 t, a truck 10 t, a self-driving rig 25 t; a sailboat 20 t, a container ship
+  // 150,000 t; a DC-3 3 t, a 747 freighter 120 t; a steam freight train 1,000 t, an electric one 8,000 t.
   // Your fleet: every car, boat and plane is bought, and the more you have the more goods move. A kind's tiers open with
   // tech; your fleet is upgraded only when you choose to (at a settlement, port or airport), one vehicle at a time
   // as each one calls in at one, paying each one's `cost`. `fuel`: oil a second while it's moving (steamships burn wood
   // before Petroleum). Out of fuel, a vehicle drops to the tier below until it calls in somewhere that has fuel again.
   fleet: {
     car: { name: 'cars', hub: 'settlement', offRoad: 0.2, start: 3, store: 80, tiers: [
-      { id: 'porter',   name: 'Porters',     tech: null,         cargo: 15, speed: 4,  cost: { wood: 8 }, stick: 1, feed: 0.012 },
-      { id: 'handcart', name: 'Handcarts',   tech: 'wheel',      cargo: 28, speed: 5,  cost: { wood: 12 }, stick: 1.3, feed: 0.012 },
-      { id: 'horse',    name: 'Pack horses', tech: 'horses',     cargo: 45, speed: 7,  cost: { wood: 10, wheat: 20 }, stick: 1.6, feed: 0.03 },
-      { id: 'carriage', name: 'Carriages',   tech: 'carriages',  cargo: 80, speed: 8,  cost: { wood: 25, iron: 5 }, stick: 2.2, feed: 0.03 },
+      { id: 'porter',   name: 'Porters',     tech: null,         cargo: 10, speed: 4,  cost: { wood: 8 }, stick: 1, feed: 0.012 },
+      { id: 'handcart', name: 'Handcarts',   tech: 'wheel',      cargo: 16, speed: 5,  cost: { wood: 12 }, stick: 1.3, feed: 0.012 },
+      { id: 'horse',    name: 'Pack horses', tech: 'horses',     cargo: 22, speed: 7,  cost: { wood: 10, wheat: 20 }, stick: 1.6, feed: 0.03 },
+      { id: 'carriage', name: 'Carriages',   tech: 'carriages',  cargo: 60, speed: 8,  cost: { wood: 25, iron: 5 }, stick: 2.2, feed: 0.03 },
       { id: 'caravan',  name: 'Caravans',    tech: 'caravans',   cargo: 140, speed: 8.5, cost: { wood: 30, iron: 8, wheat: 20 }, stick: 3, feed: 0.045 },
       { id: 'truck',    name: 'Trucks',      tech: 'automobile', cargo: 250, speed: 15, cost: { iron: 25, oil: 5 }, stick: 5, feed: 0.01, fuel: 0.03 },
       // later tiers come by themselves (auto): a truck is refitted for free next time it calls in, once you know how
       { id: 'etruck',   name: 'Electric trucks', tech: 'batteries', cargo: 400, speed: 17, cost: {}, stick: 9, feed: 0.01, mw: 0.15, auto: true },
       { id: 'autohauler', name: 'Self-driving haulers', tech: 'cais', cargo: 800, speed: 22, cost: {}, stick: 30, mw: 0.2, auto: true } ] },
     boat: { name: 'boats', hub: 'port', tiers: [
-      { id: 'sailboat',  name: 'Sailboats',  tech: 'sailing',      cargo: 60, speed: 6,  cost: { wood: 30 } },
-      { id: 'galleon',   name: 'Galleons',   tech: 'shipbuilding', cargo: 140, speed: 7.5, cost: { wood: 40, iron: 10 } },
-      { id: 'steamship', name: 'Steamships', tech: 'steam',        cargo: 320, speed: 12, cost: { iron: 35 }, fuel: 0.1, woodFuel: 0.12 },
+      { id: 'sailboat',  name: 'Sailboats',  tech: 'sailing',      cargo: 30, speed: 6,  cost: { wood: 30 } },
+      { id: 'galleon',   name: 'Galleons',   tech: 'shipbuilding', cargo: 60, speed: 7.5, cost: { wood: 40, iron: 10 } },
+      { id: 'steamship', name: 'Steamships', tech: 'steam',        cargo: 185, speed: 12, cost: { iron: 35 }, fuel: 0.1, woodFuel: 0.12 },
       { id: 'freighter', name: 'Diesel freighters', tech: 'petroleum', cargo: 650, speed: 14, cost: {}, fuel: 0.12, auto: true },
       { id: 'container', name: 'Container ships', tech: 'computing', cargo: 1500, speed: 16, cost: {}, fuel: 0.14, auto: true } ] },
     plane: { name: 'planes', hub: 'airport', tiers: [
-      { id: 'plane', name: 'Propeller planes', tech: 'flight',   cargo: 90, speed: 30, cost: { iron: 30, oil: 10 }, fuel: 0.3 },
+      { id: 'plane', name: 'Propeller planes', tech: 'flight',   cargo: 40, speed: 30, cost: { iron: 30, oil: 10 }, fuel: 0.3 },
       { id: 'jet',   name: 'Jets',             tech: 'rocketry', cargo: 220, speed: 55, cost: { iron: 50, oil: 20 }, fuel: 0.5 },
       { id: 'cargojet', name: 'Wide-body freighters', tech: 'computing', cargo: 550, speed: 60, cost: {}, fuel: 0.6, auto: true } ] },
     // a train comes free with each rail line. You upgrade them at any station (steam, then diesel, then electric bullet
     // trains): each is refitted, and paid for, when it next pulls in. Short of oil or power, a train runs on the tier below.
     rail: { name: 'trains', hub: 'station', tiers: [
-      { id: 'steamtrain', name: 'Steam trains',    tech: 'steam',       cargo: 600, people: 60,  speed: 20, cost: {}, wood: 0.12 },
-      { id: 'diesel',     name: 'Diesel trains',   tech: 'automobile',  cargo: 1200, people: 90,  speed: 26, cost: { iron: 30, oil: 10 }, oil: 0.06 },
-      { id: 'electric',   name: 'Electric bullet trains', tech: 'electricity', cargo: 2500, people: 140, speed: 42, cost: { iron: 50, stone: 30 }, mw: 4 } ] },
+      { id: 'steamtrain', name: 'Steam trains',    tech: 'steam',       cargo: 220, people: 60,  speed: 20, cost: {}, wood: 0.12 },
+      { id: 'diesel',     name: 'Diesel trains',   tech: 'automobile',  cargo: 1100, people: 90,  speed: 26, cost: { iron: 30, oil: 10 }, oil: 0.06 },
+      { id: 'electric',   name: 'Electric bullet trains', tech: 'electricity', cargo: 1750, people: 140, speed: 42, cost: { iron: 50, stone: 30 }, mw: 4 } ] },
   },
   transport: { road: { cargo: 8, people: 6, speed: 5 }, sea: { cargo: 25, people: 10, speed: 6 },
                rail: { cargo: 60, people: 20, speed: 14 }, air: { cargo: 30, people: 15, speed: 30 } },
