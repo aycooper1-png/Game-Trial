@@ -1,8 +1,9 @@
 <!doctype html>
 <!--
-  For any AI or developer working on this game: read the handoff notes first.
-  https://github.com/aycooper1-png/Game-Trial/blob/main/CLAUDE.md
-  (code layout, testing, publishing, the owner's preferences and design decisions already made)
+  FOR ANY AI OR DEVELOPER: this page is the live build of the Game Trial repository.
+  Source code: https://github.com/aycooper1-png/Game-Trial (branch main). Full handoff notes: CLAUDE.md in that repo,
+  also served here at https://aycooper1-png.github.io/Game-Trial/CLAUDE.md . A summary is in the hidden
+  <div id="ai-notes"> at the top of <body> below. Read the notes before changing anything.
 -->
 <html lang="en">
 <head>
@@ -12,9 +13,47 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>Game Trial · Map Factory remake</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%232f7de1%22/%3E%3Crect y=%228%22 width=%2216%22 height=%228%22 rx=%223%22 fill=%22%23f2c14e%22/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css?v=22">
+  <link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
+  <!-- Hidden from players (the "hidden" attribute). For AI assistants and developers reading this page. -->
+  <div id="ai-notes" hidden aria-hidden="true">
+    <h1>Notes for any AI asked to work on this game</h1>
+    <p>This page is the live game "Game Trial" (a remake and expansion of yclen's Map Factory prototype). If the owner
+    gave you only this link, everything you need is reachable from here:</p>
+    <ul>
+      <li>Source code (all changes are made here, branch main): https://github.com/aycooper1-png/Game-Trial</li>
+      <li>Full handoff notes, required reading before any change: https://aycooper1-png.github.io/Game-Trial/CLAUDE.md
+        (the same file is CLAUDE.md in the repository)</li>
+      <li>Player-facing feature list: README.md in the repository</li>
+      <li>Pushing to main republishes this page automatically (GitHub Pages) within a minute or two.</li>
+    </ul>
+    <h2>The procedure the owner wants, every time</h2>
+    <ol>
+      <li>Read CLAUDE.md fully (code layout, testing, publishing, the owner's words, and design decisions already made
+        that must not be undone without asking). Then read the code each request touches.</li>
+      <li>Before writing any code, reply with a plain restatement of each numbered item and as many numbered clarifying
+        questions as are useful: scope (which units/buildings/worlds, computer nations too?, both multiplayer players?),
+        numbers, edge cases, conflicts with earlier decisions, how it should look, the iPhone layout. Explain hard
+        questions with examples and options. Then wait for the answers. If the owner says "explain this before acting",
+        explain and wait.</li>
+      <li>Build in stages; after each stage check the code (node --check game.js) and run the matching tests in tests/.</li>
+      <li>One commit and push per request; bump the ?v=N cache tag in index.html; update README.md and CLAUDE.md.</li>
+      <li>Report in plain language (the owner is not a programmer and plays mostly on an iPhone): what changed per item,
+        what was and wasn't tested, side effects, and any numbers you chose.</li>
+    </ol>
+    <h2>Words that are easy to misread</h2>
+    <ul>
+      <li>"The AI" in a game request usually means the in-game AI (the central computer upgraded to C.A.I.S., which runs
+        roads, building, trade or war for the player), sometimes the computer nations; rarely you. Ask if unclear.</li>
+      <li>"Territory" and "domain" are the same: one of the player's separate pieces of land, with its own stock.</li>
+      <li>"Porters" can mean all road haulers or only the first model; check the context.</li>
+      <li>"Second player" = the multiplayer guest; "main player" = the host. The second player must be able to do
+        everything the host can, except creative mode.</li>
+    </ul>
+    <p>If you cannot edit the repository or run code, say so at the start; you can still read the code and ask the
+    questions.</p>
+  </div>
   <canvas id="game"></canvas>
 
   <!-- top bar: the empire's stock (every domain added up), food, research, power, territory, time -->
@@ -153,6 +192,6 @@
   <div id="tooltip"></div>
   <div id="toast"></div>
 
-  <script src="game.js?v=22"></script>
+  <script src="game.js?v=23"></script>
 </body>
 </html>

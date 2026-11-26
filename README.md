@@ -4,7 +4,7 @@ A remake of the [Map Factory prototype](https://yclen.github.io/map-factory/prot
 
 **▶ Play:** https://aycooper1-png.github.io/Game-Trial/
 
-**Working on the code (people or AI):** read [CLAUDE.md](CLAUDE.md) first: how the code is organised, how to test and publish, and the design decisions already made.
+**Working on the code (people or AI):** read [CLAUDE.md](CLAUDE.md) first (also at https://aycooper1-png.github.io/Game-Trial/CLAUDE.md). It says how to handle a request (restate it and ask clarifying questions before coding), how the code is organised, how to test and publish, and the design decisions already made.
 
 The game works on phones as well as on desktops. It autosaves in your browser every 10 seconds. Add `?seed=123` to the address to play a specific map.
 
