@@ -1694,9 +1694,12 @@ const BIOME_KEY = [null, 'grass', 'desert', 'mountain', null, null, 'polar'];
 
 const params = new URLSearchParams(location.search);
 // autosave lives in this browser (localStorage). Opening the game without ?seed= resumes it.
-const SAVE_KEY = params.get('join') ? 'game-trial-mp-' + params.get('join') : 'game-trial-save-v2';   // a friend's realm in a rivals game keeps its own save
+// a game someone sent you (save.html unpacks it into this tab's window.name, then opens ?shared=1): it opens as a copy to
+// look at, under a key of its own, and is never saved, so your own game is left as it is
+const SHARED = params.has('shared') ? (() => { try { return window.name.startsWith('gtshared:') ? JSON.parse(window.name.slice(9)) : null; } catch (e) { return null; } })() : null;
+const SAVE_KEY = params.has('shared') ? 'game-trial-shared-view' : params.get('join') ? 'game-trial-mp-' + params.get('join') : 'game-trial-save-v2';   // a friend's realm in a rivals game keeps its own save
 const SAVE_V = 1;
-const SAVED = (() => { try { const v = JSON.parse(localStorage.getItem(SAVE_KEY)); return v && v.v === SAVE_V ? v : null; } catch (e) { return null; } })();
+const SAVED = SHARED && SHARED.v === SAVE_V ? SHARED : (() => { try { const v = JSON.parse(localStorage.getItem(SAVE_KEY)); return v && v.v === SAVE_V ? v : null; } catch (e) { return null; } })();
 const SEED = params.has('seed') ? (parseInt(params.get('seed'), 10) || 1) : SAVED ? SAVED.seed : ((Math.random() * 1e6) | 0);
 const RESUME = SAVED && SAVED.seed === SEED && (!params.get('join') || params.get('style') === 'rivals') ? SAVED : null;   // a friend joining a game never loads their own save
 const W = CFG.mapW, H = CFG.mapH, N = W * H;
@@ -12895,6 +12898,7 @@ function initUI() {
     else if (act === 'debug') toggleDebug();
     else if (act === 'mute') toggleMute();
     else if (act === 'tutorial') { tutStart(); return; }
+    else if (act === 'sendsave') { sendMyGame(); return; }
     else if (act === 'bomber') { toggleCmdMenu(false, true); setBombing(!bombing); }
     updateCmdMenu();
   });
@@ -16660,6 +16664,20 @@ function mpRunCmd(m) {
 // Is a newer version of the game online than the one running? Then save and reload once, so a phone that kept an old
 // copy (browser cache, a home-screen icon) gets the fixes. The running version is the ?v= of this script's own tag;
 // the live one is read from a fresh copy of the page. One try per version per session, so it can never loop.
+// a shared game on screen: a banner says so, with the way back to your own game
+function sharedHint() {
+  const el = document.createElement('div'); el.id = 'shared-hint';
+  el.innerHTML = SHARED ? `<span>📤 A copy of someone's game (${fmtTime(game.time)} played) · nothing here is saved</span><button>Back to my game</button>`
+    : `<span>📤 The shared game could not be opened here</span><button>Back to my game</button>`;
+  el.querySelector('button').onclick = () => { window.name = ''; location.href = location.pathname; };
+  document.body.appendChild(el);
+}
+// "Send my game": save now, then the page that packs it into a link or a file
+function sendMyGame() {
+  if (params.has('shared')) return toast('This is someone else\'s game: there is nothing of yours to send from here.');
+  saveGame();
+  location.href = location.pathname.replace(/[^/]*$/, '') + 'save.html';
+}
 function checkFresh() {
   try {
     if (!/^https?:$/.test(location.protocol) || !window.fetch) return;
@@ -16699,6 +16717,7 @@ function start() {
     catch (e) {                                     // a save from an incompatible version: drop it and start this map fresh
       console.warn('Could not load the save; starting fresh', e);
       noSave = true;
+      if (params.has('shared')) { window.name = ''; location.reload(); return; }   // someone's shared game that won't load: drop it (never touch your own save), or it would reload for ever
       try { localStorage.setItem(SAVE_KEY + '-broken', localStorage.getItem(SAVE_KEY)); } catch (e2) { /* no room: it goes */ }   // kept aside, so a game is never erased without a trace
       try { localStorage.removeItem(SAVE_KEY); } catch (e2) { /* storage blocked */ }
       location.reload();
@@ -16709,6 +16728,7 @@ function start() {
     const C = activeCountry(), S = C && nearestSettlement(C, C.lx, C.ly);
     if (S) for (let k = 0; k < FLEET.car.start; k++) addCar(C, S, 0);
   }
+  if (params.has('shared')) noSave = true;         // someone else's game, opened to look at: never saved
   initUI();
   if (MP.role) mpStart();
   setInterval(saveGame, 10000);
@@ -16719,7 +16739,9 @@ function start() {
   if (ld) ld.remove();
   try { saneCamera(); } catch (e) { console.error(e); }   // a saved camera looking at empty space: back over your land
   setTimeout(checkFresh, 3000);                    // a phone still running an older copy of the game picks up the new one
+  if (params.has('shared')) sharedHint();
   if (MP.role) { /* the waiting room or the join screen says hello */ }
+  else if (params.has('shared')) { /* the banner says it all */ }
   else if (RESUME && !noSave) toast(`Welcome back: game loaded (seed ${SEED}, ${fmtTime(game.time)} played). It autosaves every 10 s.`);
   else tutStart();                                 // a new world: the tutorial offers itself (one tap to say no thanks)
 

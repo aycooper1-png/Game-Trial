@@ -455,13 +455,13 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
   #topbar .res .ic { display: none; }
 }
 /* building a wall: what to do, and a way out */
-#wall-hint, #colony-hint {
+#wall-hint, #colony-hint, #shared-hint {
   position: fixed; left: 50%; top: calc(var(--top-h, 58px) + 56px); transform: translateX(-50%); z-index: 9;
   display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 24px);
   background: rgba(20, 26, 37, 0.95); border: 1px solid #f2c14e; color: var(--text);
   padding: 6px 8px 6px 14px; border-radius: 10px; font-size: 13px; font-weight: 600;
 }
-#wall-hint button, #colony-hint button { padding: 6px 12px; border-radius: 7px; border: 1px solid #3a4658; background: #1c2431; color: var(--text); font: inherit; cursor: pointer; }
+#wall-hint button, #colony-hint button, #shared-hint button { padding: 6px 12px; border-radius: 7px; border: 1px solid #3a4658; background: #1c2431; color: var(--text); font: inherit; cursor: pointer; }
 /* a settlement's stock, laid out like the stock in the top bar */
 .inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 4px; margin: 4px 0 2px; }
 .inv-res { display: flex; align-items: center; gap: 7px; padding: 5px 7px 5px 4px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); }
@@ -569,3 +569,6 @@ body.lostview #notes { top: calc(var(--top-h, 58px) + 52px); }
   #tut .tut-btns button { padding: 7px 12px; }
   #tut.bottom { bottom: calc(128px + env(safe-area-inset-bottom)); }
 }
+/* a shared game on screen: the banner takes the width it needs */
+#shared-hint { width: calc(100vw - 32px); max-width: 480px; box-sizing: border-box; justify-content: space-between; }
+#shared-hint button { flex: none; white-space: nowrap; }

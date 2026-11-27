@@ -166,10 +166,11 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 | `README.md` | Player-facing feature list. Update it when features change. |
 | `tests/` | Playwright test scripts (section 5). Not loaded by the game. |
 | `CLAUDE.md` | This file. `AGENTS.md` points here (other AI tools look for that name). |
+| `save.html` | **Send my game** (round 22): a small page of its own (no game code) that packs the saved game into a link, or a file when it is too big for a message, and opens one someone sent. Reads the save straight from `localStorage`, so it works even when the game won't run. |
 | `.nojekyll` | Makes GitHub Pages serve files as they are. Keep it. |
 
 **Cache tag:** `index.html` loads `style.css?v=N` and `game.js?v=N`. **Increase N by one on every push**, in both
-places, or phones keep running the old code. Look in `index.html` for the current N (it was 32 on 2026-11-27). Since round 21 the game also checks on start whether
+places, or phones keep running the old code. Look in `index.html` for the current N (it was 33 on 2026-11-27). Since round 21 the game also checks on start whether
 `index.html` online names a newer N than the script it is running, and if so saves and reloads once (`checkFresh`), so
 phones that kept an old copy catch up. (Side effect for tests: a page whose `index.html` changes mid-run reloads itself.)
 
@@ -312,6 +313,17 @@ lines). The order of sections in the file:
   online → save and reload once; `sessionStorage` key `gt-fresh`), `saveWarned`, the repeating-error notice in `guard`,
   `opt.maxExp` on `shipGoods` (passed to `tradePath`). **When you add a scan of all buildings for one type, use
   `byType`**; when you change a building's `type` anywhere new, bump `typeVer`.
+- **Sending a game (round 22):** `save.html` packs the save (`game-trial-save-v2`, else a `game-trial-mp-…` one) as
+  gzip (`CompressionStream`, iOS 16.4+; else plain) in base64url: `g…` or `j…`. Link: `save.html#<payload>`, used when
+  it is at most `LINK_MAX` = 60,000 characters (WhatsApp's limit is 65,536); else the same text as a file
+  `game-trial-save.txt` (share menu with files, or a download). Opening (`#…` or a picked file): unpacked, put in
+  `window.name` as `gtshared:<json>`, then `./?shared=1`. In `game.js`: `SHARED` (read at the top, before `SEED`),
+  `SAVE_KEY` becomes `game-trial-shared-view`, `noSave` is set after loading, `sharedHint()` (the banner, with Back to
+  my game), `sendMyGame()` (Command button `data-act="sendsave"`), and a shared game that fails to load clears
+  `window.name` before its reload (no loop). **To read a payload yourself:** strip up to `#`, base64url-decode, gunzip
+  if it starts with `g` (e.g. Python `gzip.decompress(base64.urlsafe_b64decode(p[1:] + '=' * (-len(p[1:]) % 4)))`),
+  and you have the save JSON; load it in a test with `localStorage.setItem('game-trial-save-v2', json)` after
+  `stopSaving()` and `noSave = true`, then reload.
 - **Multiplayer** (end of file): `MP` (role, style, connection), PeerJS (or `tr=bc`, a test channel inside one
   browser), `MP_ORDERS` (player orders, wrapped by `mpWrap`), `MP_HOST_ONLY`.
   - **Starting and joining:** `mpSetup` (Host a game / Join a game) → `mpHostSetup` → `mpHost`, or `mpJoinSetup` →
@@ -724,6 +736,21 @@ The owner: the friend "is still complaining that it is Frozen. Please do what yo
   that doesn't fit the browser's storage says so once (`saveWarned`); an error repeating 60 times shows a lasting notice
   with its message, asking the player to send a screenshot (in `guard`, in `init`).
 
+### Round 22 (2026-11-27): "Send my game"
+To find the friend's freeze (the owner's answer: on his phone **everything** stops, the numbers too, so the game's own
+step hangs, not just the drawing), the owner asked for a way to send a game: "generates an additional link
+specifically to that iteration of the game so it can let you analyze it", sendable "via text or WhatsApp".
+- A **📤 Send my game** button in the Command panel (beside New map) saves and opens `save.html`. That page also works
+  on its own (`…/Game-Trial/save.html`), without starting the game, for a game that hangs on loading.
+- **Make the link** → **Share the link…** (the phone's share menu: WhatsApp, Messages…) or **Copy the link**. A game
+  too big for a message link (*AI's limit*: 60,000 characters, under WhatsApp's 65,536) goes as a small text **file**
+  through the same share menu instead (or is saved as a file); the page says why. *(AI's choice, told to the owner: a
+  realm as big as the friend's will almost certainly need the file.)* Measured: a 2-minute game → a 6,000-letter link;
+  a 1,610-building game (1.2 MB save) → a 260 KB file.
+- **Opening** a link (or picking the file on that page) opens the game as a **copy to look at**: nothing is saved, the
+  receiver's own game is untouched, and a banner says "A copy of someone's game (… played) · nothing here is saved"
+  with **Back to my game**. *(AI's choices.)*
+
 ### Earlier rounds (done; listed so you know they exist)
 Tech tree edits; gun ranges; Casimir drive and Alcubierre drive; megaprojects; all the art redrawn (round 9); walls
 (picking ends, straight walls); the transport progression; imports (from your nearest territory on the same planet
@@ -787,6 +814,10 @@ cd <repo folder>/tests && node r13.mjs                # run any test
     brings the lasting notice; 80 ms steps still refresh the screen and bring the "runs slower" note; a newer version
     online reloads the page exactly once; a circle of merged territories; the by-type index and site list match a full
     scan through a creative game with builds, upgrades and removals; storage full warns once).
+  - Round 22: `r22` (Command → Send my game opens the page; a small game makes a short link; Copy; the link opens the
+    very same game as a copy with the banner; the receiver's own save untouched; Back to my game; a broken link says so
+    and doesn't loop; and with a big save as argument, `node r22.mjs <file with {k, v}>`, the file route and opening
+    the file).
   - Round 17 fixes: `r17fix` (one territory: no "shipped in" wording; upgrades of parked haulers and of one walking in
     empty to load; Connect to road far away and greyed; Request porter across a sea route; importing to buy a hauler
     and to hire troops). It runs about 5 minutes: the imports are carried by a few slow haulers.
@@ -841,6 +872,9 @@ End commit messages with whatever attribution lines your own environment require
 - When a deconstructed hub's vessels move to another route they start at its first end, wherever that is.
 - In co-op, the C.A.I.S. dialogue count is kept on each player's own screen (the host's game decides only the kill
   switch). Not saved: imports for purchases (as before), a bridge that was coming down (it is saved as gone).
+- Round 22: the share menu with a file (`navigator.share` with files) and WhatsApp itself were not tested (no phone
+  here); the page falls back to saving the file. A game played from a home-screen icon keeps its save apart from Safari's:
+  then `save.html` must be opened from that icon's app (the page says so when it finds no game).
 - Round 19/20/21: the friend's freeze was never seen on a real iPhone. Round 21's iOS 15 finding matches the screenshot
   exactly, but the friend's iOS version is not known. If it happens again: ask which iOS (Settings → General → About)
   and for a screenshot of the "Something keeps going wrong" notice if one appears.

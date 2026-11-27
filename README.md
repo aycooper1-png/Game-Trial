@@ -59,6 +59,13 @@ produce; offers from nations stay on screen until you answer; a building's card 
 picking a colony's landing site has a **Cancel** button; and in co-op the second player's expeditions, colony ships,
 defence settings, warhead choice and C.A.I.S. settings now reach the host's game.
 
+## Sending your game to someone
+**Command → 📤 Send my game** makes a link to your game exactly as it is now, to send by WhatsApp, text or anything else
+(for example, so someone can look into a problem). If your game is too big to fit in a message as a link, it becomes a
+small file to send instead, the same way. Whoever opens it gets a copy to look at: nothing they do is saved, and their
+own game is left alone (a **Back to my game** button takes them back). If the game won't even start, open
+https://aycooper1-png.github.io/Game-Trial/save.html directly: it finds your saved game without starting it.
+
 ## Round 21: older iPhones and very big realms
 - **Older iPhones** (before iOS 16) could only draw the map up to the first label: zoomed out, just the stars. That's
   fixed, and the game now runs on iPhones from iOS 13.4 up.
