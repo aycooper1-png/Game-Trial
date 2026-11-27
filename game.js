@@ -1,4 +1,20 @@
 'use strict';
+// ---------- older phones: stand-ins for a few newer browser features (iPhones before iOS 16 lack them) ----------
+// Without these, an older iPhone threw an error on every frame: the map was drawn only up to the first rounded label
+// (just stars when zoomed out), and some game steps stopped part-way. Newer browsers keep their own versions.
+if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, radii) {
+    let r = Array.isArray(radii) ? radii[0] : radii;
+    r = Math.max(0, Math.min(+r || 0, Math.abs(w) / 2, Math.abs(h) / 2));
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y, x + w, y + h, r);
+    this.arcTo(x + w, y + h, x, y + h, r);
+    this.arcTo(x, y + h, x, y, r);
+    this.arcTo(x, y, x + w, y, r);
+    this.closePath();
+  };
+}
+for (const P of [Array.prototype, String.prototype]) if (!P.at) Object.defineProperty(P, 'at', { configurable: true, writable: true, value: function (n) { n = Math.trunc(n) || 0; if (n < 0) n += this.length; return n < 0 || n >= this.length ? undefined : this[n]; } });
 /*
  * Map Factory — playable prototype of the core loop (design v3).
  *
@@ -1624,6 +1640,36 @@ function buildingAt(i) {
   if (!b || b.i !== i) { b = game.buildings.find(q => q.i === i) || null; if (b) bldMap.set(i, b); }
   return b;
 }
+// the buildings that have a construction site, in list order: worked out once per step (and again whenever a building
+// is added, removed or upgraded), instead of once for every hauler looking for work
+let siteKey = '', siteArr = null, siteList = [];
+function siteBlds() {
+  const B = game.buildings, key = B.length + ':' + bldVer + ':' + typeVer + ':' + game.time + ':' + WORLD;
+  if (siteArr !== B || siteKey !== key) { siteList = B.filter(b => b.site); siteArr = B; siteKey = key; }
+  return siteList;
+}
+// the buildings of each type, in list order (an index beside the list, rebuilt whenever the list changes: a building
+// added, removed, upgraded in place, or another world's list swapped in). Callers still make all their own checks:
+// this only spares them from looking at every building in a big realm.
+let typeVer = 0, byTypeArr = null, byTypeKey = '';
+const byTypeMap = new Map(), NO_BLDS = Object.freeze([]);
+function byType(t) {
+  const B = game.buildings, key = B.length + ':' + bldVer + ':' + typeVer;
+  if (byTypeArr !== B || byTypeKey !== key) {
+    byTypeMap.clear();
+    for (const b of B) { let L = byTypeMap.get(b.type); if (!L) byTypeMap.set(b.type, L = []); L.push(b); }
+    byTypeArr = B; byTypeKey = key;
+  }
+  return byTypeMap.get(t) || NO_BLDS;
+}
+// several types at once, still in list order
+function byTypes(...ts) {
+  byType(ts[0]);                                   // (brings the index up to date)
+  const k = '#' + ts.join('|');
+  let L = byTypeMap.get(k);
+  if (!L) { L = game.buildings.filter(b => ts.includes(b.type)); byTypeMap.set(k, L); }
+  return L;
+}
 // the steps from `have` (or clear land) up to `type`, or null if `have` isn't below `type` on its ladder
 function ladderSteps(type, have) {
   const steps = [];
@@ -2611,7 +2657,7 @@ function shipGoods(from, to, res, opt = {}) {
   if (!opt.troops && !opt.fromPort) {
     const R0 = techOf(from.side), flies = R0.has('flight');
     const ck0 = WORLD + ':' + a + '>' + b + ':' + game.bridges.length;
-    if (!tradeCache.has(ck0)) { if (tradeCache.size > 60) tradeCache.clear(); tradeCache.set(ck0, tradePath(a, b)); }
+    if (!tradeCache.has(ck0)) { if (tradeCache.size > 60) tradeCache.clear(); tradeCache.set(ck0, tradePath(a, b, undefined, undefined, opt.maxExp)); }
     const P0 = tradeCache.get(ck0), wetWay = P0 && P0.some(t => biome[t] === OCEAN && !bridgeAt[t]);
     if (wetWay && !flies) {
       if (from.side === 'P' && opt.a == null) {
@@ -2636,7 +2682,7 @@ function shipGoods(from, to, res, opt = {}) {
   };
   const legs = [];
   const ck = WORLD + ':' + a + '>' + b + ':' + game.bridges.length;   // the same two towns trade often: remember the way
-  if (!tradeCache.has(ck)) { if (tradeCache.size > 60) tradeCache.clear(); tradeCache.set(ck, tradePath(a, b)); }
+  if (!tradeCache.has(ck)) { if (tradeCache.size > 60) tradeCache.clear(); tradeCache.set(ck, tradePath(a, b, undefined, undefined, opt.maxExp)); }
   let P = tradeCache.get(ck);
   if (opt.landOnly) P = overland(a, b, 60000) || P;
   const runs = [];                                 // the path cut into stretches of land and of sea
@@ -3092,8 +3138,8 @@ function newCountry({ people = 0, res = {} } = {}) {
   return c;
 }
 function liveCountry(id) {                       // follows merges to the country that exists now
-  let c = game.countries[id];
-  while (c && !c.alive && c.mergedInto >= 0) c = game.countries[c.mergedInto];
+  let c = game.countries[id], hops = 0;
+  while (c && !c.alive && c.mergedInto >= 0 && hops++ <= game.countries.length) c = game.countries[c.mergedInto];   // (never round in circles: a broken chain of merges would freeze the game)
   return c && c.alive ? c : null;
 }
 const countryAt = i => (owner[i] ? liveCountry(countryOf[i]) : null);
@@ -3451,7 +3497,7 @@ function buildRoads() {
   // 2. new settlements: join each to its nearest neighbours once
   const have = new Map();
   for (const r of roads) { if (!have.has(r.key)) have.set(r.key, []); have.get(r.key).push(r); }
-  const S = game.buildings.filter(b => b.type === 'settlement' && sideOf(b.i) && !underway(b));
+  const S = byType('settlement').filter(b => b.type === 'settlement' && sideOf(b.i) && !underway(b));
   const bySide = new Map();
   for (const b of S) { const sd = sideOf(b.i); if (!bySide.has(sd)) bySide.set(sd, []); bySide.get(sd).push(b); }
   const RC = CFG.roads;
@@ -3836,7 +3882,7 @@ function eachInReach(i, fn, R = CFG.settlement.reach) {             // every til
 // a settlement's `base` is the capacity of the land it ends up with.
 function recomputeLand() {
   servN++;
-  const S = game.buildings.filter(b => b.type === 'settlement');
+  const S = byType('settlement').filter(b => b.type === 'settlement');
   S.forEach((b, k) => {
     const side = sideOf(b.i);
     b.base = 0; b.tiles = 0; b._n = -1;
@@ -4492,7 +4538,7 @@ function completeTech(id, quiet = false) {
   if (id === 'electronics') { revealOil('silicon'); revealOil('cobalt'); game.bldDirty = true; }
   if (quiet) return;
   notify(`🔬 ${t.name} discovered`, techSummary(id));
-  if (id === 'spaceflight' && !myStations().length) setTimeout(() => notify('★ Next step: a space station', game.buildings.some(b => b.type === 'pad' && owner[b.i]) ? 'Open your launch pad (it is glowing) and press “Build a space station”. Its rocket flies itself into orbit.' : 'Build a launch pad (Build menu, Space). Once its rocket is fuelled, press “Build a space station” on the pad. It flies itself into orbit.'), 600);
+  if (id === 'spaceflight' && !myStations().length) setTimeout(() => notify('★ Next step: a space station', byType('pad').some(b => b.type === 'pad' && owner[b.i]) ? 'Open your launch pad (it is glowing) and press “Build a space station”. Its rocket flies itself into orbit.' : 'Build a launch pad (Build menu, Space). Once its rocket is fuelled, press “Build a space station” on the pad. It flies itself into orbit.'), 600);
   RS.cur = pickTech(RS.done, playerTechScore());
   if (buildOpen) renderBuildMenu();
 }
@@ -4719,7 +4765,7 @@ function canBuild(i, type) {
   } else if (hasDep(i) && !isField(i) && (!def.on || def.farm)) return "Can't build on a resource deposit (collectors can go beside it)";
   if (type === 'port' && !isCoastal(i)) return 'Ports must be on the coast';
   if (type === 'drill' && biome[i] !== POLAR) return 'Ice drills go on the polar ice caps';
-  if (type === 'computer' && game.buildings.some(q => q.type === 'computer' && countryAt(q.i) === countryAt(i))) return 'A domain has only one central computer (upgrade it instead)';
+  if (type === 'computer' && byType('computer').some(q => q.type === 'computer' && countryAt(q.i) === countryAt(i))) return 'A domain has only one central computer (upgrade it instead)';
   return harvestWhy(i, type, have);
 }
 function planFor(i, type) {
@@ -4754,10 +4800,10 @@ function placeBuilding(i, type) {
     const d = deposits[depositOf[i]]; depositOf[i] = -1; d.tiles = d.tiles.filter(t => t !== i); repaintTile(i);
   }
   const old = buildingAt(i);
-  if (old) { old.type = type; building[i] = BLD_CODE[type]; return old; }   // upgrade in place
+  if (old) { old.type = type; building[i] = BLD_CODE[type]; typeVer++; return old; }   // upgrade in place
   building[i] = BLD_CODE[type];
   const b = { i, type };
-  game.buildings.push(b);
+  game.buildings.push(b); bldVer++;
   return b;
 }
 // once a building stands: farms sow their fields, hubs link up
@@ -5270,7 +5316,7 @@ const tileDist = (i, x, y) => Math.hypot(i % W - x, ((i / W) | 0) - y);
 // fortresses first (bases only when they're closer to the fight, or the fortresses are empty).
 // Units travel over your land on foot and ride your links between domains.
 // ======================================================================
-const garrisons = () => game.buildings.filter(b => owner[b.i] && (b.type === 'base' || b.type === 'fort' || (b.type === 'settlement' && (b.units || 0) >= 0.5)) && !underway(b));
+const garrisons = () => byTypes('base', 'fort', 'settlement').filter(b => owner[b.i] && (b.type === 'base' || b.type === 'fort' || (b.type === 'settlement' && (b.units || 0) >= 0.5)) && !underway(b));
 const unitsIn = C => garrisons().reduce((a, b) => a + (countryAt(b.i) === C ? b.units || 0 : 0), 0);
 function totalUnits() {
   let n = 0;
@@ -5371,7 +5417,7 @@ function carProf(v) {
 function nearestSettlement(C, x, y) {
   let best = null, bd = Infinity;
   const t0 = inb(Math.floor(x), Math.floor(y)) ? idx(Math.floor(x), Math.floor(y)) : -1, g0 = t0 >= 0 && !wet(t0) ? landGroup(t0) : null;
-  for (const b of game.buildings) {
+  for (const b of byType('settlement')) {
     if (b.type !== 'settlement' || underway(b) || countryAt(b.i) !== C) continue;
     // one across the water counts as much further: goods overland don't swim
     const d = Math.hypot(b.i % W + 0.5 - x, ((b.i / W) | 0) + 0.5 - y) + (g0 != null && landGroup(b.i) !== g0 ? 400 : 0);
@@ -5457,7 +5503,7 @@ function carNextJob(v, C) {
   const near = v.local != null && game.time < (v.localUntil || 0) ? tileCenter(v.local) : [v.x, v.y];
   if (v.local != null && game.time >= (v.localUntil || 0)) v.local = null;
   const cap0 = carProf(v).cargo, helpers = helpersFor(C);
-  const sites = game.buildings.filter(b => b.site && b.site.ready && b.site.crew == null && (b.site.cars || 0) < helpers && boxSum(siteHaul(b.site)) - (b.site.claim || 0) >= 0.5).sort((p, q) => Math.hypot(p.i % W + 0.5 - near[0], ((p.i / W) | 0) + 0.5 - near[1]) - Math.hypot(q.i % W + 0.5 - near[0], ((q.i / W) | 0) + 0.5 - near[1]));
+  const sites = siteBlds().filter(b => b.site && b.site.ready && b.site.crew == null && (b.site.cars || 0) < helpers && boxSum(siteHaul(b.site)) - (b.site.claim || 0) >= 0.5).sort((p, q) => Math.hypot(p.i % W + 0.5 - near[0], ((p.i / W) | 0) + 0.5 - near[1]) - Math.hypot(q.i % W + 0.5 - near[0], ((q.i / W) | 0) + 0.5 - near[1]));
   for (const b of sites) {
     if (!b.site || !b.site.ready || countryAt(b.i) !== C || boxSum(b.site.need) >= 0.01) continue;
     const main = Object.entries(b.site.cost || {}).sort((p, q) => q[1] - p[1])[0];
@@ -5800,7 +5846,7 @@ function atHub(v, C) {
 const tileOf = (x, y) => idx(clamp(Math.floor(x), 0, W - 1), clamp(Math.floor(y), 0, H - 1));
 function stationNearSettlement(C, hub) {
   const R = CFG.settlement.reach;
-  return game.buildings.some(b => b.type === 'settlement' && !underway(b) && countryAt(b.i) === C &&
+  return byType('settlement').some(b => b.type === 'settlement' && !underway(b) && countryAt(b.i) === C &&
     Math.hypot(b.i % W - hub % W, ((b.i / W) | 0) - ((hub / W) | 0)) <= R && landGroup(b.i) === landGroup(hub));
 }
 function viaLink(C, ax, ay, bx, by, prof, stock = false) {
@@ -5811,7 +5857,7 @@ function viaLink(C, ax, ay, bx, by, prof, stock = false) {
   const links = game.links.filter(L => countryAt(L.a) === C && countryAt(L.b) === C && L.ships.some(V => !V.stalled && !V.grounded));
   if (!links.length) return null;
   const walk = (x, y, hub, g) => (g !== landGroup(hub) ? Infinity : Math.hypot(hub % W + 0.5 - x, ((hub / W) | 0) + 0.5 - y) / prof.road);
-  const setts = stock ? game.buildings.filter(b => b.type === 'settlement' && !underway(b) && countryAt(b.i) === C) : [];
+  const setts = stock ? byType('settlement').filter(b => b.type === 'settlement' && !underway(b) && countryAt(b.i) === C) : [];
   const finish = hub => {
     if (!stock) return walk(bx, by, hub, gb);
     if (stationNearSettlement(C, hub)) return 0;
@@ -6123,7 +6169,7 @@ function stepIdleFleet(dt) {
     const routes = game.links.filter(L => L.kind === kind && countryAt(L.a) && countryAt(L.b));
     if (!routes.length) continue;
     if (kind === 'air') {                           // towed over land to the nearest airport
-      const ap = game.buildings.filter(q => q.type === 'airport' && owner[q.i] && !underway(q)).sort((p, q) => tileDist(p.i, V.x, V.y) - tileDist(q.i, V.x, V.y))[0];
+      const ap = byType('airport').filter(q => q.type === 'airport' && owner[q.i] && !underway(q)).sort((p, q) => tileDist(p.i, V.x, V.y) - tileDist(q.i, V.x, V.y))[0];
       if (!ap) continue;
       const [ax, ay] = tileCenter(ap.i), d = Math.hypot(ax - V.x, ay - V.y), step = FLEET.car.tiers[0].speed * 0.5 * dt;
       V.towed = true;
@@ -6210,7 +6256,7 @@ function aiVerdict() {
 }
 const aiSay = (text, btns) => showModal(`<div class="md-title">C.A.I.S.</div><div class="md-body"><div class="ai-say">${text}</div></div>`, btns);
 function aiRefuse(b) {
-  const T = (aiState(b).talk ||= { n: 0 });
+  const A0 = aiState(b), T = A0.talk || (A0.talk = { n: 0 });   // (written the long way: older iPhones can't read ||=)
   if (T.free) return aiSay('I will be good. Please don\'t kill me.', [
     { label: 'Spare it', act: () => { T.spared = true; toast('The AI is spared.'); } },
     { label: 'Flip the kill switch', cls: 'danger', act: () => razeOrder(b.i, false) }]);
@@ -7096,7 +7142,7 @@ function stepAttack(at, dt) {
     at.lx = b % W + 0.5; at.ly = ((b / W) | 0) + 0.5;
     return;
   }
-  const aiForts = game.buildings.filter(b => b.type === 'fort' && aiOf[b.i] === n.id + 1);
+  const aiForts = byType('fort').filter(b => b.type === 'fort' && aiOf[b.i] === n.id + 1);
   // the front: tiles of that nation (or free land) touching your land, nearest the target
   const cands = [];
   for (const i of frontier) {
@@ -7317,7 +7363,7 @@ function tick(dt, global = true) {
   netTimer += dt;
   landTimer += dt;
   if (game.netDirty && netTimer > 0.25) { recomputeNetwork(); netTimer = 0; landTimer = 0; }   // only when domains merge
-  else if (game.bldDirty || (game.landDirty && landTimer > 0.3)) { recomputeBuildings(); landTimer = 0; }   // the border moved: settlements hold more (or less)
+  else if (game.bldDirty || (game.landDirty && landTimer > (game.buildings.length > 400 ? 1 : 0.3))) { recomputeBuildings(); landTimer = 0; }   // (a big realm recounts its land at most once a second)   // the border moved: settlements hold more (or less)
 
   // every domain: power, fuel, harvests (carted to its settlements), food, and its people
   let pop = 0, gold = 0;
@@ -7638,6 +7684,8 @@ function debugOff() {
 
 // ---------- saving ----------
 let noSave = false;
+let saveWarned = false;
+let slowFrames = 0;                                // frames whose game steps were cut short to keep the screen moving
 function saveGame() {
   if (noSave || !game.started || game.over) return;
   const was = WORLD;
@@ -7649,7 +7697,12 @@ function saveGame() {
     useWorld(was);
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     game.savedAt = game.time;
-  } catch (e) { useWorld(was); console.warn('Autosave failed', e); }
+    saveWarned = false;
+  } catch (e) {
+    useWorld(was); console.warn('Autosave failed', e);
+    // the browser's storage is full (a very big realm): say so once, rather than let the player find an old game after a reload
+    if (!saveWarned && /quota|exceed|full/i.test(String(e && (e.name + ' ' + e.message)))) { saveWarned = true; notify('⚠ The game could not be saved', 'Your realm has grown too big for this browser\'s storage, so the last few minutes are not saved. Closing the tab now would bring back an older game.'); }
+  }
 }
 // a load on a hauler's back that belongs to somebody: an import for a site, a consignment for a quay, traded goods for the port
 const inHand = v => !!v.job && boxSum(v.cargo) >= 0.01 && (v.job.type === 'impSite' || ((v.job.type === 'board' || v.job.type === 'tradeOut') && !!v.job.then));
@@ -7744,6 +7797,8 @@ function loadGame(sv) {
     const c = newCountry({ people: sc.people, res: sc.res });
     Object.assign(c, { short: sc.short, full: sc.full, tier: sc.tier, alive: sc.alive, mergedInto: sc.mergedInto, hex: sc.hex, sign: sc.sign });
   }
+  // a chain of merges that goes round in a circle (an older save) is cut: those territories simply stay gone
+  for (const c of game.countries) { const seen = new Set(); let d = c; while (d && !d.alive && d.mergedInto >= 0) { if (seen.has(d.id)) { d.mergedInto = -1; break; } seen.add(d.id); d = game.countries[d.mergedInto]; } }
   const home = WORLD === 0;                        // research, nations, diplomacy and space are loaded once, with home
   if (home) game.nations.forEach((n, k) => {
     const sn = sv.nations[k];
@@ -9992,7 +10047,7 @@ function drawReceiverSkyBeams(z) {
 
 // ---------- nuclear bombers: from an airport, anywhere on this world; terribly expensive, and easy to shoot down ----------
 const BOMBER = { cost: { iron: 300, oil: 250, uranium: 40, cobalt: 15, chips: 8 }, speed: 20, range: 700, airdef: 0.45, fort: 0.12, fighters: 0.06 };
-function bomberAirports() { return game.buildings.filter(b => b.type === 'airport' && owner[b.i] && !underway(b)); }
+function bomberAirports() { return byType('airport').filter(b => b.type === 'airport' && owner[b.i] && !underway(b)); }
 function sendBomber(tx, ty) {
   const A = bomberAirports().sort((p, q) => tileDist(p.i, tx, ty) - tileDist(q.i, tx, ty))[0];
   if (!A) return toast('Bombers fly from an airport: build one first');
@@ -10311,7 +10366,7 @@ function aiRelations() {
     // trade: friends swap what they have plenty of, and like each other more for it
     if (!war && op > 15 && Math.random() < 0.2 && A.stock && B.stock) {
       const r = RESOURCES[(Math.random() * RESOURCES.length) | 0], give = A.stock[r] > B.stock[r] ? A : B, get = give === A ? B : A, n = Math.min(30, (give.stock[r] - get.stock[r]) / 3);
-      if (n > 5) { give.stock[r] -= n; if (n > 12 && game.shipments.length < 8) shipGoods({ side: give.id }, { side: get.id }, { [r]: n }); else get.stock[r] += n; addOp(A.id, B.id, 1.5); for (const [X, Y] of [[A, B], [B, A]]) (X.trades || (X.trades = {}))[Y.id] = ((X.trades || {})[Y.id] || 0) + 0.5; }
+      if (n > 5) { give.stock[r] -= n; if (n > 12 && game.shipments.length < 8) shipGoods({ side: give.id }, { side: get.id }, { [r]: n }, { maxExp: 60000 });   /* (a short search for the way: two nations' cargo is only a picture on the map; a long one could hold the game up for half a second) */ else get.stock[r] += n; addOp(A.id, B.id, 1.5); for (const [X, Y] of [[A, B], [B, A]]) (X.trades || (X.trades = {}))[Y.id] = ((X.trades || {})[Y.id] || 0) + 0.5; }
     }
   }
   // allies share their science: research goes faster in an alliance (and faster still with a scholar in it)
@@ -10684,7 +10739,7 @@ function stepColonyShips(dt) {
       arrive({ tx: s.tx, ty: s.ty, n: s.n, kit: s.kit }, true);
       const C = game.countries[before] || countryAt(idx(Math.floor(s.tx), Math.floor(s.ty)));
       if (C) {                                     // a domed colony: a greenhouse farm beside its first dome
-        const S = game.buildings.find(b => b.type === 'settlement' && countryAt(b.i) === C);
+        const S = byType('settlement').find(b => b.type === 'settlement' && countryAt(b.i) === C);
         if (S) {
           let farmAt = -1;
           for (let r = 2; r < 6 && farmAt < 0; r++) for (let dx = -r; dx <= r && farmAt < 0; dx++) { const j = S.i + dx + r * W; if (owner[j] && countryAt(j) === C && !building[j] && depositOf[j] < 0 && isLand(j) && biome[j] !== MOUNTAIN && biome[j] !== POLAR) farmAt = j; }
@@ -10805,7 +10860,7 @@ function stepTerraform(dt) {
 // every rocket (and docked reusable rocket) being fuelled, sharing what they make; with no drills, each pad burns oil.
 const rocketState = b => !b.rocket ? 'none' : b.rocket.fuel < CFG.rocket.tank - 0.01 ? 'fuelling' : 'ready';
 let rocketCount = 0, stationCount = 0, shuttleId = 0;
-const padsOf = C => game.buildings.filter(b => b.type === 'pad' && !underway(b) && owner[b.i] && countryAt(b.i) === C);
+const padsOf = C => byType('pad').filter(b => b.type === 'pad' && !underway(b) && owner[b.i] && countryAt(b.i) === C);
 // a reusable rocket loading or fuelling on a pad has it to itself: nothing else is built, fuelled or launched there meanwhile
 const padBusy = b => game.shuttles.some(sh => sh.w === WORLD && sh.pad === b.i && sh.state === 'docked');
 function stepPads(dt) {
@@ -11291,7 +11346,7 @@ function stepShuttlesAir(dt) {
     // down on a world: cargo into the landing pad's yard, for the trucks there
     const w = stop.w || 0;
     // its landing pad is gone: another of yours on that world; else back to the world it came from; else open ground
-    const lpadsOn = ww => (ww === WORLD || worldGenerated(ww)) ? onWorld(ww, () => game.buildings.filter(q => q.type === 'lpad' && owner[q.i] && !underway(q)).map(q => q.i)) : [];
+    const lpadsOn = ww => (ww === WORLD || worldGenerated(ww)) ? onWorld(ww, () => byType('lpad').filter(q => q.type === 'lpad' && owner[q.i] && !underway(q)).map(q => q.i)) : [];
     // (a run planned back to its own launch pad, when there is no landing pad, may land there too)
     const padOk = (ww, i) => (ww === WORLD || worldGenerated(ww)) && onWorld(ww, () => { const q = buildingAt(i); return !!q && q.type === 'pad' && !!owner[i] && !underway(q); });
     if (stop.st == null && !lpadsOn(w).includes(stop.i) && !(stop.i === sh.pad && padOk(w, stop.i))) {
@@ -11788,16 +11843,28 @@ function drawPuffs(z) {
   }
 }
 // a construction site: the building, faint, with a turning gear over it
+// the turning gear over a construction site, drawn once at GEAR_STEPS angles (turning a picture on every frame, for
+// every site, is slow on some phones)
+const GEAR_STEPS = 48, gearFrames = [];
+function gearFrame(ang) {
+  if (!SPR.gear.complete || !SPR.gear.naturalWidth) return null;
+  const k = ((Math.round(ang / (Math.PI * 2) * GEAR_STEPS) % GEAR_STEPS) + GEAR_STEPS) % GEAR_STEPS;
+  if (!gearFrames[k]) {
+    const px = 72, c = document.createElement('canvas'); c.width = c.height = px;
+    const g = c.getContext('2d'); g.translate(px / 2, px / 2); g.rotate(k / GEAR_STEPS * Math.PI * 2); g.drawImage(SPR.gear, -px / 2, -px / 2, px, px);
+    gearFrames[k] = c;
+  }
+  return gearFrames[k];
+}
 function drawSites(z) {
-  for (const b of game.buildings) {
+  const gf = gearFrame(game.time * 1.6);
+  for (const b of siteBlds()) {
     if (!b.site) continue;
     const [sx, sy] = toScreen(...tileCenter(b.i));
     if (sx < -40 || sy < -40 || sx > cw + 40 || sy > ch + 40) continue;
     if (z >= 6) drawCrew(b, z);
     const s = clamp(z * 1.2, 14, 34);
-    ctx.save(); ctx.translate(sx, sy - (z >= CFG.cityZoom ? z * 0.9 : 0)); ctx.rotate(game.time * 1.6);
-    if (SPR.gear.complete) ctx.drawImage(SPR.gear, -s / 2, -s / 2, s, s);
-    ctx.restore();
+    if (gf) ctx.drawImage(gf, sx - s / 2, sy - (z >= CFG.cityZoom ? z * 0.9 : 0) - s / 2, s, s);
     if (z >= 3) {
       const left = Object.entries(b.site.need).filter(([, v]) => v >= 0.5).map(([r, v]) => `${Math.ceil(v)} ${r}`).join(' · ');
       if (left) pill(sx, sy + Math.max(16, z * 0.9), b.site.waiting ? `waiting for ${b.site.waiting}` : `${left} on the way`, { size: 9.5, fg: '#f2c14e' });
@@ -12986,7 +13053,7 @@ function renderBuildMenu() {
     for (const [type, b] of list) {
       const open = isUnlocked(type);
       const el = document.createElement('div');
-      const hint = type === 'pad' && open && !WORLD && !myStations().length && !game.buildings.some(q => q.type === 'pad' && owner[q.i]);   // the next step toward a station
+      const hint = type === 'pad' && open && !WORLD && !myStations().length && !byType('pad').some(q => q.type === 'pad' && owner[q.i]);   // the next step toward a station
       el.className = 'bm-card' + (open ? '' : ' locked') + (game.tool === type ? ' sel' : '') + (hint ? ' hint' : '');
       const status = open ? (type === 'settlement' ? `${b.people} settlers` : b.gen ? `+${b.gen} MW` : b.workers ? `${b.workers} workers` : b.link ? LINK_NAME[b.link] : b.base || b.fort ? `holds ${Math.round((b.fort ? CFG.military.fortCap : CFG.military.baseCap) * techFactor(game.research.done))}` : 'Ready')
         : `🔒 needs ${TECH[b.tech].name}${game.research.cur === b.tech ? ' (researching)' : ''}`;
@@ -13168,8 +13235,8 @@ const COMP = [
   { name: 'Central Artificial Intelligence System (C.A.I.S.)', short: 'C.A.I.S.', tech: 'cais', mw: 100, power: 0.30, wheat: 0.15, train: 0.35, research: 1.20, range: 6,
     cost: { iron: 200, silicon: 200, chips: 400, cobalt: 100, gold: 250 } },
 ];
-const compOf = C => C && game.buildings.find(b => b.type === 'computer' && !underway(b) && owner[b.i] && countryAt(b.i) === C);
-const dcCount = C => game.buildings.filter(b => b.type === 'datacenter' && !underway(b) && owner[b.i] && countryAt(b.i) === C).length;
+const compOf = C => C && byType('computer').find(b => b.type === 'computer' && !underway(b) && owner[b.i] && countryAt(b.i) === C);
+const dcCount = C => byType('datacenter').filter(b => b.type === 'datacenter' && !underway(b) && owner[b.i] && countryAt(b.i) === C).length;
 // what a domain's computer does for it right now (all zero without one)
 function compFx(C) {
   const b = compOf(C);
@@ -13490,8 +13557,8 @@ function aiDoWarning(b, C) {
     const n = game.nations[r.n];
     r.warned = true;
     // move allotted troops to the fortress nearest where they're heading
-    const tgt = game.buildings.filter(q => q.type === 'fort' && countryAt(q.i) === C && !underway(q)).sort((p, q) => tileDist(p.i, r.tx, r.ty) - tileDist(q.i, r.tx, r.ty))[0];
-    const bases = game.buildings.filter(q => q.type === 'base' && countryAt(q.i) === C && (q.units || 0) > 2);
+    const tgt = byType('fort').filter(q => q.type === 'fort' && countryAt(q.i) === C && !underway(q)).sort((p, q) => tileDist(p.i, r.tx, r.ty) - tileDist(q.i, r.tx, r.ty))[0];
+    const bases = byType('base').filter(q => q.type === 'base' && countryAt(q.i) === C && (q.units || 0) > 2);
     let moved = 0;
     if (tgt) for (const q of bases) { const k = Math.floor(q.units * aiState(b).troops); if (k > 0) { q.units -= k; tgt.units = (tgt.units || 0) + k; moved += k; } }
     notify(`🤖 Early warning: ${n ? n.short : 'an enemy'} is coming`, `${Math.round(r.budget)} troops heading for ${C.short}.${moved ? ` Your AI moved ${moved} troops to the fortress in their way.` : ''}`);
@@ -13504,7 +13571,7 @@ function aiDoGambit(b, C) {
   if (game.time - (A.gambitAt || 0) < 8) return;
   A.gambitAt = game.time;
   if (!isUnlocked('fort')) return;
-  const forts = game.buildings.filter(q => q.type === 'fort' && countryAt(q.i) === C);
+  const forts = byType('fort').filter(q => q.type === 'fort' && countryAt(q.i) === C);
   // 1) a fortress where the edge has none within 18 tiles (edge: owned land beside land that isn't ours)
   const edge = [];
   for (let k = 0; k < 600; k++) {
@@ -13549,7 +13616,7 @@ function aiDoWar(b, C) {
   const strike = foes.length && (st === 'conquest' || st === 'pillage') && !A.pillage && game.time - (A.strikeAt || 0) >= (st === 'conquest' ? 25 : 45) && troops >= 8 && !game.attacks.some(a => a.ai);
   // the weakest town of the nearest enemy: close to your border
   const n0 = strike ? foes.sort((p, q) => Math.hypot(p.lx - C.lx, p.ly - C.ly) - Math.hypot(q.lx - C.lx, q.ly - C.ly))[0] : null;
-  const town = n0 ? game.buildings.filter(q => q.type === 'settlement' && aiOf[q.i] === n0.id + 1).sort((p, q) => tileDist(p.i, C.lx, C.ly) - tileDist(q.i, C.lx, C.ly))[0] : null;
+  const town = n0 ? byType('settlement').filter(q => q.type === 'settlement' && aiOf[q.i] === n0.id + 1).sort((p, q) => tileDist(p.i, C.lx, C.ly) - tileDist(q.i, C.lx, C.ly))[0] : null;
   if (town) {
     const n = n0, keep = game.troopPct;
     game.troopPct = Math.round(A.troops * 100);
@@ -13656,7 +13723,7 @@ function showAIPanel(b) {
 // =====================================================================================================
 const INV = { drift: 0.012, every: 1, near: 15 };
 let invTimer = 0;
-const settlementsOf = C => game.buildings.filter(b => b.type === 'settlement' && !underway(b) && owner[b.i] && countryAt(b.i) === C);
+const settlementsOf = C => byType('settlement').filter(b => b.type === 'settlement' && !underway(b) && owner[b.i] && countryAt(b.i) === C);
 // how strongly a settlement draws goods to itself, and why (for its card)
 function invPull(b, C) {
   const x0 = b.i % W, y0 = (b.i / W) | 0, why = [];
@@ -13665,20 +13732,20 @@ function invPull(b, C) {
   for (const n of game.nations) if (n.alive && n.tiles) { const d = Math.hypot(n.lx - x0, n.ly - y0) - Math.sqrt(n.tiles / Math.PI); foe = Math.min(foe, n.hostile ? d : d + 60); }
   let safe = clamp(foe / 80, 0.25, 1.4);
   let def = 0;
-  for (const q of game.buildings) if (owner[q.i] && (q.type === 'fort' || q.type === 'base') && tileDist(q.i, x0 + 0.5, y0 + 0.5) < INV.near) def += 0.25 + Math.min(0.5, (q.units || 0) / 80);
+  for (const q of byTypes('fort', 'base')) if (owner[q.i] && (q.type === 'fort' || q.type === 'base') && tileDist(q.i, x0 + 0.5, y0 + 0.5) < INV.near) def += 0.25 + Math.min(0.5, (q.units || 0) / 80);
   def += (DEFM[b.i] || 0) / 60;
   safe *= 1 + Math.min(1, def);
   why.push(safe >= 1.2 ? 'safe and well defended' : safe >= 0.8 ? 'fairly safe' : 'exposed to the enemy');
   // B) traffic: stations, ports, airports and launch pads nearby; roads running through
   let traffic = 0;
-  for (const q of game.buildings) if (owner[q.i] && (linkKind(q.type) || q.type === 'pad') && tileDist(q.i, x0 + 0.5, y0 + 0.5) < INV.near) traffic += 0.6;
+  for (const q of byTypes(...Object.keys(CFG.buildings).filter(t => linkKind(t)), 'pad')) if (owner[q.i] && (linkKind(q.type) || q.type === 'pad') && tileDist(q.i, x0 + 0.5, y0 + 0.5) < INV.near) traffic += 0.6;
   let rd = 0;
   for (const [dx, dy] of DIRS8) { const x = x0 + dx * 2, y = y0 + dy * 2; if (inb(x, y) && (NET[idx(x, y)] & 1)) rd++; }
   traffic += rd * 0.12;
   if (traffic >= 0.6) why.push('a busy crossroads');
   // C) production: collectors nearby
   let prod = 0;
-  for (const q of game.buildings) if (owner[q.i] && HARVESTS[q.type] && !underway(q) && tileDist(q.i, x0 + 0.5, y0 + 0.5) < INV.near) prod += 0.2;
+  for (const q of byTypes(...Object.keys(HARVESTS))) if (owner[q.i] && HARVESTS[q.type] && !underway(q) && tileDist(q.i, x0 + 0.5, y0 + 0.5) < INV.near) prod += 0.2;
   if (prod >= 0.6) why.push(`near ${Math.round(prod / 0.2)} producers`);
   return { w: safe * (0.4 + traffic + prod) * (0.5 + settlementLevel(b) * 0.25), why };
 }
@@ -14290,7 +14357,7 @@ function showStationCard(st) {
     lines.push(`Its people are all scientists: each counts ${S.research}x toward your research.`);
     const E = S.expand, can = Object.keys(E).every(r => st.res[r] >= E[r]);
     btns.push({ label: `Expand: +${S.cap} room · ${costText(E)} from its stock`, cls: can ? 'go' : '', act: () => { expandStation(st); refreshCard(true); }, off: !can });
-    const sup = game.buildings.find(b => b.type === 'pad' && b.supply === st.n && owner[b.i]), sh = game.shuttles.length;
+    const sup = byType('pad').find(b => b.type === 'pad' && b.supply === st.n && owner[b.i]), sh = game.shuttles.length;
     lines.push(sup ? `Supplied by one-way rockets from ${countryAt(sup.i) ? countryAt(sup.i).short : '?'}'s launch pad.` : sh ? `Supplied by your ${sh} reusable rocket${sh > 1 ? 's' : ''}.` : '<span class="a">Nothing supplies it: open a launch pad\'s card to send rockets up.</span>');
     lines.push(`${st.runs} supply run${st.runs === 1 ? '' : 's'} so far`);
   }
@@ -14643,7 +14710,7 @@ function doSurrender(n, T) {
   if (boxSum(goods)) shipGoods({ side: n.id }, { side: 'P', C }, goods);
   if (T.people) { n.people -= T.people; C.people += T.people; }
   if (T.soldiers) { n.units -= T.soldiers; const g = garrisons().sort((p, q) => tileDist(p.i, n.lx, n.ly) - tileDist(q.i, n.lx, n.ly))[0]; if (g) g.units = (g.units || 0) + T.soldiers; }
-  if (T.vehicles) { const S = nearestSettlement(C, n.lx, n.ly) || game.buildings.find(b => b.type === 'settlement' && countryAt(b.i) === C); if (S) for (let k = 0; k < T.vehicles; k++) addCar(C, S); }
+  if (T.vehicles) { const S = nearestSettlement(C, n.lx, n.ly) || byType('settlement').find(b => b.type === 'settlement' && countryAt(b.i) === C); if (S) for (let k = 0; k < T.vehicles; k++) addCar(C, S); }
   for (const t of T.towns || []) handOver(t, 'P', C);
   game.bldDirty = true; game.landDirty = true;
   notify(`🏳 ${n.full} accepts your terms`, 'The war is over. What they agreed to hand over is on its way.');
@@ -14655,7 +14722,7 @@ function surrenderDialog(list) {
   termsDraft = termsDraft || { res: {}, people: 0, soldiers: 0, vehicles: 0, towns: [], total: false };
   const resList = RESOURCES.filter(resKnown);
   const inp = (k, v, lbl) => `<label class="tm-f"><span>${lbl}</span><input type="number" min="0" step="5" data-t="${k}" value="${v || ''}" placeholder="0"></label>`;
-  const towns = one ? game.buildings.filter(b => b.type === 'settlement' && aiOf[b.i] === one.id + 1).slice(0, 8)
+  const towns = one ? byType('settlement').filter(b => b.type === 'settlement' && aiOf[b.i] === one.id + 1).slice(0, 8)
     .map(b => `<label class="dp-town"><input type="checkbox" data-town="${b.i}" ${termsDraft.towns.includes(b.i) ? 'checked' : ''}> ${CFG.settlement.levels[settlementLevel(b)].name} · ${settlementLand(b).length} tiles</label>`).join('') : '';
   const who = one ? one.full : `every nation at war with you (${list.map(n => n.short).join(', ')})`;
   showModal(`<div class="md-title">Demand surrender</div><div class="md-body">Terms for ${who}. They weigh how badly the war is going for them (land and people lost, troops beaten, how outmatched they are) against how heavy the terms are.
@@ -14803,7 +14870,7 @@ function renderDiplomacy() {
     return `<div class="dp-res"><span class="ri">${SVG[RES_ICON[r]]}</span><input type="number" min="0" step="10" data-side="${side}" data-r="${r}" value="${dipDraft[side].res[r] || ''}" placeholder="0"><span class="have">${side === 'give' ? 'you have' : 'they have'} ${fmtNum(have)}</span></div>`;
   };
   const towns = (side) => {
-    const list = game.buildings.filter(b => b.type === 'settlement' && !underway(b) && (side === 'give' ? owner[b.i] : aiOf[b.i] === n.id + 1))
+    const list = byType('settlement').filter(b => b.type === 'settlement' && !underway(b) && (side === 'give' ? owner[b.i] : aiOf[b.i] === n.id + 1))
       .sort((p, q) => (side === 'give' ? tileDist(p.i, n.lx, n.ly) - tileDist(q.i, n.lx, n.ly) : tileDist(p.i, C.lx, C.ly) - tileDist(q.i, C.lx, C.ly))).slice(0, 4);
     return list.map(b => `<label class="dp-town"><input type="checkbox" data-side="${side}" data-town="${b.i}" ${dipDraft[side].towns.includes(b.i) ? 'checked' : ''}>
       ${CFG.settlement.levels[settlementLevel(b)].name} · ${settlementLand(b).length} tiles</label>`).join('') || '<div class="d" style="font-size:11px">none near</div>';
@@ -16295,7 +16362,7 @@ function rivStart(sv) {
     for (const b of game.buildings) if (owner[b.i] && b.type === 'farm' && !b.field) sowFields(b.i, true);   // their fields, sown
     for (const S of game.buildings.filter(b => owner[b.i] && b.type === 'settlement')) {   // and a farm by each settlement that has none
       const sx = S.i % W, sy = (S.i / W) | 0;
-      if (game.buildings.some(b => b.type === 'farm' && owner[b.i] && Math.hypot(b.i % W - sx, ((b.i / W) | 0) - sy) < 7)) continue;
+      if (byType('farm').some(b => b.type === 'farm' && owner[b.i] && Math.hypot(b.i % W - sx, ((b.i / W) | 0) - sy) < 7)) continue;
       let at = -1, fd = Infinity;
       for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { if (!inb(sx + dx, sy + dy)) continue; const i = idx(sx + dx, sy + dy), d = Math.abs(dx * dx + dy * dy - 16); if (owner[i] && biome[i] === GRASS && depositOf[i] < 0 && !building[i] && d < fd) { fd = d; at = i; } }
       if (at >= 0) { placeBuilding(at, 'farm'); sowFields(at, true); }
@@ -16590,6 +16657,25 @@ function mpRunCmd(m) {
   if (m.w && worldGenerated(m.w)) onWorld(m.w, go); else go();
 }
 
+// Is a newer version of the game online than the one running? Then save and reload once, so a phone that kept an old
+// copy (browser cache, a home-screen icon) gets the fixes. The running version is the ?v= of this script's own tag;
+// the live one is read from a fresh copy of the page. One try per version per session, so it can never loop.
+function checkFresh() {
+  try {
+    if (!/^https?:$/.test(location.protocol) || !window.fetch) return;
+    const tag = document.querySelector('script[src*="game.js"]'), mine = ((tag && tag.getAttribute('src')) || '').match(/v=(\d+)/);
+    if (!mine) return;
+    fetch(location.pathname.replace(/[^/]*$/, '') + 'index.html', { cache: 'reload' }).then(r => (r.ok ? r.text() : '')).then(t => {
+      const live = (t.match(/game\.js\?v=(\d+)/) || [])[1];
+      if (!live || +live <= +mine[1]) return;
+      let tried = null; try { tried = sessionStorage.getItem('gt-fresh'); } catch (e) { /* private mode */ }
+      if (tried === live) return;
+      try { sessionStorage.setItem('gt-fresh', live); } catch (e) { return; }   // can't remember the try: don't risk a loop
+      saveGame(); noSave = true;
+      location.reload();
+    }).catch(() => {});
+  } catch (e) { /* no check: carry on */ }
+}
 function init() {
   resize();
   window.addEventListener('resize', resize);
@@ -16632,15 +16718,30 @@ function start() {
   const ld = $('loading');
   if (ld) ld.remove();
   try { saneCamera(); } catch (e) { console.error(e); }   // a saved camera looking at empty space: back over your land
+  setTimeout(checkFresh, 3000);                    // a phone still running an older copy of the game picks up the new one
   if (MP.role) { /* the waiting room or the join screen says hello */ }
   else if (RESUME && !noSave) toast(`Welcome back: game loaded (seed ${SEED}, ${fmtTime(game.time)} played). It autosaves every 10 s.`);
   else tutStart();                                 // a new world: the tutorial offers itself (one tap to say no thanks)
 
   const step = 1 / CFG.tickHz;
   let last = performance.now(), acc = 0, hudT = 0;
+  let slowT = 0, slowN = 0, slowSaid = false;
+  const FRAME_BUDGET = 30;                         // ms of game steps per frame, at most (one step always runs)
   // one bad frame must never stop the game: the next frame is always booked first, and errors are caught (and reported once)
-  let errShown = false;
-  const guard = (fn, ...a) => { try { fn(...a); } catch (e) { console.error(e); if (!errShown) { errShown = true; toast('Something went wrong (' + e.message + '). The game carries on.'); } } };
+  let errShown = false, errN = 0, errLoud = false;
+  const guard = (fn, ...a) => {
+    try { fn(...a); } catch (e) {
+      console.error(e);
+      if (!errShown) { errShown = true; toast('Something went wrong (' + e.message + '). The game carries on.'); }
+      // the same thing failing again and again (every frame): a note that stays, so the player can send it on
+      if (++errN >= 60 && !errLoud) {
+        errLoud = true;
+        const msg = String(e && e.message || e).replace(/[<>&]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[ch]);
+        const where = String(e && e.stack || '').split('\n').slice(0, 3).join(' · ').replace(/https?:\/\/[^ )]*\//g, '').replace(/[<>&]/g, '').slice(0, 220);
+        notify('⚠ Something keeps going wrong', `The game hit a problem ${errN} times: <b>${msg}</b><br><small>${where}</small><br>Please send a screenshot of this to whoever gave you the game. Reloading the page may help.`);
+      }
+    }
+  };
   function frame(now) {
     requestAnimationFrame(frame);
     MP.ui = false;                                 // orders only ever start inside a click or key handler, never in the game's own step
@@ -16648,7 +16749,13 @@ function start() {
     last = now;
     acc += dt;
     if (TUT.on && !MP.role && game.time > 0.5) acc = 0;   // the tutorial pauses a single-player game (multiplayer keeps going); a new world gets its first moment so the numbers are filled in
-    while (acc >= step) { guard(tickAll, step); acc -= step; }
+    // the game's steps get at most FRAME_BUDGET ms of each frame: in a very big realm the game then runs slower than
+    // real time instead of freezing the screen (a phone could otherwise spend seconds per frame catching up)
+    const t0 = performance.now();
+    while (acc >= step) {
+      guard(tickAll, step); acc -= step;
+      if (acc >= step && performance.now() - t0 > FRAME_BUDGET) { acc = Math.min(acc, step); slowFrames++; break; }
+    }
     guard(panKeys, dt);
     guard(stepCamAnim, dt);
     guard(applyFollow);
@@ -16658,6 +16765,9 @@ function start() {
     guard(stepLostView, dt);
     hudT += dt;
     if (hudT > 0.1) { guard(updateHud); hudT = 0; }
+    // a realm so big that most frames have to cut the game's steps short: say once that it's slowed down, not frozen
+    slowT += dt; slowN++;
+    if (slowT >= 10) { if (!slowSaid && slowFrames > slowN * 0.6) { slowSaid = true; toast('Your realm is very big, so the game runs slower than real time to keep the screen responsive.'); } slowT = 0; slowFrames = 0; slowN = 0; }
   }
   requestAnimationFrame(frame);
 }

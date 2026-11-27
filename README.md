@@ -59,6 +59,16 @@ produce; offers from nations stay on screen until you answer; a building's card 
 picking a colony's landing site has a **Cancel** button; and in co-op the second player's expeditions, colony ships,
 defence settings, warhead choice and C.A.I.S. settings now reach the host's game.
 
+## Round 21: older iPhones and very big realms
+- **Older iPhones** (before iOS 16) could only draw the map up to the first label: zoomed out, just the stars. That's
+  fixed, and the game now runs on iPhones from iOS 13.4 up.
+- **Very big realms** no longer make the screen freeze: the game slows down instead (and says so once), so the screen
+  keeps answering your fingers. It's also faster overall in big games.
+- **Always the newest version:** if your phone kept an older copy of the game, it notices the new one when it starts and
+  reloads once by itself.
+- If something keeps going wrong, a note stays on screen with what it was: send a screenshot of it to whoever gave you
+  the game.
+
 ## The art
 Every building, upgrade, vehicle, troop badge and worker was redrawn in round 9. Three artists each took a group, and an independent reviewer checked every new sprite against the old one at map size (22 and 40 px) on grass, sand, moon dust and water, sending back the ones that weren't clearly better. Upgrade ladders step up visibly: farm, irrigated farm, mechanized farm; the central computer's four levels (each upgrade has its own look); settlement houses from hut to city block; helmets from a leather cap to a drone; haulers from a porter to a self-driving hauler; boats from a rowboat to a container ship.
 

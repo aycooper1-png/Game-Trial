@@ -169,7 +169,9 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 | `.nojekyll` | Makes GitHub Pages serve files as they are. Keep it. |
 
 **Cache tag:** `index.html` loads `style.css?v=N` and `game.js?v=N`. **Increase N by one on every push**, in both
-places, or phones keep running the old code. Look in `index.html` for the current N (it was 31 on 2026-11-27).
+places, or phones keep running the old code. Look in `index.html` for the current N (it was 32 on 2026-11-27). Since round 21 the game also checks on start whether
+`index.html` online names a newer N than the script it is running, and if so saves and reloads once (`checkFresh`), so
+phones that kept an old copy catch up. (Side effect for tests: a page whose `index.html` changes mid-run reloads itself.)
 
 ---
 
@@ -304,6 +306,12 @@ lines). The order of sections in the file:
   `colonyHint` (the colony-pick Cancel banner), `sendColony(pad, w, tx, ty)`, the co-op setters `setAutoDefend`,
   `setRecruit`, `setWarhead`, `setPadPaused`, `stopPadSupply`, `setPadSupply`, `setPadOnly`, `aiSet(b, key, value,
   sub)`, and Rivals `RIV_HELD` / `rivGiveBack`.
+- **Round 21 helpers:** the stand-ins for older browsers at the very top of the file; `byType(t)` / `byTypes(...ts)`
+  (buildings by type, in list order; `typeVer`, `bldVer`), `siteBlds()` (buildings with a site, once per step),
+  `gearFrame`, `FRAME_BUDGET` / `slowFrames` / `slowN` / `slowSaid` (in `init`'s frame loop), `checkFresh` (newer version
+  online → save and reload once; `sessionStorage` key `gt-fresh`), `saveWarned`, the repeating-error notice in `guard`,
+  `opt.maxExp` on `shipGoods` (passed to `tradePath`). **When you add a scan of all buildings for one type, use
+  `byType`**; when you change a building's `type` anywhere new, bump `typeVer`.
 - **Multiplayer** (end of file): `MP` (role, style, connection), PeerJS (or `tr=bc`, a test channel inside one
   browser), `MP_ORDERS` (player orders, wrapped by `mpWrap`), `MP_HOST_ONLY`.
   - **Starting and joining:** `mpSetup` (Host a game / Join a game) → `mpHostSetup` → `mpHost`, or `mpJoinSetup` →
@@ -688,6 +696,34 @@ my own tests found the problems; every fix was checked by re-running the reprodu
   long-press on a world with no territory no longer throws (`launchExpedition`); silicon/cobalt/chips show ∞ in
   creative mode.
 
+### Round 21 (2026-11-27): "still frozen" on the friend's iPhone
+The owner: the friend "is still complaining that it is Frozen. Please do what you can to fix that." No questions asked
+(an unambiguous bug report). Found and fixed:
+- **The likely cause: older iPhones.** `pill()` (every rounded label: "The Sun", "The Moon", "Your world", names, troop
+  counts, floating numbers, site labels) used `ctx.roundRect`, which Safari only has from **iOS 16**. On iOS 15 or older
+  each frame threw at the first label and the rest of the frame was never drawn. Zoomed out, the Sun's label comes
+  before the world in `render`, so the screen showed **only stars** (the friend's screenshot); zoomed in, everything
+  after the first label (names, haulers, troops) was missing on every frame. Reproduced in Chrome by deleting
+  `roundRect` and `Array.prototype.at`. Fixed with stand-ins at the very top of `game.js` (`roundRect` via `arcTo`, and
+  `Array/String.prototype.at`, which needs iOS 15.4 and was used in `shipGoods`). The one ES2021 line (`||=`) was
+  rewritten, so the game now parses as **ES2020 (iOS 13.4+)**. Keep it that way: no `||=`/`??=`/`&&=`, numeric
+  separators, regex lookbehind, `structuredClone`, `findLast`, `Object.hasOwn`, `createConicGradient`, `ctx.reset()`
+  without a fallback. (`ctx.filter` and `letterSpacing` are fine: older Safari ignores them.)
+- **Big realms no longer freeze the screen.** `frame()` gives the game's steps at most `FRAME_BUDGET` (30 ms) per
+  frame (one step always runs) and drops the backlog, so a huge realm runs slower than real time instead of spending
+  seconds per frame catching up. If most frames in 10 s are cut short, a toast says so once (`slowFrames`).
+- **Speed-ups (same behaviour):** `byType(t)` / `byTypes(...ts)` index the buildings by type in list order (rebuilt
+  whenever the list's length, `bldVer` or `typeVer` changes; `typeVer` bumps on an upgrade in place in
+  `placeBuilding`, which now also bumps `bldVer`). The single-type scans (`compOf`, `dcCount`, `padsOf`,
+  `settlementsOf`, `garrisons`, `nearestSettlement`, `invPull`, 25 more) use it. `siteBlds()` lists buildings with a
+  construction site once per step for `carNextJob` and `drawSites`. A realm of 400+ buildings recounts its land at most
+  once a second (0.3 s before). Nations' trades search for a cargo route with a smaller budget (was up to 0.4 s in one
+  step). The turning gear on sites is drawn from 48 pre-turned pictures (`gearFrame`). On a test realm of 1,610
+  buildings: 24 → 12 ms per step, worst step 579 → 120 ms, a zoom shows on screen in 0.13 s instead of 0.87 s.
+- **Safety nets:** `liveCountry` can't loop on a circle of merged territories, and `loadGame` cuts such circles; a save
+  that doesn't fit the browser's storage says so once (`saveWarned`); an error repeating 60 times shows a lasting notice
+  with its message, asking the player to send a screenshot (in `guard`, in `init`).
+
 ### Earlier rounds (done; listed so you know they exist)
 Tech tree edits; gun ranges; Casimir drive and Alcubierre drive; megaprojects; all the art redrawn (round 9); walls
 (picking ends, straight walls); the transport progression; imports (from your nearest territory on the same planet
@@ -747,6 +783,10 @@ cd <repo folder>/tests && node r13.mjs                # run any test
     on the host without taking the host's camera, the defence toggles, warhead and a C.A.I.S. setting reach the host).
     The audits' reproduction scripts are not in the repo. Three older tests were repaired (their building spot had
     become invalid under round 18's placement rule, or their build loops were too short): `r5dip`, `r15snd`, `shut4`.
+  - Round 21: `r21` (as on iOS 15 without `roundRect` and `Array.at`: every zoom draws without errors; a repeating error
+    brings the lasting notice; 80 ms steps still refresh the screen and bring the "runs slower" note; a newer version
+    online reloads the page exactly once; a circle of merged territories; the by-type index and site list match a full
+    scan through a creative game with builds, upgrades and removals; storage full warns once).
   - Round 17 fixes: `r17fix` (one territory: no "shipped in" wording; upgrades of parked haulers and of one walking in
     empty to load; Connect to road far away and greyed; Request porter across a sea route; importing to buy a hauler
     and to hire troops). It runs about 5 minutes: the imports are carried by a few slow haulers.
@@ -801,8 +841,11 @@ End commit messages with whatever attribution lines your own environment require
 - When a deconstructed hub's vessels move to another route they start at its first end, wherever that is.
 - In co-op, the C.A.I.S. dialogue count is kept on each player's own screen (the host's game decides only the kill
   switch). Not saved: imports for purchases (as before), a bridge that was coming down (it is saved as gone).
-- Round 19/20: the friend's freeze was never reproduced on a real iPhone; round 20 fixed every cause found that
-  matches it (see section 4, Round 20). If it happens again, ask for a screen recording.
+- Round 19/20/21: the friend's freeze was never seen on a real iPhone. Round 21's iOS 15 finding matches the screenshot
+  exactly, but the friend's iOS version is not known. If it happens again: ask which iOS (Settings → General → About)
+  and for a screenshot of the "Something keeps going wrong" notice if one appears.
+- Very big realms still run slower than real time on a phone (by design since round 21, rather than freezing). Drawing
+  is not budgeted: a frame with a lot on screen can still take a while on a slow phone.
 - Round 20 leftovers: the in-game AI's builder on another world, and the build-menu previews, now recount the shared
   tile marks when needed (`marksHere`), which costs ~1.5 ms each time the world in hand changes. Not exercised on a
   real iPhone: the page-zoom block (Chrome's phone emulation honours `user-scalable=no`), `100dvh`.
