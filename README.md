@@ -50,6 +50,15 @@ If the connection drops, the game says so in a strip at the top and **reconnects
 - **Return to map:** if your world has been off the screen (or just a dot) for 30 seconds, a **⟲ Return to map** button appears at the top right. Tap it to go back to where you were. A game saved while looking at empty space reopens over your land.
 - **Creative mode** shows a red **"Creative mode ON · tap to switch off"** button at the bottom while it's on.
 
+## Round 20: the big debug
+A bug-hunting round, no new features. Among other things: **Home** and **Map** always bring your land back (and close
+the Command panel on a phone), even from deep space or while flying a rocket; a touch the phone forgot to report no
+longer makes the map ignore you; the page itself can no longer be pinch-zoomed by accident on an iPhone; looking at the
+Moon or Aries before settling there no longer wrecks your save; silicon refineries and cobalt mines now actually
+produce; offers from nations stay on screen until you answer; a building's card never grows taller than the screen;
+picking a colony's landing site has a **Cancel** button; and in co-op the second player's expeditions, colony ships,
+defence settings, warhead choice and C.A.I.S. settings now reach the host's game.
+
 ## The art
 Every building, upgrade, vehicle, troop badge and worker was redrawn in round 9. Three artists each took a group, and an independent reviewer checked every new sprite against the old one at map size (22 and 40 px) on grass, sand, moon dust and water, sending back the ones that weren't clearly better. Upgrade ladders step up visibly: farm, irrigated farm, mechanized farm; the central computer's four levels (each upgrade has its own look); settlement houses from hut to city block; helmets from a leather cap to a drone; haulers from a porter to a self-driving hauler; boats from a rowboat to a container ship.
 

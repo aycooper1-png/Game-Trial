@@ -169,7 +169,7 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 | `.nojekyll` | Makes GitHub Pages serve files as they are. Keep it. |
 
 **Cache tag:** `index.html` loads `style.css?v=N` and `game.js?v=N`. **Increase N by one on every push**, in both
-places, or phones keep running the old code. Look in `index.html` for the current N (it was 30 on 2026-11-27).
+places, or phones keep running the old code. Look in `index.html` for the current N (it was 31 on 2026-11-27).
 
 ---
 
@@ -298,6 +298,12 @@ lines). The order of sections in the file:
   "Welcome" note) and in `mpOnMsg` on `hello` for a joining player (not when a Rivals guest comes back to their own
   realm). The 📖 button is `#cmdmenu button[data-act="tutorial"]`. **If you change a feature the tutorial
   describes, update its text too.**
+- **Round 20 helpers:** `stampWorld` / `marksHere()` (the served/worked tile marks are shared by all worlds: call
+  `marksHere()` before reading `isServed` / `isHarvested` for the world in hand), `inHand(v)` (a hauler's load that
+  belongs to an import or consignment, saved as a hub job with `at: -1`), `dropHeld` (touch/keys reset on blur),
+  `colonyHint` (the colony-pick Cancel banner), `sendColony(pad, w, tx, ty)`, the co-op setters `setAutoDefend`,
+  `setRecruit`, `setWarhead`, `setPadPaused`, `stopPadSupply`, `setPadSupply`, `setPadOnly`, `aiSet(b, key, value,
+  sub)`, and Rivals `RIV_HELD` / `rivGiveBack`.
 - **Multiplayer** (end of file): `MP` (role, style, connection), PeerJS (or `tr=bc`, a test channel inside one
   browser), `MP_ORDERS` (player orders, wrapped by `mpWrap`), `MP_HOST_ONLY`.
   - **Starting and joining:** `mpSetup` (Host a game / Join a game) → `mpHostSetup` → `mpHost`, or `mpJoinSetup` →
@@ -607,6 +613,81 @@ The owner relayed a friend's four points plus a "frozen" screenshot, and asked f
   load (`saneCamera`): broken values are reset, and a view of empty space is moved back over your land. Not proven:
   the friend's save wasn't available.
 
+### Round 20 (2026-11-27): the big debug
+The owner asked for "a big debug", very thorough, without creating new bugs, after a friend on an iPhone (creative mode
+on) got "stuck" on a screen of stars and then "back on earth but still not responding, can't zoom in". No new
+features and no design changes: only fixes. Three independent audits (two reading the code, one running it) plus
+my own tests found the problems; every fix was checked by re-running the reproduction. What was fixed, by area:
+- **Stuck in space / not responding (the friend's report).** Likely causes, all fixed: (1) **Home** only moved the
+  camera, never zoomed, so from far out it showed nothing; it now goes back over your land at a usable zoom (`goHome`).
+  (2) **Map** returned to the saved view even when that view was empty space; it no longer keeps such a view
+  (`toggleMapView`). (3) On a phone, **Map / Home / Next** left the Command panel covering the map; they now close it.
+  (4) A **hand-flown rocket** dragged the camera back every frame, so Home, Map, Return to map, tapping the domain
+  name and locking onto a world did nothing; they now let go of the rocket (it flies on, as with "Let go").
+  (5) A **finger whose "lifted" event was lost** (iOS system gestures, switching apps) made every later touch count
+  as a pinch: taps did nothing, dragging zoomed. A first finger down now forgets old ones; leaving the page forgets
+  held fingers and keys (`dropHeld`). (6) **iPhone page zoom**: Safari ignores `user-scalable=no`; a pinch or double
+  tap on a panel zoomed the whole page. Blocked (`touch-action: pan-x pan-y` on the page, `gesturestart` stopped,
+  two-finger `touchmove` outside the map stopped). (7) The on-load camera check now also catches a tiny zoom
+  (`saneCamera`), and switching worlds never lands on a kept view of empty space (`viewWorld`).
+- **Saves:** opening the Moon or Aries view (or "Colony ship to …") before having land there made every later save
+  unloadable, and the next reload **deleted the game**; fixed in `loadGame`. A save that can't load is now kept aside
+  as `<SAVE_KEY>-broken` instead of being erased. After reloading a game with a colony, the computer nations' fronts
+  were wiped (they stopped expanding, then declared war "for room"); fixed (`buildFronts` only for home). Imports on a
+  hauler's back when saving are kept (as goods waiting with no yard, `inHand`); part-delivered goods for a purchase
+  are kept (`pendingBuys` → `back`).
+- **Other worlds:** the "served/worked" tile marks are one set shared by all worlds; a recount on the Moon made home
+  look unserved, and nations built **hundreds of settlements**. Fixed with `stampWorld` / `marksHere()` (recounts
+  home before the nations or the build previews read the marks) and nations' iron tiles counted only at home.
+- **Production:** silicon refineries and cobalt (camp, rig) **never produced** (missing from `HARVESTS`); fixed.
+- **Territories:** merging two territories left haulers, yard goods and rockets on the dead id (goods stuck in yards);
+  fixed in `mergeCountry`. A territory in two pieces could merge the wrong way and lose its housing; fixed in
+  `recomputeNetwork`. An import site whose goods were lost on the way waited for ever; after 20 s with nothing on the
+  way it asks again (`S.impIdle` in `dispatchSupplies`).
+- **Hubs and bridges:** losing or taking down a port/station/airport now returns everything aboard and on its quays
+  (goods, people, troops to their garrison, riding haulers get off and stay) instead of deleting it (`removeBuilding`).
+  A bridge coming down now really waits for the traffic on it (with a 90 s limit), and remembered overland routes over
+  it are forgotten (`landWayCache`).
+- **War and nations:** a raid that ran out of land gave its troops back twice; fixed. A nuked nation's centre drifted
+  off the map; fixed in `nukeFallout`. "Join your ally's war" now starts the war properly (`setWar`). A nation's
+  demand could be dodged for free with Counter… → Cancel; the dialog's second button is now **Refuse**, and an
+  unanswered counter counts as a refusal after 30 s.
+- **Notifications:** on phones only the newest showed, and three news items pushed an offer out of the page (and its
+  answer was lost). Offers with buttons now always show and are never pushed out (`notify`, style.css `.note`).
+- **Keyboard:** typing a number in diplomacy fired shortcuts (2 = Attack mode, n = new map…). Typing in a box, and
+  Ctrl/Cmd/Alt combinations, are no longer shortcuts.
+- **Phone layout:** a building card could be taller than the screen (✕ off the top, map covered); it now scrolls inside
+  the space between the bars. Panels use `100dvh` (Safari's visible height). The Command menu closes an open building
+  card (they shared the same spot). The tutorial card moves to whichever side covers its ring less, and is smaller on
+  short screens. The URANIUM label was twice the size of the others. The toast is above the flight readout.
+  "All nations…" / "Leave" in the Command menu lost mouse clicks (rebuilt 10× a second); now rebuilt only on change.
+- **Colony ships:** leaving the world while picking a landing site kept the pick on, and the next tap at home launched
+  the ship; fixed. A **Cancel** banner shows while picking (`colonyHint`, phones have no Esc).
+- **Game over:** "Your last territory has fallen" now offers New map (the old toast pointed at the wrong menu).
+  New map with the same mode now reloads (before, nothing happened).
+- **Co-op parity** (new orders in `MP_ORDERS`): `sendColony` (in place of `startColony`), `setAutoDefend`,
+  `setRecruit`, `setWarhead`, `setPadPaused`, `stopPadSupply`, `setPadSupply`, `setPadOnly`, `expandStation`,
+  `aiSet` (every C.A.I.S. panel setting), `leaveAlliance`. The second player's **expeditions** go self-steering in
+  co-op (the host's game runs them; before, the host's camera was taken to the wheel and the guest's Settle was lost).
+  `MP.ui` is cleared at the start of each frame so the game's own step is never sent as the guest's order.
+- **Rivals:** goods you offer the other player are set aside until they answer (`RIV_HELD`, returned on refusal or
+  after 60 s with no answer); before, they could be spent meanwhile.
+- **Clocks per world:** terraforming, settlement stock sharing (`invTimer`), wall repair crews (`repTimer`) and the
+  C.A.I.S. step (`aiTimer2`) had one clock shared by all worlds, so once a second world existed each job ran on only
+  one of them. They are now swapped per world with the other timers (`stashWorld` / `useWorld`).
+- **New routes:** a rail line, sea route or air route was created without its `out`/`owe` boxes, so the map and the
+  hub's card crashed for a moment ("Something went wrong") when a second station/port/airport was finished. Created
+  with them now, and loaded saves get them too.
+- **Reusable rockets:** one supplying a station from a territory with no landing pad was planned back to its own
+  launch pad, but round 18's landing check only accepted landing pads, so it crashed every time. It now lands on its
+  own pad.
+- **Creative mode** fills the stock at once (before, only from the next step: switched on while the tutorial paused
+  the game, it said "infinite" but building failed "not enough stone").
+- **C.A.I.S. ambushes** could push a garrison's troops below zero; floored at zero.
+- **Other:** C.A.I.S. Trade manager only trades with nations whose nearest territory is its own (`aiDoTrade`);
+  long-press on a world with no territory no longer throws (`launchExpedition`); silicon/cobalt/chips show ∞ in
+  creative mode.
+
 ### Earlier rounds (done; listed so you know they exist)
 Tech tree edits; gun ranges; Casimir drive and Alcubierre drive; megaprojects; all the art redrawn (round 9); walls
 (picking ends, straight walls); the transport progression; imports (from your nearest territory on the same planet
@@ -660,6 +741,12 @@ cd <repo folder>/tests && node r13.mjs                # run any test
   - Round 19: `r19` (creative mode off from the bottom bar, the tutorial's porter step, the four congratulations
     wordings and only-once, Return to map after 30 s away and when the world is a dot, a saved camera in empty space
     put back on reload; phone size).
+  - Round 20: `r20` (phone size: pinch far out and pan away, Map and Home bring the world back and close the panel,
+    Map never returns to empty space, a game saved in deep space reopens over your land, a stuck finger is forgotten,
+    blur forgets held keys, the page can't be pinch-zoomed), `r20mp` (co-op: the guest's expedition runs self-steering
+    on the host without taking the host's camera, the defence toggles, warhead and a C.A.I.S. setting reach the host).
+    The audits' reproduction scripts are not in the repo. Three older tests were repaired (their building spot had
+    become invalid under round 18's placement rule, or their build loops were too short): `r5dip`, `r15snd`, `shut4`.
   - Round 17 fixes: `r17fix` (one territory: no "shipped in" wording; upgrades of parked haulers and of one walking in
     empty to load; Connect to road far away and greyed; Request porter across a sea route; importing to buy a hauler
     and to hire troops). It runs about 5 minutes: the imports are carried by a few slow haulers.
@@ -714,8 +801,13 @@ End commit messages with whatever attribution lines your own environment require
 - When a deconstructed hub's vessels move to another route they start at its first end, wherever that is.
 - In co-op, the C.A.I.S. dialogue count is kept on each player's own screen (the host's game decides only the kill
   switch). Not saved: imports for purchases (as before), a bridge that was coming down (it is saved as gone).
-- Round 19: the friend's freeze could not be reproduced without their save; the fix assumes it was the camera in empty
-  space (see section 4, Round 19). Nations living only on other worlds don't stop the congratulations (it is about the
+- Round 19/20: the friend's freeze was never reproduced on a real iPhone; round 20 fixed every cause found that
+  matches it (see section 4, Round 20). If it happens again, ask for a screen recording.
+- Round 20 leftovers: the in-game AI's builder on another world, and the build-menu previews, now recount the shared
+  tile marks when needed (`marksHere`), which costs ~1.5 ms each time the world in hand changes. Not exercised on a
+  real iPhone: the page-zoom block (Chrome's phone emulation honours `user-scalable=no`), `100dvh`.
+- Co-op: offers with buttons from computer nations still go only to the host.
+- Round 19: Nations living only on other worlds don't stop the congratulations (it is about the
   home planet).
 - **Rivals:** computer nations raid only the host; their offers go only to the host; fights between computer nations
   and the second player are worked out on the host's side using a copy of the second player's troops.

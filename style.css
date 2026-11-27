@@ -15,7 +15,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; overflow: hidden; background: #04050b; color: var(--text); user-select: none;
+html, body { margin: 0; height: 100%; overflow: hidden; background: #04050b; color: var(--text); user-select: none; touch-action: pan-x pan-y;
   -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 button { touch-action: manipulation; font-family: inherit; color: var(--text); }
 [hidden] { display: none !important; }
@@ -104,7 +104,7 @@ canvas#game.building { cursor: copy; }
 /* ---------- sheets: build and command menus ---------- */
 .sheet { position: fixed; z-index: 6; display: none; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6); }
 .sheet.show { display: block; }
-#buildmenu { left: 14px; bottom: calc(122px + env(safe-area-inset-bottom)); width: min(720px, calc(100vw - 28px)); max-height: calc(100vh - 200px); overflow: auto; padding: 16px 18px; }
+#buildmenu { left: 14px; bottom: calc(122px + env(safe-area-inset-bottom)); width: min(720px, calc(100vw - 28px)); max-height: calc(100vh - 200px); max-height: calc(100dvh - 200px); overflow: auto; padding: 16px 18px; }
 #cmdmenu { left: 14px; bottom: calc(122px + env(safe-area-inset-bottom)); width: min(470px, calc(100vw - 28px)); padding: 12px 14px; }
 .bm-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; gap: 10px; }
 .bm-title { font-size: 19px; font-weight: 800; }
@@ -187,6 +187,8 @@ button.x { background: var(--panel); border: 1px solid #3a4560; border-radius: 8
   display: none; padding: 11px 13px; width: min(440px, calc(100vw - 20px)); border: 1.5px solid #6fb6ff; box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
 }
 #bcard.show { display: block; }
+/* never taller than the room between the bars: it scrolls inside, so its close button and the map stay reachable */
+#bcard { max-height: calc(100vh - 122px - var(--top-h, 58px) - 20px); max-height: calc(100dvh - 122px - var(--top-h, 58px) - 20px); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .bc-head { display: flex; align-items: center; gap: 8px; }
 .bc-title { flex: 1; font-size: 15px; font-weight: 800; }
 #bc-body { font-size: 12px; line-height: 1.5; margin-top: 6px; color: var(--text); }
@@ -197,7 +199,7 @@ button.x { background: var(--panel); border: 1px solid #3a4560; border-radius: 8
 .pbtn.wide { width: auto; padding: 0 10px; }
 
 /* ---------- diplomacy ---------- */
-#diplo { left: 14px; right: auto; top: calc(var(--top-h, 58px) + 10px); bottom: auto; width: min(460px, calc(100vw - 28px)); max-height: calc(100vh - var(--top-h, 58px) - 140px); overflow: auto; padding: 14px 16px; border: 1.5px solid #6fb6ff; }
+#diplo { left: 14px; right: auto; top: calc(var(--top-h, 58px) + 10px); bottom: auto; width: min(460px, calc(100vw - 28px)); max-height: calc(100vh - var(--top-h, 58px) - 140px); max-height: calc(100dvh - var(--top-h, 58px) - 140px); overflow: auto; padding: 14px 16px; border: 1.5px solid #6fb6ff; }
 .dp-head { display: flex; align-items: center; gap: 10px; }
 .dp-flag { width: 18px; height: 24px; border-radius: 3px; flex: none; box-shadow: 0 0 0 1.5px rgba(0,0,0,0.4); }
 .dp-name { font-size: 17px; font-weight: 800; flex: 1; }
@@ -269,7 +271,7 @@ body.dip-open #notes { display: none; }
 #tooltip .r { color: var(--bad); font-weight: 600; }
 #tooltip .d { color: var(--dim); }
 #toast {
-  position: fixed; left: 50%; top: calc(var(--top-h, 58px) + 14px); transform: translateX(-50%); z-index: 9;
+  position: fixed; left: 50%; top: calc(var(--top-h, 58px) + 14px); transform: translateX(-50%); z-index: 35;   /* above the flight readout (30), which used to cover it */
   background: rgba(20, 26, 37, 0.95); border: 1px solid var(--accent); color: var(--text);
   padding: 7px 16px; border-radius: 9px; font-size: 13px; font-weight: 600; max-width: min(640px, calc(100vw - 24px)); text-align: center;
   opacity: 0; transition: opacity 0.25s; pointer-events: none;
@@ -323,21 +325,21 @@ body.dip-open #notes { display: none; }
   .bar-note { font-size: 9px; }
   #people-rate { min-width: 0; font-size: 10px; max-width: 90px; }
 
-  .sheet { left: 6px !important; right: 6px; width: auto !important; bottom: calc(var(--bottom-h, 140px) + 12px) !important; max-height: calc(100vh - var(--bottom-h, 140px) - var(--top-h, 90px) - 24px) !important; overflow: auto; padding: 12px !important; }
+  .sheet { left: 6px !important; right: 6px; width: auto !important; bottom: calc(var(--bottom-h, 140px) + 12px) !important; max-height: calc(100vh - var(--bottom-h, 140px) - var(--top-h, 90px) - 24px) !important; max-height: calc(100dvh - var(--bottom-h, 140px) - var(--top-h, 90px) - 24px) !important; overflow: auto; padding: 12px !important; }
   .bm-catgrid { grid-template-columns: 1fr; gap: 7px; }
   .bm-card { padding: 9px; }
   .cm-acts { grid-template-columns: repeat(2, 1fr); }
   .cm-row > .lbl { min-width: 0; width: 100%; }
   .pbtn { width: 52px; height: 32px; }
   #confirmbar { bottom: calc(var(--bottom-h, 140px) + 12px); gap: 10px; padding: 9px 10px; }
-  #bcard { bottom: calc(var(--bottom-h, 140px) + 12px); }
-  #diplo { left: 6px !important; right: 6px !important; top: calc(var(--top-h, 90px) + 6px) !important; max-height: calc(100vh - var(--top-h, 90px) - var(--bottom-h, 140px) - 24px) !important; }
+  #bcard { bottom: calc(var(--bottom-h, 140px) + 12px); max-height: calc(100vh - var(--bottom-h, 140px) - var(--top-h, 90px) - 24px); max-height: calc(100dvh - var(--bottom-h, 140px) - var(--top-h, 90px) - 24px); }
+  #diplo { left: 6px !important; right: 6px !important; top: calc(var(--top-h, 90px) + 6px) !important; max-height: calc(100vh - var(--top-h, 90px) - var(--bottom-h, 140px) - 24px) !important; max-height: calc(100dvh - var(--top-h, 90px) - var(--bottom-h, 140px) - 24px) !important; }
   .dp-cols { grid-template-columns: 1fr; }
   .cf-btns { flex-direction: column; }
   #cf-ok, #cf-cancel { padding: 11px 14px; }
   #notes { right: 6px; width: calc(100vw - 12px); top: calc(var(--top-h, 90px) + 6px); }
   .note { padding: 7px 10px; }
-  .note:nth-child(n+2) { display: none; }
+  .note:not(:has(.nbtns)) ~ .note:not(:has(.nbtns)) { display: none; }   /* one piece of news at a time; offers with buttons always show */
   .note .nt { font-size: 13px; }
   .note .nb { font-size: 11px; }
   #toast { top: calc(var(--top-h, 90px) + 76px); font-size: 12px; }
@@ -370,7 +372,7 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
 #cmdmenu button.mute.on { border-color: rgba(123,211,137,0.6); }
 @media (max-width: 420px) {
   #topbar .res .lbl { letter-spacing: 0.02em; white-space: nowrap; }
-  #res-uranium .lbl { font-size: 0.86em; }
+  #topbar #res-uranium .lbl { font-size: 7px; }
 }
 /* the next step toward a space station: the launch pad glows in the build menu */
 .bm-card.hint { border-color: #f2c14e !important; box-shadow: 0 0 0 1px #f2c14e, 0 0 14px rgba(242,193,78,0.45); }
@@ -429,7 +431,7 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
 .tech-vals { font-size: 12.5px !important; gap: 4px; }
 .tech-vals svg { vertical-align: -2px; }
 /* tall dialogs (the AI, surrender terms, the market) scroll inside the screen */
-.md-box { max-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+.md-box { max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); display: flex; flex-direction: column; }
 #md-text { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
 @media (max-width: 640px) { .tech-vals { flex-wrap: wrap; font-size: 11px !important; row-gap: 0; } .tech-vals svg { width: 10px; height: 10px; } }
 /* multiplayer */
@@ -453,13 +455,13 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
   #topbar .res .ic { display: none; }
 }
 /* building a wall: what to do, and a way out */
-#wall-hint {
+#wall-hint, #colony-hint {
   position: fixed; left: 50%; top: calc(var(--top-h, 58px) + 56px); transform: translateX(-50%); z-index: 9;
   display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 24px);
   background: rgba(20, 26, 37, 0.95); border: 1px solid #f2c14e; color: var(--text);
   padding: 6px 8px 6px 14px; border-radius: 10px; font-size: 13px; font-weight: 600;
 }
-#wall-hint button { padding: 6px 12px; border-radius: 7px; border: 1px solid #3a4658; background: #1c2431; color: var(--text); font: inherit; cursor: pointer; }
+#wall-hint button, #colony-hint button { padding: 6px 12px; border-radius: 7px; border: 1px solid #3a4658; background: #1c2431; color: var(--text); font: inherit; cursor: pointer; }
 /* a settlement's stock, laid out like the stock in the top bar */
 .inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 4px; margin: 4px 0 2px; }
 .inv-res { display: flex; align-items: center; gap: 7px; padding: 5px 7px 5px 4px; border-radius: 8px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); }
@@ -557,3 +559,13 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
 body.lostview #notes { top: calc(var(--top-h, 58px) + 52px); }
 /* creative mode is on: the way out, at the bottom of the screen too */
 .dbg-off { background: rgba(201, 69, 58, 0.18); border: 1px solid #ff7a6b; color: #ffb3a8; border-radius: 8px; padding: 3px 8px; font: 700 11.5px 'Segoe UI', Inter, Arial, sans-serif; cursor: pointer; pointer-events: auto; }
+
+/* short phones: a smaller tutorial card, so it doesn't lie over what it points at */
+@media (max-height: 720px) {
+  #tut { padding: 10px 12px 9px; }
+  #tut .tut-pic img { width: 36px; height: 36px; }
+  #tut .tut-title { font-size: 16px; margin-bottom: 4px; }
+  #tut .tut-text { font-size: 13px; line-height: 1.38; }
+  #tut .tut-btns button { padding: 7px 12px; }
+  #tut.bottom { bottom: calc(128px + env(safe-area-inset-bottom)); }
+}

@@ -20,8 +20,8 @@ const out = await page.evaluate(() => {
   document.querySelector('#md-btns button').click();
   // rush a site
   A.res.wood = 300; A.res.stone = 300;
-  const spot = (() => { for (let r = 3; r < 12; r++) for (let dx = -r; dx <= r; dx++) { const i = G.idx(Math.floor(A.lx) + dx, Math.floor(A.ly) + r); if (!G.canBuild(i, 'cabin') && G.countryAt(i) === A) return i; } })();
-  G.tryBuild(spot, 'cabin');
+  const spot = (() => { for (let r = 3; r < 40; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { const i = G.idx(Math.floor(A.lx) + dx, Math.floor(A.ly) + dy); if (!G.canBuild(i, 'farm') && G.countryAt(i) === A) return i; } })();
+  G.tryBuild(spot, 'farm');
   const b = G.buildingAt(spot);
   log.push(['site', !!b.site, 'rush cost', G.rushCost(b)]);
   G.rushSite(b); log.push(['after rush', !b.site]);

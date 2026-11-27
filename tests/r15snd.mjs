@@ -37,8 +37,8 @@ log.push(['porter gain after a moment (zoom 40)', await page.evaluate(() => { co
 const tap = await page.evaluate(async () => {
   const G = window.__game, g = G.game, out = [], A = G.activeCountry();
   for (const r of ['wood', 'stone']) A.res[r] = 999;
-  let i = -1; for (let r = 3; r < 15 && i < 0; r++) for (let dx = -r; dx <= r; dx++) { const t = G.idx(Math.floor(A.lx) + dx, Math.floor(A.ly) + r); if (!G.canBuild(t, 'cabin') && G.countryAt(t) === A) { i = t; break; } }
-  G.tryBuild(i, 'cabin');
+  let i = -1; for (let r = 3; r < 40 && i < 0; r++) for (let dy = -r; dy <= r && i < 0; dy++) for (let dx = -r; dx <= r; dx++) { const t = G.idx(Math.floor(A.lx) + dx, Math.floor(A.ly) + dy); if (!G.canBuild(t, 'farm') && G.countryAt(t) === A) { i = t; break; } }
+  G.tryBuild(i, 'farm');
   const b = G.buildingAt(i);
   for (let k = 0; k < 2000 && b.site && b.site.crew == null; k++) G.tick(0.05);
   if (!b.site) return ['finished too fast'];
