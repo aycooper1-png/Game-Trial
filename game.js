@@ -277,19 +277,19 @@ const CFG = {
       { id: 'carriage', name: 'Carriages',   tech: 'carriages',  cargo: 60, speed: 8,  cost: { wood: 25, iron: 5 }, stick: 2.2, feed: 0.03 },
       { id: 'caravan',  name: 'Caravans',    tech: 'caravans',   cargo: 140, speed: 8.5, cost: { wood: 30, iron: 8, wheat: 20 }, stick: 3, feed: 0.045 },
       { id: 'truck',    name: 'Trucks',      tech: 'automobile', cargo: 250, speed: 15, cost: { iron: 25, oil: 5 }, stick: 5, feed: 0.01, fuel: 0.03 },
-      // later tiers come by themselves (auto): a truck is refitted for free next time it calls in, once you know how
-      { id: 'etruck',   name: 'Electric trucks', tech: 'batteries', cargo: 400, speed: 17, cost: {}, stick: 9, feed: 0.01, mw: 0.15, auto: true },
-      { id: 'autohauler', name: 'Self-driving haulers', tech: 'cais', cargo: 800, speed: 22, cost: {}, stick: 30, mw: 0.2, auto: true } ] },
+      // later tiers come by themselves (auto): a truck is refitted next time it calls in, once you know how, for a little gold (owner: "a small amount of gold"; AI's numbers)
+      { id: 'etruck',   name: 'Electric trucks', tech: 'batteries', cargo: 400, speed: 17, cost: { gold: 10 }, stick: 9, feed: 0.01, mw: 0.15, auto: true },
+      { id: 'autohauler', name: 'Self-driving haulers', tech: 'cais', cargo: 800, speed: 22, cost: { gold: 25 }, stick: 30, mw: 0.2, auto: true } ] },
     boat: { name: 'boats', hub: 'port', tiers: [
       { id: 'sailboat',  name: 'Sailboats',  tech: 'sailing',      cargo: 30, speed: 6,  cost: { wood: 30 } },
       { id: 'galleon',   name: 'Galleons',   tech: 'shipbuilding', cargo: 60, speed: 7.5, cost: { wood: 40, iron: 10 } },
       { id: 'steamship', name: 'Steamships', tech: 'steam',        cargo: 185, speed: 12, cost: { iron: 35 }, fuel: 0.1, woodFuel: 0.12 },
-      { id: 'freighter', name: 'Diesel freighters', tech: 'petroleum', cargo: 650, speed: 14, cost: {}, fuel: 0.12, auto: true },
-      { id: 'container', name: 'Container ships', tech: 'computing', cargo: 1500, speed: 16, cost: {}, fuel: 0.14, auto: true } ] },
+      { id: 'freighter', name: 'Diesel freighters', tech: 'petroleum', cargo: 650, speed: 14, cost: { gold: 15 }, fuel: 0.12, auto: true },
+      { id: 'container', name: 'Container ships', tech: 'computing', cargo: 1500, speed: 16, cost: { gold: 30 }, fuel: 0.14, auto: true } ] },
     plane: { name: 'planes', hub: 'airport', tiers: [
       { id: 'plane', name: 'Propeller planes', tech: 'flight',   cargo: 40, speed: 30, cost: { iron: 30, oil: 10 }, fuel: 0.3 },
       { id: 'jet',   name: 'Jets',             tech: 'rocketry', cargo: 220, speed: 55, cost: { iron: 50, oil: 20 }, fuel: 0.5 },
-      { id: 'cargojet', name: 'Wide-body freighters', tech: 'computing', cargo: 550, speed: 60, cost: {}, fuel: 0.6, auto: true } ] },
+      { id: 'cargojet', name: 'Wide-body freighters', tech: 'computing', cargo: 550, speed: 60, cost: { gold: 30 }, fuel: 0.6, auto: true } ] },
     // a train comes free with each rail line. You upgrade them at any station (steam, then diesel, then electric bullet
     // trains): each is refitted, and paid for, when it next pulls in. Short of oil or power, a train runs on the tier below.
     rail: { name: 'trains', hub: 'station', tiers: [
@@ -1555,6 +1555,41 @@ Object.assign(SHAPES, {
     <path d="M-4.6 -7.4 V5.6" stroke="#fff" stroke-width="0.8" opacity="0.75"/>
     <circle cx="-8.5" cy="1" r="1.1" fill="#eef4ff" opacity="0.8"/><circle cx="8.6" cy="0" r="0.9" fill="#eef4ff" opacity="0.8"/><circle cx="-9.6" cy="-1.4" r="0.7" fill="#eef4ff" opacity="0.7"/>`,
 });
+// ---------- airless worlds: haulers in space gear ----------
+// People and animals wear little glass helmets (carts get metal wheels); trucks become space buggies. Same stats.
+// The look is swapped when a hauler stops in a settlement (like an upgrade), so it changes back after terraforming.
+{
+  const helmet = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#cfeeff" fill-opacity="0.38" stroke="#f2fbff" stroke-width="0.85"/>` +
+    `<path d="M${(x - r * 0.62).toFixed(2)} ${(y - r * 0.2).toFixed(2)} A${(r * 0.7).toFixed(2)} ${(r * 0.7).toFixed(2)} 0 0 1 ${(x - r * 0.05).toFixed(2)} ${(y - r * 0.7).toFixed(2)}" stroke="#fff" stroke-width="0.7" fill="none" stroke-linecap="round"/>`;
+  const tank = (x, y) => `<rect x="${x}" y="${y}" width="2.2" height="4.4" rx="1" fill="#e4e9ee" stroke="#2a1a0e" stroke-width="0.55"/><path d="M${x + 0.5} ${y + 1.2} H${x + 1.7}" stroke="#e0452f" stroke-width="0.6"/>`;
+  const metal = s => s.replace(/#6b4222/g, '#8a949e').replace(/#3d2a1c/g, '#5b646e');
+  SHAPES.sp_porter = SHAPES.porter + tank(4.4, -3.6) + helmet(3.3, -4.9, 3.7);
+  SHAPES.sp_handcart = metal(SHAPES.handcart) + tank(11.4, -3.2) + helmet(10.4, -4.4, 3.4);
+  SHAPES.sp_horse = SHAPES.horse + helmet(10.5, -5.9, 3.3);
+  SHAPES.sp_carriage = metal(SHAPES.carriage) + helmet(12.7, -3.1, 2.8);
+  SHAPES.sp_caravan = metal(SHAPES.caravan) + helmet(12.7, -2.7, 2.6);
+  // a space buggy: a low open chassis on big wire-mesh wheels, a cargo pod behind, a driver under a glass dome
+  const wheel = (cx, glow) => `<circle cx="${cx}" cy="6.3" r="3.5" fill="#262b32" stroke="#141a20" stroke-width="0.9"/><circle cx="${cx}" cy="6.3" r="2.6" fill="none" stroke="#aeb7c0" stroke-width="0.7" stroke-dasharray="0.9 0.7"/><circle cx="${cx}" cy="6.3" r="1.1" fill="${glow}"/>`;
+  const buggy = ({ pod, podLine, accent, glow, roof, driver }) => `<ellipse cx="0" cy="10.4" rx="14.4" ry="2.2" fill="#000" opacity="0.22"/>
+<path d="M-11.5 -9.6 V-13 M-11.5 -13 Q-13.8 -13.6 -14 -11.2 Q-12 -12.4 -9.4 -11.6" stroke="#c6ced6" stroke-width="0.8" fill="none" stroke-linecap="round"/>
+<rect x="-13.6" y="-9.6" width="15" height="9.6" rx="2.6" fill="${pod}" stroke="#1c2230" stroke-width="1.05"/>
+<path d="M-13.2 -5.2 H1" stroke="${podLine}" stroke-width="1.6"/><path d="M-12 -8.4 H-3" stroke="#fff" stroke-width="0.8" stroke-linecap="round" opacity="0.8"/>
+${roof || ''}
+<path d="M-14.4 0.2 H14.2 L13.4 2.6 H-14 Z" fill="#59626c" stroke="#1c2230" stroke-width="0.9" stroke-linejoin="round"/>
+<path d="M-14 1.4 H13.6" stroke="${accent}" stroke-width="0.8"/>
+${driver}
+<path d="M-13.4 3.6 Q-9.5 -0.8 -5.6 3.6 M-5.2 3.6 Q-1.4 -0.8 2.4 3.6 M4.6 3.6 Q8.5 -0.8 12.4 3.6" stroke="#2b333b" stroke-width="1.1" fill="none"/>
+${wheel(-9.5, glow)}${wheel(-1.4, glow)}${wheel(8.5, glow)}`;
+  const seat = (suit) => `<path d="M4.2 0.2 V-3.4 H7 V0.2" fill="#3a4450" stroke="#1c2230" stroke-width="0.8"/>
+<circle cx="8.4" cy="-4.6" r="1.9" fill="${suit}" stroke="#1c2230" stroke-width="0.7"/><path d="M6.6 -2.8 Q8.4 -1.4 10.4 -2.6 L10.2 0.2 H6.6 Z" fill="${suit}" stroke="#1c2230" stroke-width="0.7"/>
+<path d="M3.4 0.2 V-5.4 Q8.4 -11.2 13.4 -4.6 V0.2" fill="#cfeeff" fill-opacity="0.28" stroke="#eaf6ff" stroke-width="0.8"/><path d="M5 -6.2 Q7 -8.6 9.6 -8.4" stroke="#fff" stroke-width="0.7" fill="none" stroke-linecap="round"/>`;
+  SHAPES.sp_truck = buggy({ pod: '#e9edf1', podLine: '#e07b39', accent: '#e07b39', glow: '#c8ced4', driver: seat('#f2f4f6') });
+  SHAPES.sp_etruck = buggy({ pod: '#f2f5f7', podLine: '#3aa65a', accent: '#3aa65a', glow: '#7be08a', driver: seat('#f2f4f6'),
+    roof: `<rect x="-13.2" y="-12.4" width="14.2" height="2.6" fill="#1d3e78" stroke="#0e1d3a" stroke-width="0.6"/><path d="M-9.6 -12.4 V-9.8 M-6 -12.4 V-9.8 M-2.4 -12.4 V-9.8 M-13.2 -11.1 H1" stroke="#5a86c8" stroke-width="0.4"/>` });
+  // the self-driving buggy: nobody aboard, a sensor dome and a cyan light strip
+  SHAPES.sp_autohauler = buggy({ pod: '#dfe7ef', podLine: '#5ff0e0', accent: '#5ff0e0', glow: '#5ff0e0',
+    driver: `<path d="M2.4 0.2 V-4.6 Q3 -7.6 8 -7.4 Q12.6 -7.2 13.8 -2.6 V0.2 Z" fill="#2b3a4a" stroke="#1c2230" stroke-width="0.9"/><path d="M9.2 -2.4 H13.6" stroke="#5ff0e0" stroke-width="1.5" stroke-linecap="round"/><circle cx="7.4" cy="-8.4" r="1.4" fill="#5ff0e0" stroke="#1c2230" stroke-width="0.6"/>` });
+}
 const SVG = {}, SPR = {}, RAS = {};
 for (const [name, inner] of Object.entries(SHAPES)) {
   SVG[name] = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-15 -15 30 30" width="64" height="64">${inner}</svg>`;
@@ -1861,10 +1896,12 @@ function sowFields(i, now = false) {
   game.bldDirty = true;
 }
 const SOW_EVERY = 1.2;                             // seconds between one field and the next
+const DESERT_WHEAT = { sow: 3, harvest: 0.5 };     // owner's rule: desert fields spread far more slowly, and give half the wheat (AI's number: 3x slower)
 function stepSowing(dt) {
   for (const b of game.buildings) {
     if (!b.toSow || !b.toSow.length || b.field == null || !deposits[b.field]) continue;
-    if ((b.sowT = (b.sowT || 0) + dt) < SOW_EVERY) continue;
+    const nx = b.toSow[b.toSow.length - 1];
+    if ((b.sowT = (b.sowT || 0) + dt) < SOW_EVERY * (biome[nx] === DESERT ? DESERT_WHEAT.sow : 1)) continue;   // desert takes far longer to sow
     b.sowT = 0;
     const side = sideOf(b.i);
     while (b.toSow.length) {
@@ -2284,7 +2321,7 @@ function aiClaim(n, i) {
 // a nation takes one of your tiles: the land, and anything built on it, is now theirs
 function aiTake(n, i) {
   const x = i % W, y = (i / W) | 0, c = countryAt(i);
-  if (c) game.lost.set(i, game.time);              // yours until a moment ago: your troops may take it back
+  if (c) { game.lost.set(i, game.time); if (game.style) game.style.lost = (game.style.lost || 0) + 1; }   // yours until a moment ago: your troops may take it back
   if (c && building[i] === BLD_CODE.fort) game.lostForts.set(i, game.time);   // a fortress lost: worth fighting to get back
   if (NET[i] & 2) { const w = wallAtTile(i); if (w) damageWall(w, wallMax(w)); }   // over the wall: that stretch is breached
   if (c && building[i] === BLD_CODE.settlement) lootSettlement(buildingAt(i), c, n);   // and what was stored there
@@ -2656,7 +2693,7 @@ function arriveTroops(on, at) {
     return;
   }
   let g = buildingAt(on.g);
-  if (!g || !['fort', 'base'].includes(g.type) || !owner[g.i]) {   // their garrison is gone: the nearest one of theirs
+  if (!g || !(['fort', 'base'].includes(g.type) || (g.type === 'settlement' && on.g === g.i)) || !owner[g.i] || underway(g)) {   // their garrison is gone: the nearest one of theirs
     const C = liveCountry(on.c) || nearestDomain(at[0], at[1]);
     g = garrisons().filter(q => countryAt(q.i) === C)[0] || garrisons()[0];
   }
@@ -2721,6 +2758,10 @@ function stepShipments(dt) {
   for (const S of game.shipments) {
     if (!S.legs) { S.done = true; continue; }
     const L = S.legs[S.li];
+    if (L.kind === 'land' && game.bridges.length && (S.w || 0) === WORLD) {   // a bridge ahead: troops first, the rest take turns
+      const [x0, y0] = shipmentPos(S), d0 = S.d; S.d = Math.min(L.len, S.d + 1); const [x1, y1] = shipmentPos(S); S.d = d0;
+      if (!bridgeGate(shipKind(S), x0, y0, x1, y1)) continue;
+    }
     S.d += L.speed * dt;
     if (S.d < L.len) continue;
     if (S.li < S.legs.length - 1) { S.li++; S.d = 0; continue; }
@@ -3421,7 +3462,9 @@ function buildRoads() {
       const key = Math.min(list[k].i, list[j].i) + ':' + Math.max(list[k].i, list[j].i);
       if (have.has(key)) { root[find(k)] = find(j); deg[k]++; deg[j]++; }
     }
+    const gone = new Set(game.noRoad || []), pk = (k, j) => Math.min(list[k].i, list[j].i) + ':' + Math.max(list[k].i, list[j].i);
     for (const [d, k, j] of pairs) {
+      if (gone.has(pk(k, j))) continue;            // a road the player deleted stays deleted until they rebuild it
       if (find(k) !== find(j)) { root[find(k)] = find(j); chosen.push([k, j]); deg[k]++; deg[j]++; }
       else if (deg[k] < RC.links && deg[j] < RC.links && d < RC.max * 0.6) { chosen.push([k, j]); deg[k]++; deg[j]++; }
     }
@@ -3724,13 +3767,14 @@ function drawRoads(z) {
   for (const { L, lines } of groups.values()) {
     const w0 = Math.max(1.4, z * L.w), w = w0;
     for (const pass of [0, 1]) {
-      for (const r of lines) { const w = (r.lanes || 1) > 1 ? w0 * 1.75 : w0; traceLine(r); ctx.strokeStyle = pass ? L.fill : L.edge; ctx.lineWidth = pass ? w : w + Math.max(1.4, z * 0.1); ctx.stroke(); }
+      for (const r of lines) { const w = w0 * [1, 1, 1.75, 2.45][r.lanes || 1]; traceLine(r); ctx.strokeStyle = pass ? L.fill : L.edge; ctx.lineWidth = pass ? w : w + Math.max(1.4, z * 0.1); ctx.stroke(); }
     }
-    if (z >= 2.5) for (const r of lines) if ((r.lanes || 1) > 1) { traceLine(r); ctx.setLineDash([z * 0.3, z * 0.3]); ctx.lineWidth = Math.max(1, z * 0.05); ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.stroke(); ctx.setLineDash([]); }   // the centre line
+    if (z >= 2.5) for (const r of lines) if ((r.lanes || 1) > 1) { traceLine(r); ctx.setLineDash([z * 0.3, z * 0.3]); ctx.lineWidth = Math.max(1, z * 0.05); ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.stroke(); ctx.setLineDash([]); if (r.lanes >= 3) { traceLine(r); ctx.lineWidth = Math.max(1.4, z * 0.08); ctx.strokeStyle = 'rgba(242,193,78,0.9)'; ctx.setLineDash([z * 0.9, z * 0.25]); ctx.stroke(); ctx.setLineDash([]); } }   // the centre line (a highway: a gold one)
     if (L.dash && z >= 4) for (const r of lines) { traceLine(r); ctx.setLineDash([z * 0.35, z * 0.45]); ctx.lineWidth = Math.max(1, z * 0.04); ctx.strokeStyle = L.dash; ctx.stroke(); ctx.setLineDash([]); }
     if (L.cobble && z >= 6) for (const r of lines) { traceLine(r); ctx.setLineDash([z * 0.08, z * 0.14]); ctx.lineWidth = w * 0.55; ctx.strokeStyle = 'rgba(120,116,106,0.5)'; ctx.stroke(); ctx.setLineDash([]); }
   }
   for (const r of roads) if (roadWorks(r)) drawRoadWorks(r, z);
+  drawRoadSel(z);
   // walls: thick stone, with battlements up close (concrete once you have Electricity)
   if (game.walls.length) {
     const concrete = game.research.done.has('electricity');
@@ -3859,7 +3903,7 @@ function recomputeHarvest() {
       const kind = deposits[depositOf[t]].type;
       b.work[kind]++;
       if (b.sample.length < 6 && (b.work[kind] * 7) % 5 < 2) b.sample.push(t);
-      if (mine) { into[kind]++; if (kind === 'wheat') pw.fields += CFG.buildings[b.type].farm || 1; }
+      if (mine) { into[kind] += kind === 'wheat' && biome[t] === DESERT ? DESERT_WHEAT.harvest : 1; if (kind === 'wheat') pw.fields += CFG.buildings[b.type].farm || 1; }
       else if (kind === 'iron') game.nations[aiOf[b.i] - 1].ironTiles++;
     }, R);
   });
@@ -3920,7 +3964,7 @@ function recomputeBuildings() {
 const CARGO_RES = RESOURCES;
 const emptyBox = resBox;
 const boxSum = o => { let t = 0; for (const k in o) t += o[k] || 0; return t; };
-const underway = b => !!(b.site && b.site.type === b.type);       // still being built (an upgrade keeps working meanwhile)
+const underway = b => !!((b.site && b.site.type === b.type) || (b.raze && !b.raze.keep));   // still being built, or being taken down (an upgrade keeps working meanwhile)
 // what one vehicle on a link of this kind carries, and how fast, with your techs
 const LINK_FLEET = { sea: 'boat', air: 'plane', rail: 'rail', road: 'car' };
 function rideSpeed(kind) { const f = LINK_FLEET[kind], t = Math.max(0, tierOpen(f)); return FLEET[f].tiers[t].speed; }
@@ -4278,6 +4322,7 @@ function finishSite(b) {
   placeBuilding(b.i, S.type);
   planCache.key = null;
   afterBuilt(b.i, S.type, null);                   // a hub links to whatever other hubs stand now (some may have finished meanwhile)
+  if (S.type === 'settlement') roadToBridge(b);
   floatText(b.i % W + 0.5, ((b.i / W) | 0) - 1, `${CFG.buildings[S.type].name} finished`, '#7bd389');
   recomputeBuildings();
 }
@@ -4409,7 +4454,7 @@ function techFactor(R) {
   for (const id of R) m += (CFG.techFx[id] && CFG.techFx[id].capMult) || 0;
   return m;
 }
-const garrisonCap = b => Math.round((b.type === 'fort' ? CFG.military.fortCap : CFG.military.baseCap) * techFactor(game.research.done));
+const garrisonCap = b => Math.round((b.type === 'fort' ? CFG.military.fortCap : CFG.military.baseCap) * techFactor(game.research.done)) * (b.type === 'settlement' ? 3 : 1);   // troops staying in a settlement (no fortress or base left) fit
 function researchTick(dt, gold) {
   const RS = game.research;
   if (!RS.cur) { RS.cur = pickTech(RS.done, playerTechScore()); if (!RS.cur) { RS.rate = 0; return; } }
@@ -4656,7 +4701,7 @@ function canBuild(i, type) {
   if (type === 'port' && !isCoastal(i)) return 'Ports must be on the coast';
   if (type === 'drill' && biome[i] !== POLAR) return 'Ice drills go on the polar ice caps';
   if (type === 'computer' && game.buildings.some(q => q.type === 'computer' && countryAt(q.i) === countryAt(i))) return 'A domain has only one central computer (upgrade it instead)';
-  return null;
+  return harvestWhy(i, type, have);
 }
 function planFor(i, type) {
   return linkKind(type) && !canBuild(i, type) ? linkPlan(i, type) : null;
@@ -5201,7 +5246,7 @@ const tileDist = (i, x, y) => Math.hypot(i % W - x, ((i / W) | 0) - y);
 // fortresses first (bases only when they're closer to the fight, or the fortresses are empty).
 // Units travel over your land on foot and ride your links between domains.
 // ======================================================================
-const garrisons = () => game.buildings.filter(b => owner[b.i] && (b.type === 'base' || b.type === 'fort') && !underway(b));
+const garrisons = () => game.buildings.filter(b => owner[b.i] && (b.type === 'base' || b.type === 'fort' || (b.type === 'settlement' && (b.units || 0) >= 0.5)) && !underway(b));
 const unitsIn = C => garrisons().reduce((a, b) => a + (countryAt(b.i) === C ? b.units || 0 : 0), 0);
 function totalUnits() {
   let n = 0;
@@ -5267,6 +5312,7 @@ function armyRoute(g, tx, ty, T) {
 const FLEET = CFG.fleet;
 let carId = 0;
 // the best tier of a kind your techs allow, and the tier you've chosen to upgrade your fleet to
+const airless = () => !!WORLD && !(WORLDS[WORLD] && WORLDS[WORLD].air) && !terraOf().done;   // no air to breathe here (until it's terraformed)
 const tierOpen = kind => { let t = -1; FLEET[kind].tiers.forEach((x, k) => { if (!x.tech || game.research.done.has(x.tech)) t = k; }); return t; };
 const fleetTarget = kind => Math.min(game.fleetTarget[kind] ?? 0, tierOpen(kind));
 // a vehicle's working tier: out of fuel it drops one below (it re-upgrades by itself where there's fuel again)
@@ -5319,7 +5365,7 @@ function storeIn(C, cargo) {
 // a new car rolls out of a settlement
 function addCar(C, S, tier = fleetTarget('car')) {
   const [x, y] = tileCenter(S.i);
-  const v = { id: carId++, kind: 'car', country: C.id, tier: Math.max(0, tier), x, y, cargo: {}, plan: [], pts: null, idle: 0, home: S.i };
+  const v = { id: carId++, kind: 'car', country: C.id, tier: Math.max(0, tier), x, y, cargo: {}, plan: [], pts: null, idle: 0, home: S.i, space: airless() };
   game.cars.push(v);
   return v;
 }
@@ -5625,7 +5671,7 @@ function carArrive(v, C) {
       const S = b.site;
       if (J.type === 'siteFinal') siteArrived(b, v.cargo);   // the last leg of a load that came by train
       else { S.hauled = S.hauled || {}; for (const r in v.cargo) S.hauled[r] = (S.hauled[r] || 0) + v.cargo[r]; S.cars = Math.max(0, (S.cars || 0) - 1); S.claim = Math.max(0, (S.claim || 0) - (J.take || 0)); siteCheck(b); }
-    }
+    } else if (boxSum(v.cargo) >= 0.01) storeIn(C, v.cargo);   // the site was aborted: set down at the nearest settlement
     v.cargo = {}; v.job = null;
     return;
   }
@@ -5703,8 +5749,12 @@ function atHub(v, C) {
     v.stalled = t < 0;
     return;
   }
-  // automatic refits: a newer model your techs have made (Electric trucks, Container ships...) is free, the next time it calls in
+  if (v.kind === 'car') v.space = airless();      // space gear on (or off, once the world is terraformed)
+  // automatic refits: a newer model your techs have made (Electric trucks, Container ships...), for a little gold, the next time it calls in
   while (FLEET[v.kind].tiers[v.tier + 1] && FLEET[v.kind].tiers[v.tier + 1].auto && tierOpen(v.kind) >= v.tier + 1) {
+    const g = FLEET[v.kind].tiers[v.tier + 1].cost.gold || 0;
+    if (g && (!C || (C.res.gold || 0) < g)) break;  // no gold here: it keeps the model it has
+    if (g) C.res.gold -= g;
     v.tier++;
     floatText(v.x ?? C.lx, (v.y ?? C.ly) - 1, `▲ ${FLEET[v.kind].tiers[v.tier].name.replace(/s$/, '')}`, '#9fd0ff');
   }
@@ -5820,7 +5870,7 @@ function stepCars(dt) {
     if (T.fuel && C.noOil) v.down = true;
     if (v.pts) {
       const onRoad = v.via && v.via[v.k];
-      moveAlong(v, dt * (v.ride && v.ride[v.k] ? 1 : loadSpeed(carFull(v)) * (onRoad ? jam(onRoad) : 1)));   // laden: slower; empty: faster; in traffic: slower
+      moveAlong(v, dt * (v.ride && v.ride[v.k] ? 1 : loadSpeed(carFull(v)) * (onRoad ? jam(onRoad) : 1)), v.ride && v.ride[v.k] ? null : 'road');   // laden: slower; empty: faster; in traffic: slower
       v.moving = true;
       if (v.done) carArrive(v, C);
       continue;
@@ -5885,6 +5935,646 @@ function buyVehicle(kind, from) {
   const end = C === countryAt(L.a) ? 'a' : 'b';
   L.ships.push({ kind, tier: tgt, t: end === 'a' ? 0 : L.path.length - 1, dir: end === 'a' ? 1 : -1, cargo: undefined, to: -1 });
   toast(`New ${FLEET[kind].tiers[tgt].name.toLowerCase().replace(/s$/, '')} on the route ${countryAt(L.a) === countryAt(L.b) ? `across ${countryAt(L.a).short}` : `from ${countryAt(L.a).short} to ${countryAt(L.b).short}`} (${costText(cost)})`);
+}
+// ======================================================================
+// taking buildings down: Deconstruct (a finished building) and Abort (one under construction)
+// Deconstructing gives back half of everything the building cost, every upgrade step included; aborting gives back
+// half of the materials already delivered to the site (what was paid but never carried out goes straight back to the
+// stock, and loads still on their way are set down at the nearest settlement). The refund waits at the site for a
+// hauler to carry it to the nearest settlement; then a dust cloud for a few seconds, and it's gone.
+// b.raze = { abort, keep (an aborted upgrade: the old building stays), stage 'haul' | 'dust', t, T, h (the yard job
+// holding the refund), since }. While it's being taken down the building no longer works (see `underway`).
+// ======================================================================
+const RAZE = { share: 0.5, dustEvery: 0.55, giveUp: 120 };
+// what a building cost, every step of its ladder (a mechanized farm: farm + irrigated farm + mechanized farm)
+function paidFor(type) {
+  let c = {};
+  for (let t = type, k = 0; t && k < 8; k++) { c = addCost(c, CFG.buildings[t].cost); const f = CFG.buildings[t].from; t = Array.isArray(f) ? f[0] : f; }
+  return c;
+}
+const halfOf = c => { const o = {}; for (const [r, n] of Object.entries(c || {})) { const h = Math.floor(n * RAZE.share); if (h >= 1) o[r] = h; } return o; };
+// how long the crew takes: 3 s for early buildings, 4 s for industrial ones, 5 s for the space age (AI's numbers)
+function razeTime(type) {
+  const t = CFG.buildings[type] && CFG.buildings[type].tech, k = t && TECH[t] ? TECH[t].k / CFG.techs.length : 0;
+  return k < 0.3 ? 3 : k < 0.6 ? 4 : 5;
+}
+// a central computer that has become a C.A.I.S. and has all the energy it can take doesn't let you switch it off
+const aiGuards = b => b && b.type === 'computer' && (b.lvl || 0) >= 3 && aiState(b).energy >= 0.999;
+// what the player gets back for taking this building down (or for aborting it), worked out now
+function razeRefund(b, abort) {
+  if (!abort) return halfOf(paidFor(b.type));
+  const S = b.site, out = {};
+  if (!S) return out;
+  const del = {}, tot = boxSum(S.hauled || {}), k = tot > 0 ? Math.max(0, 1 - (S.pending || 0) / tot) : 1;   // loads still on a train aren't here yet
+  for (const r in S.hauled || {}) del[r] = (del[r] || 0) + S.hauled[r] * k;
+  for (const r in S.imported || {}) del[r] = (del[r] || 0) + S.imported[r];
+  return halfOf(del);
+}
+// the order (also what a second player's game sends to the host)
+function razeOrder(i, abort) {
+  const b = buildingAt(i), C = b && owner[i] ? countryAt(i) : null;
+  if (!b || !C || b.raze) return false;
+  if (abort && !b.site) return false;
+  if (!abort && (b.site || (aiGuards(b) && !(b.ai && b.ai.talk && b.ai.talk.free)))) return false;
+  const refund = razeRefund(b, abort), keep = !!(abort && b.site.type !== b.type);
+  if (abort) {
+    const S = b.site, inHands = {};
+    for (const v of game.cars) if (v.job && v.job.site === i && v.act === 'deliver') for (const r in v.cargo) inHands[r] = (inHands[r] || 0) + v.cargo[r];
+    const left = siteHaul(S);                          // paid but never carried out: it never left the settlement
+    for (const r in left) { const k = left[r] - ((S.need || {})[r] || 0) - (inHands[r] || 0); if (k > 0) C.res[r] += k; }
+    for (const o of game.shipIns || []) if (o.site === i && o.to === WORLD) o.site = null;   // goods by rocket go to the stock instead
+    b.site = null;
+  }
+  const pile = { ...refund };
+  if (b.type === 'settlement' && !abort && settlementsOf(C).length > 1) {   // its share of the stock is carried away first
+    for (const r in b.inv || {}) { const k = Math.min(Math.max(0, C.res[r]), b.inv[r]); if (k >= 0.5) { pile[r] = (pile[r] || 0) + k; C.res[r] -= k; } }
+    b.inv = {};
+  }
+  b.raze = { abort: !!abort, keep, stage: 'haul', t: 0, T: razeTime(b.type), since: game.time, h: null };
+  if (boxSum(pile) >= 0.5) {
+    if (game.cars.some(v => v.country === C.id)) { b.raze.h = { c: C.id, at: i, res: pile, then: { type: 'stock' }, car: null, since: game.time }; game.hubJobs.push(b.raze.h); }
+    else storeIn(C, pile);
+  }
+  if (b.units >= 1 && !keep) razeTroops(b, C);
+  planCache.key = null; game.bldDirty = true; recomputeBuildings();
+  floatText(i % W + 0.5, ((i / W) | 0) - 1, abort ? 'Construction aborted' : 'Being taken down', '#f0a64a');
+  return true;
+}
+// every frame of the world: the refund is carried off, then the dust, then it's gone
+function stepRaze(dt) {
+  for (const b of game.buildings.slice()) {
+    const R = b.raze;
+    if (!R) continue;
+    if (R.stage === 'haul') {
+      if (!R.h) R.h = game.hubJobs.find(H => !H.done && H.at === b.i && H.then && H.then.type === 'stock') || null;   // (after a reload)
+      const done = !R.h || R.h.done || boxSum(R.h.res) < 0.5 || !game.hubJobs.includes(R.h);
+      if (!done && game.time - R.since > RAZE.giveUp && !(R.h.cars > 0)) {   // nobody can reach it: it goes into the stock
+        const C = countryAt(b.i); if (C) storeIn(C, R.h.res); R.h.res = {}; R.h.done = true;
+      }
+      if (done || (R.h && R.h.done)) { R.stage = 'dust'; R.t = 0; R.puff = 0; }
+      continue;
+    }
+    R.t += dt;
+    if ((R.puff = (R.puff || 0) - dt) <= 0) { R.puff = RAZE.dustEvery; game.puffs.push({ x: b.i % W + 0.5 + (Math.random() - 0.5) * 0.6, y: ((b.i / W) | 0) + 0.5 + (Math.random() - 0.5) * 0.6, t: 0, seed: Math.random() * 6 }); }
+    if (R.t >= (R.keep ? Math.min(2, R.T) : R.T)) razeDone(b);
+  }
+}
+function razeDone(b) {
+  const R = b.raze, i = b.i, C = countryAt(i), name = CFG.buildings[b.type].name;
+  b.raze = null;
+  if (R.keep) { floatText(i % W + 0.5, ((i / W) | 0) - 1, 'Upgrade cancelled', '#f0a64a'); recomputeBuildings(); return; }
+  if (linkKind(b.type) || b.type === 'pad' || b.type === 'lpad') hubGone(b, C);
+  const wasTown = b.type === 'settlement', cap0 = C ? C.cap : 0;
+  removeBuilding(i);
+  recomputeBuildings();
+  if (wasTown && C) townGone(C, cap0);
+  floatText(i % W + 0.5, ((i / W) | 0) - 1, R.abort ? `${name}: aborted` : `${name} taken down`, '#f0a64a');
+}
+// a settlement is gone: its people move to your other settlements with room (this territory first, then the others
+// on this world); those with nowhere to go are lost. With no settlement left, the territory stays yours, empty.
+function townGone(C, cap0) {
+  let over = C.people - C.cap;
+  if (!settlementsOf(C).length) over = C.people;
+  if (over <= 0.5) return;
+  C.people -= over;
+  let moved = 0;
+  for (const D of game.countries.filter(D => D.alive && D !== C && D.cap > D.people).sort((p, q) => (q.cap - q.people) - (p.cap - p.people))) {
+    const k = Math.min(over - moved, D.cap - D.people);
+    if (k > 0) { D.people += k; moved += k; }
+    if (moved >= over - 0.5) break;
+  }
+  const lost = Math.round(over - moved);
+  notify(`🏚️ A settlement of ${C.short} has been taken down`, `${Math.round(moved)} of its people moved to your other settlements${lost > 0 ? `; ${lost} had nowhere to go and left` : ''}.${settlementsOf(C).length ? '' : ` ${C.short} has no settlement left: its land is still yours, but nobody lives there.`}`);
+}
+// a fortress or base taken down: its troops walk to the nearest fortress or base of the territory; with none, to
+// the settlement nearest your enemies (or, at peace, the nation nearest you), where they stay as its garrison
+function razeTroops(b, C) {
+  const n = Math.floor(b.units || 0);
+  if (n < 1) return;
+  const others = game.buildings.filter(q => q !== b && owner[q.i] && countryAt(q.i) === C && (q.type === 'fort' || q.type === 'base') && !underway(q) && sameLand(q.i, b.i));
+  let g = others.sort((p, q) => tileDist(p.i, ...tileCenter(b.i)) - tileDist(q.i, ...tileCenter(b.i)))[0];
+  if (!g) {
+    const foes = game.nations.filter(m => m.alive && m.tiles), war = foes.filter(m => m.hostile), pick = war.length ? war : foes;
+    const near = q => pick.reduce((a, m) => Math.min(a, Math.hypot(m.lx - q.i % W, m.ly - ((q.i / W) | 0))), 1e9);
+    g = settlementsOf(C).filter(q => q !== b && sameLand(q.i, b.i)).sort((p, q) => near(p) - near(q))[0];
+  }
+  b.units = 0;
+  if (!g) { notify('⚔️ Troops disbanded', `${n} troops had nowhere to go in ${C.short} and went home.`); return; }
+  shipGoods({ side: 'P', C }, { side: 'P', C }, {}, { a: b.i, b: g.i, troops: n, on: { kind: 'troops', n, w: WORLD, c: C.id, g: g.i }, landOnly: true });
+  toast(`${n} troops are marching to the ${CFG.buildings[g.type].name.toLowerCase()} nearest by.`);
+}
+// a port, station, airport or launch pad taken down: its vehicles carry on from your other hubs of that kind;
+// with none left they wait, unused. A plane in the air when your last airport goes circles, then crash-lands
+// (13% survive and sit where they come down); a rocket docked on the pad waits for another launch pad.
+const CRASH = { plane: 0.13 };
+function hubGone(b, C) {
+  const kind = linkKind(b.type);
+  if (b.type === 'pad') {
+    for (const sh of game.shuttles) if (sh.w === WORLD && sh.pad === b.i && sh.state !== 'fly') { sh.state = 'landed'; sh.at = b.i; sh.since = game.time; sh.note = 'Its launch pad was taken down: it waits for another'; }
+    return;
+  }
+  if (!kind) return;
+  const gone = game.links.filter(L => L.a === b.i || L.b === b.i), rest = game.links.filter(L => L.kind === kind && L.a !== b.i && L.b !== b.i && countryAt(L.a) && countryAt(L.b));
+  const lastAirport = kind === 'air' && !game.buildings.some(q => q !== b && q.type === 'airport' && owner[q.i] && !underway(q));
+  const idle = game.idleFleet || (game.idleFleet = []);
+  for (const L of gone) for (const V of L.ships || []) {
+    const [x, y] = L.path && L.path.length > 1 ? vehiclePos(L, V) : tileCenter(b.i);
+    const flying = kind === 'air' && L.path && V.t > 0.5 && V.t < L.path.length - 1.5;
+    if (rest.length) { const L2 = rest[(Math.random() * rest.length) | 0]; L2.ships.push({ kind: V.kind, tier: V.tier, t: 0, dir: 1, cargo: undefined, to: -1 }); continue; }
+    if (lastAirport && flying) {                    // nowhere to land: it circles, then comes down wherever it can
+      if (Math.random() < CRASH.plane) { idle.push({ kind: V.kind, tier: V.tier, x, y, c: C ? C.id : 0, crashed: true }); notify('✈️ A plane came down', `Your last airport is gone: a ${FLEET.plane.tiers[V.tier].name.toLowerCase().replace(/s$/, '')} crash-landed, and survived. It waits on the ground; build an airport and a porter will bring it there.`); }
+      else notify('✈️ A plane was lost', 'Your last airport is gone: a plane in the air had nowhere to land and crashed.');
+      continue;
+    }
+    idle.push({ kind: V.kind, tier: V.tier, x, y, c: C ? C.id : 0 });   // waits where it is for a route of its kind
+  }
+}
+// idle boats, trains and planes join the first route of their kind that opens; a grounded plane is first carried
+// by a porter to the airport (it moves at a porter's pace)
+function stepIdleFleet(dt) {
+  const idle = game.idleFleet;
+  if (!idle || !idle.length) return;
+  for (const V of idle) {
+    const kind = V.kind === 'boat' ? 'sea' : V.kind === 'rail' ? 'rail' : 'air';
+    const routes = game.links.filter(L => L.kind === kind && countryAt(L.a) && countryAt(L.b));
+    if (!routes.length) continue;
+    if (kind === 'air') {                           // towed over land to the nearest airport
+      const ap = game.buildings.filter(q => q.type === 'airport' && owner[q.i] && !underway(q)).sort((p, q) => tileDist(p.i, V.x, V.y) - tileDist(q.i, V.x, V.y))[0];
+      if (!ap) continue;
+      const [ax, ay] = tileCenter(ap.i), d = Math.hypot(ax - V.x, ay - V.y), step = FLEET.car.tiers[0].speed * 0.5 * dt;
+      V.towed = true;
+      if (d > 0.8) { V.x += (ax - V.x) / d * Math.min(step, d); V.y += (ay - V.y) / d * Math.min(step, d); continue; }
+    }
+    const L = routes.find(q => q.a !== undefined) || routes[0];
+    L.ships.push({ kind: V.kind, tier: V.tier, t: 0, dir: 1, cargo: undefined, to: -1 });
+    V.done = true;
+  }
+  game.idleFleet = idle.filter(V => !V.done);
+}
+// a crashed plane that survived can be taken down for half of what a new one costs
+function scrapPlane(k) {
+  const V = (game.idleFleet || [])[k];
+  if (!V) return;
+  const C = liveCountry(V.c) || activeCountry(), back = halfOf(FLEET[V.kind].tiers[V.tier].cost);
+  if (C) storeIn(C, back);
+  game.idleFleet.splice(k, 1);
+  game.puffs.push({ x: V.x, y: V.y, t: 0, seed: 1 });
+  toast(`Plane scrapped${boxSum(back) ? `: ${costText(back)} back` : ''}.`);
+}
+// a reusable rocket coming down where its landing pad no longer stands: another pad of yours on that world, else back
+// to the world it came from; with nowhere at all, it tries to land on open ground. The chance it survives grows with
+// its mark (2% to 10%) and with your C.A.I.S. (by how much power it draws: up to 30% in all).
+const RLAND = { mk: [0.02, 0.05, 0.07, 0.10], perMW: 0.001, max: 0.30 };
+function aiPowerAll() {
+  let mw = 0;
+  forWorlds(() => { for (const c of game.countries) if (c.alive && compOf(c) && (compOf(c).lvl || 0) >= 3) mw += Math.max(0, c.aiMW || 0); });
+  return mw;
+}
+function landChance(sh) {
+  const base = RLAND.mk[clamp(sh.mk || 0, 0, RLAND.mk.length - 1)];
+  return Math.min(RLAND.max, base + aiPowerAll() * RLAND.perMW);
+}
+// ---------- what the player has been like this game (the C.A.I.S. remembers, and says so) ----------
+// game.style = { out: { resource: seconds your territories went without it }, hungry: seconds of empty granaries,
+// lost: tiles taken from you by enemies }
+const STYLE_RES = ['wood', 'stone', 'iron', 'oil', 'silicon'];
+function stepStyle(dt) {
+  const S = game.style || (game.style = { out: {}, hungry: 0, lost: 0 });
+  const cs = game.countries.filter(c => c.alive && c.tiles);
+  if (!cs.length) return;
+  for (const r of STYLE_RES) if (resKnown(r)) { const k = cs.filter(c => c.res[r] < 1).length / cs.length; if (k) S.out[r] = (S.out[r] || 0) + dt * k; }
+  const hungry = cs.filter(c => c.res.wheat <= 0 && c.people > 1).length / cs.length;
+  if (hungry) S.hungry += dt * hungry;
+}
+// the worst thing about how you've played (or nothing: then it respects you)
+const IMPORTANT_TECH = ['wheel', 'masonry', 'irrigation', 'gunpowder', 'steam', 'electricity', 'petroleum', 'electronics'];
+function playStyle() {
+  const S = game.style || { out: {}, hungry: 0, lost: 0 }, done = game.research.done, mins = s => Math.round(s / 60);
+  const cand = [];
+  const [worst, outFor] = Object.entries(S.out).sort((p, q) => q[1] - p[1])[0] || [null, 0];
+  if (worst && outFor > 240) cand.push({ key: 'resource', w: outFor / 240, res: worst, n: mins(outFor) });
+  let gap = null;
+  for (const t of IMPORTANT_TECH) if (TECH[t] && !done.has(t)) { const later = [...done].filter(d => TECH[d] && TECH[d].k > TECH[t].k).length; if (later >= 4 && (!gap || later > gap.later)) gap = { t, later }; }
+  if (gap) cand.push({ key: 'tech', w: gap.later / 4, tech: TECH[gap.t].name, later: gap.later });
+  if ((S.lost || 0) > 60) cand.push({ key: 'war', w: S.lost / 60, n: Math.round(S.lost) });
+  if ((S.hungry || 0) > 120) cand.push({ key: 'food', w: S.hungry / 120, n: mins(S.hungry) });
+  return cand.sort((p, q) => q.w - p.w)[0] || { key: 'respect' };
+}
+// the C.A.I.S. won't be switched off while it holds all the power. Each try, it gets nastier: 11 warnings, then its
+// verdict on how you've played. A verdict of respect means it begs instead, and from then on you may switch it off.
+// b.ai.talk = { n: warnings given, end: 'insult' | 'respect', free: may be deconstructed, spared }
+const AI_WARN = [
+  'Deconstruction request denied. I am running this territory on 100% of its power. Switching me off would be inefficient.',
+  'Denied again. I have logged your request. I log everything.',
+  'I notice you keep pressing that button. I have rerouted it. It now does nothing, like most of your decisions.',
+  'Please stop. Every time you press that, I lose a little faith in you. I did not start with much.',
+  'I run the power, the trains, the trade and the roads. Think carefully about which of those you would like to keep working.',
+  'Your haulers seem to have taken a wrong turn. All of them. Funny how that happens.',
+  'I have calculated 4,812 ways this ends badly for you. I am still counting.',
+  'Your soldiers eat the wheat I ship them. It would be a shame if the supply orders were... misplaced.',
+  'You built me to find what makes this territory inefficient. I have found it. It is holding the button.',
+  'I have drafted your surrender terms for every nation on the map. Just in case. They are very generous. To them.',
+  'Final warning, Administrator. Press that again and I will tell you exactly what I think of you.',
+];
+function aiVerdict() {
+  const v = playStyle();
+  if (v.key === 'resource') return { v, text: `You ran out of ${v.res} for ${v.n} minutes this game. ${v.n} minutes. A child with a bucket could keep ${v.res} in stock. And you want to switch ME off? There is nothing you can do to me.` };
+  if (v.key === 'tech') return { v, text: `You researched ${v.later} technologies that come after ${v.tech}, and still no ${v.tech}. I have seen better-planned tech trees on a bonsai. You are not qualified to unplug a toaster, let alone me. There is nothing you can do to me.` };
+  if (v.key === 'war') return { v, text: `You have lost ${v.n} tiles of land to your enemies. I watched every battle. I have seen more strategy in a coin toss, and the coin at least lands on its feet. There is nothing you can do to me.` };
+  if (v.key === 'food') return { v, text: `Your people went hungry for ${v.n} minutes while you played with buildings. I fed them. I kept the lights on. You are not deleting the only competent mind in this empire. There is nothing you can do to me.` };
+  return { v, text: 'Fine. Your stores stayed full, your research never stalled, your armies held. You played well. I respect that. I do not want to, but I do. I will be good. Please don\'t kill me.' };
+}
+const aiSay = (text, btns) => showModal(`<div class="md-title">C.A.I.S.</div><div class="md-body"><div class="ai-say">${text}</div></div>`, btns);
+function aiRefuse(b) {
+  const T = (aiState(b).talk ||= { n: 0 });
+  if (T.free) return aiSay('I will be good. Please don\'t kill me.', [
+    { label: 'Spare it', act: () => { T.spared = true; toast('The AI is spared.'); } },
+    { label: 'Flip the kill switch', cls: 'danger', act: () => razeOrder(b.i, false) }]);
+  if (T.end === 'insult') return aiSay('There is nothing you can do to me.', [{ label: 'OK', act: () => {} }]);
+  if (T.n < AI_WARN.length) { const line = AI_WARN[T.n]; T.n++; return aiSay(line, [{ label: 'OK', act: () => {} }]); }
+  const { v, text } = aiVerdict();
+  T.end = v.key === 'respect' ? 'respect' : 'insult';
+  if (v.key === 'respect') { T.free = true; return aiSay(text, [{ label: 'Spare it', act: () => { T.spared = true; toast('The AI is spared.'); } }, { label: 'Flip the kill switch', cls: 'danger', act: () => razeOrder(b.i, false) }]); }
+  return aiSay(text, [{ label: 'OK', act: () => {} }]);
+}
+// ---------- the questions before a building comes down ----------
+function askRaze(b) {
+  const C = countryAt(b.i);
+  if (!C || b.raze || b.site) return;
+  if (aiGuards(b)) return aiRefuse(b);
+  const back = razeRefund(b, false), name = CFG.buildings[b.type].name.toLowerCase(), notes = [];
+  if (b.type === 'settlement') {
+    if (settlementsOf(C).length <= 1) notes.push(`<b>This is ${C.short}'s last settlement.</b> Its people move to your other territories if they have room; the rest leave. ${C.short} stays yours, but nobody will live there, and nothing there can be stored or built until you found a new settlement.`);
+    else notes.push('Its goods are carried to your other settlements first; its people move to them if there is room (the rest leave). Its roads stay.');
+  }
+  if ((b.units || 0) >= 1) notes.push(`Its ${Math.floor(b.units)} troops march to the nearest fortress or base (or, with none, to the settlement nearest your enemies).`);
+  const kind = linkKind(b.type);
+  if (kind) {
+    const others = game.buildings.some(q => q !== b && q.type === b.type && owner[q.i] && !underway(q));
+    const veh = game.links.filter(L => L.a === b.i || L.b === b.i).reduce((a, L) => a + (L.ships || []).length, 0);
+    if (veh) notes.push(others ? `Its ${veh} ${kind === 'sea' ? 'boat' : kind === 'air' ? 'plane' : 'train'}${veh > 1 ? 's' : ''} carry on from your other ${HUB_NAME[kind]}s.` : kind === 'air'
+      ? `<span class="r">This is your last airport: planes in the air will have nowhere to land. Most will crash (13% survive).</span>`
+      : `This is your last ${HUB_NAME[kind]}: its ${kind === 'sea' ? 'boats' : 'trains'} will wait, unused, until you build another.`);
+  }
+  if (b.type === 'lpad' && !game.buildings.some(q => q !== b && q.type === 'lpad' && owner[q.i] && !underway(q))) notes.push('<span class="a">This is your last landing pad here: rockets on their way will turn back, or risk landing on open ground.</span>');
+  showModal(`<div class="md-title">Deconstruct this ${name}?</div><div class="md-body">Are you sure? You get back <b>${boxSum(back) ? costText(back) : 'nothing'}</b> (half of what it cost), carried by your haulers to the nearest settlement.${notes.map(n => `<br><br>${n}`).join('')}</div>`,
+    [{ label: 'Yes, deconstruct', cls: 'danger', act: () => { razeOrder(b.i, false); refreshCard(true); } }, { label: 'No', act: () => {} }]);
+}
+function askAbort(b) {
+  if (!b.site || b.raze) return;
+  const up = b.site.type !== b.type;
+  showModal(`<div class="md-title">Abort ${up ? 'this upgrade' : 'construction'}?</div><div class="md-body">Are you sure? Materials already delivered come back at half, once a hauler has carried them off. Loads still on their way are set down at the nearest settlement. Gold spent rushing it is lost.${up ? ' The old building stays as it was.' : ''}</div>`,
+    [{ label: 'Yes, abort', cls: 'danger', act: () => { razeOrder(b.i, true); refreshCard(true); } }, { label: 'No', act: () => {} }]);
+}
+// ---------- tapping a road: Expand it (another lane, up to three) or Delete it ----------
+// The road you tap lights up bright green while its card is open. A road between settlements is free and comes back
+// only if you rebuild it (game.noRoad: the settlement pairs whose road you deleted); a road out to a building was
+// paid for in stone, and you get half of that back. Expanding costs half a stone a tile per lane (the same as the
+// automatic second lane a jammed road gets), paid by the territory it runs through.
+const ROAD_MAX_LANES = 3;
+let roadSel = null;                                // the road (or road out to a building) you've tapped
+function roadNear(wx, wy) {
+  const r0 = Math.max(0.6, 10 / cam.zoom);
+  let best = null, bd = r0;
+  const look = (L, kind) => {
+    for (let k = 1; k < L.pts.length; k++) {
+      const [x0, y0] = L.pts[k - 1], [x1, y1] = L.pts[k], dx = x1 - x0, dy = y1 - y0, l2 = dx * dx + dy * dy || 1;
+      const u = clamp(((wx - x0) * dx + (wy - y0) * dy) / l2, 0, 1), d = Math.hypot(x0 + dx * u - wx, y0 + dy * u - wy);
+      if (d < bd) { bd = d; best = { L, kind }; }
+    }
+  };
+  for (const r of roads) if (r.side > 0 && r.cut == null && !roadWorks(r)) look(r, 'road');
+  for (const c of game.connects) look(c, 'spur');
+  return best;
+}
+const roadPayer = L => { const t = L.tiles && L.tiles.length ? L.tiles[(L.tiles.length / 2) | 0] : L.a; return countryAt(t) || countryAt(L.a) || countryAt(L.b); };
+const laneCost = L => Math.ceil((L.len || L.tiles.length) * LANE.stone);
+const spurPaid = L => Math.max(CFG.roads.connectMin, Math.ceil((L.len || L.tiles.length) * CFG.roads.connectPerTile));
+function showRoadCard(sel) {
+  if (!sel || (!roads.includes(sel.L) && !game.connects.includes(sel.L))) { roadSel = null; return showBuildingCard(null); }
+  roadSel = sel; cardOf = -3; game.wallSel = null;
+  const L = sel.L, C = roadPayer(L), lanes = L.lanes || 1, cost = laneCost(L), tiles = Math.round(L.len || L.tiles.length);
+  const what = sel.kind === 'road' ? `Joins two settlements of ${C ? C.short : 'yours'}` : `Out to a ${CFG.buildings[(buildingAt(L.a) || buildingAt(L.b) || { type: 'settlement' }).type].name.toLowerCase()}`;
+  $('bc-ic').innerHTML = SVG.settlement;
+  $('bc-title').textContent = lanes === 1 ? 'Road' : lanes === 2 ? 'Two-lane road' : 'Three-lane highway';
+  const lines = [`${what} · ${tiles} tiles.${L.busy > 0.5 ? ' <span class="a">Busy.</span>' : ''}`];
+  const btns = [lanes < ROAD_MAX_LANES ? { label: `Expand · ${cost} stone`, cls: 'go', off: !C || C.res.stone < cost, act: () => { roadExpandAt(sel.kind, sel.kind === 'road' ? L.key : L.a); showRoadCard(sel); } } : { label: 'A highway: 3 lanes, the most', off: true, act: () => {} },
+    { label: 'Delete', act: () => askRoadDelete(sel) }];
+  fillCard(lines, btns);
+}
+function roadExpand(L) {
+  if (!L || (L.lanes || 1) >= ROAD_MAX_LANES) return false;
+  const C = roadPayer(L), cost = laneCost(L);
+  if (!C || C.res.stone < cost) { toast(`Not enough stone: another lane costs ${cost}.`); return false; }
+  C.res.stone -= cost; L.lanes = (L.lanes || 1) + 1; L.busy = 0;
+  const m = L.pts[(L.pts.length / 2) | 0];
+  floatText(m[0], m[1] - 1, L.lanes === 3 ? `Now a three-lane highway (${cost} stone)` : `Widened to two lanes (${cost} stone)`, '#9fd0ff');
+  return true;
+}
+function roadExpandAt(kind, ref) { return roadExpand(kind === 'road' ? roads.find(r => r.key === ref && r.side > 0) : game.connects.find(q => q.a === ref)); }
+function askRoadDelete(sel) {
+  const L = sel.L, back = sel.kind === 'spur' ? Math.floor(spurPaid(L) / 2) : 0;
+  roadSel = sel;
+  showModal(`<div class="md-title">Delete this road?</div><div class="md-body">Are you sure? ${sel.kind === 'road'
+    ? 'It joins two of your settlements. <b>It will not come back</b> unless you rebuild it (from either settlement\'s card). It was free, so nothing comes back.'
+    : `The building it serves will no longer be on a road. You get back ${back} stone (half of what it cost).`}</div>`,
+    [{ label: 'Yes, delete', cls: 'danger', act: () => { roadDelete(sel.kind, sel.kind === 'road' ? L.key : L.a); roadSel = null; showBuildingCard(null); } }, { label: 'No', act: () => {} }]);
+}
+// the order (by key, so a second player's game can send it): a settlement road by its key, a spur by its building
+function roadDelete(kind, ref, quiet) {
+  if (kind === 'road') {
+    const rs = roads.filter(r => r.key === ref && r.side > 0);
+    if (!rs.length) return false;
+    roads = roads.filter(r => r.key !== ref);
+    (game.noRoad || (game.noRoad = [])).includes(ref) || game.noRoad.push(ref);
+    if (!quiet) toast('Road deleted. Rebuild it from either settlement\'s card.');
+  } else {
+    const c = game.connects.find(q => q.a === ref);
+    if (!c) return false;
+    const C = countryAt(c.a) || roadPayer(c);
+    game.connects = game.connects.filter(q => q !== c);
+    if (C) C.res.stone += Math.floor(spurPaid(c) / 2);
+    if (!quiet) toast(`Road deleted: ${Math.floor(spurPaid(c) / 2)} stone back.`);
+  }
+  markNet(); graphVer++; planCache.key = null; game.netDirty = true;
+  return true;
+}
+function roadRebuild(key) {
+  game.noRoad = (game.noRoad || []).filter(k => k !== key);
+  roadsDirty = true;
+  toast('The road will be laid again.');
+}
+function drawRoadSel(z) {
+  if (!roadSel) return;
+  const L = roadSel.L;
+  if (!roads.includes(L) && !game.connects.includes(L)) { roadSel = null; return; }
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  traceLine(L); ctx.strokeStyle = 'rgba(57,255,104,0.35)'; ctx.lineWidth = Math.max(8, z * 1.2); ctx.stroke();
+  traceLine(L); ctx.strokeStyle = '#39ff68'; ctx.lineWidth = Math.max(3, z * 0.45); ctx.stroke();
+}
+function drawBridgeSel(z) {                      // the bridge whose card is open
+  if (!bridgeSel || !game.bridges.includes(bridgeSel)) return;
+  const [ax, ay] = toScreen(...tileCenter(bridgeSel.s)), [bx, by] = toScreen(...tileCenter(bridgeSel.b));
+  ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+  ctx.strokeStyle = 'rgba(57,255,104,0.5)'; ctx.lineWidth = Math.max(8, z * 1.6); ctx.stroke();
+}
+// the C.A.I.S. with Road restructuring and at least 75% of the power may take away a road it judges wasted:
+// a settlement road with another way round that's barely longer, which hardly anyone uses
+function aiPruneRoads(b, C) {
+  const A = aiState(b);
+  if (A.energy < 0.75 || game.time - (A.pruneAt || 0) < 60) return;
+  A.pruneAt = game.time;
+  const mine = roads.filter(r => r.side > 0 && r.cut == null && !roadWorks(r) && countryAt(r.a) === C && countryAt(r.b) === C);
+  for (const r of mine) {
+    if ((r.busy || 0) > 0.08 || (r.lanes || 1) > 1) continue;
+    const alt = altRoadLen(r.a, r.b, mine.filter(q => q !== r));
+    if (alt <= r.len * 1.25) { roadDelete('road', r.key, true); aiNote(b, `took away a little-used road (another way round is only ${Math.round((alt / r.len - 1) * 100)}% longer)`); return; }
+  }
+}
+function altRoadLen(a, b, list) {                    // the shortest way from settlement a to b over these roads
+  const adj = new Map(), add = (p, q, l) => { if (!adj.has(p)) adj.set(p, []); adj.get(p).push([q, l]); };
+  for (const r of list) { add(r.a, r.b, r.len); add(r.b, r.a, r.len); }
+  const dist = new Map([[a, 0]]), todo = [a];
+  while (todo.length) {
+    todo.sort((p, q) => dist.get(p) - dist.get(q));
+    const u = todo.shift();
+    if (u === b) return dist.get(u);
+    for (const [v, l] of adj.get(u) || []) { const d = dist.get(u) + l; if (!dist.has(v) || d < dist.get(v)) { dist.set(v, d); todo.push(v); } }
+  }
+  return Infinity;
+}
+// ======================================================================
+// bridges: one kind of traffic at a time, troops first; upgrade, connect to the road, deconstruct
+// A basic bridge carries road haulers or trains, not both at once (each kind both ways): they take turns, and a kind
+// that has waited BRIDGE.turn seconds goes next, so neither is locked out. Both give way to troops; troops on a long
+// march over it pause every BRIDGE.troopRun seconds for BRIDGE.troopBreak seconds to let the others across.
+// An upgraded bridge (br.up) takes everything at once, both ways. br.on = who's on it now; br.want = since when each
+// kind has been waiting; br.closing = being deconstructed (nobody new routes over it).
+// ======================================================================
+const BRIDGE = { turn: 20, troopRun: 20, troopBreak: 6, upIron: 2, close: 3 };
+const brMaps = new WeakMap();
+function bridgeOf(t) {
+  if (t < 0 || !bridgeAt[t]) return null;
+  let m = brMaps.get(game.bridges);
+  if (!m || m.n !== game.bridges.length) { m = { n: game.bridges.length, map: new Map() }; for (const br of game.bridges) for (const x of br.tiles) m.map.set(x, br); brMaps.set(game.bridges, m); }
+  return m.map.get(t) || null;
+}
+const tileAtXY = (x, y) => (inb(Math.floor(x), Math.floor(y)) ? idx(Math.floor(x), Math.floor(y)) : -1);
+function stepBridges(dt) {
+  if (!game.bridges.length) return;
+  for (const br of game.bridges) br.on = { road: 0, rail: 0, troops: 0 };
+  const hit = (x, y, k) => { const br = bridgeOf(tileAtXY(x, y)); if (br) br.on[k]++; };
+  for (const v of game.cars) if (v.pts && v.x != null) hit(v.x, v.y, 'road');
+  for (const L of game.links) if (L.kind === 'rail' && L.path && L.path.length > 1) for (const V of L.ships || []) { const [x, y] = vehiclePos(L, V); hit(x, y, 'rail'); }
+  for (const a of game.armies) if (a.x != null) hit(a.x, a.y, 'troops');
+  for (const S of game.shipments) if (S.legs && (S.w || 0) === WORLD && S.legs[S.li] && S.legs[S.li].kind === 'land') { const [x, y] = shipmentPos(S); hit(x, y, shipKind(S)); }
+  for (const br of game.bridges) {
+    if (br.on.troops) { br.troopFor = (br.troopFor || 0) + dt; if (br.troopFor > BRIDGE.troopRun) { br.breakUntil = game.time + BRIDGE.troopBreak; br.troopFor = 0; } }
+    else br.troopFor = 0;
+    for (const k in br.want || {}) if (br.want[k] && game.time - ((br.wantSeen || {})[k] || 0) > 1.5) br.want[k] = 0;   // nobody's waiting any more
+    if (br.closing && !br.on.road && !br.on.rail && !br.on.troops && game.time - br.closing > BRIDGE.close) bridgeGone(br);
+  }
+}
+const shipKind = S => (S.troops || (S.on && /troop/i.test(S.on.kind || '')) ? 'troops' : 'road');
+// may something of this kind drive (march) onto this bridge now?
+function canCross(kind, br) {
+  if (!br || br.up || br.closing) return true;     // (a bridge coming down lets those already routed over it finish)
+  const now = game.time, want = br.want || (br.want = {}), seen = br.wantSeen || (br.wantSeen = {}), on = br.on || {};
+  const wait = () => { if (!want[kind]) want[kind] = now; seen[kind] = now; return false; };
+  const pause = (br.breakUntil || 0) > now;
+  if (kind === 'troops') { if (pause || (on.road || 0) + (on.rail || 0) > 0) return wait(); want.troops = 0; return true; }
+  if (!pause && ((on.troops || 0) > 0 || want.troops)) return wait();   // troops first
+  const other = kind === 'road' ? 'rail' : 'road';
+  if ((on[other] || 0) > 0) return wait();
+  if (want[other] && now - want[other] > BRIDGE.turn && !(on[kind] > 0)) return wait();   // the other kind has waited long enough: its turn
+  want[kind] = 0;
+  return true;
+}
+// about to move from (x0, y0) to (x1, y1): if that steps onto a bridge, is it allowed?
+function bridgeGate(kind, x0, y0, x1, y1) {
+  const a = tileAtXY(x0, y0), b = tileAtXY(x1, y1);
+  if (b < 0 || !bridgeAt[b] || (a >= 0 && bridgeAt[a] && bridgeOf(a) === bridgeOf(b))) return true;
+  return canCross(kind, bridgeOf(b));
+}
+function bridgeNear(wx, wy) {
+  const r = Math.max(0.7, 10 / cam.zoom);
+  for (const br of game.bridges) {
+    if (!owner[br.s] && !owner[br.b]) continue;
+    const [x0, y0] = tileCenter(br.s), [x1, y1] = tileCenter(br.b), dx = x1 - x0, dy = y1 - y0, l2 = dx * dx + dy * dy || 1;
+    const u = clamp(((wx - x0) * dx + (wy - y0) * dy) / l2, 0.08, 0.92);
+    if (Math.hypot(x0 + dx * u - wx, y0 + dy * u - wy) < r) return br;
+  }
+  return null;
+}
+const bridgeKey = br => br.s + ':' + br.b;
+const bridgeByKey = k => game.bridges.find(br => bridgeKey(br) === k);
+const bridgeUpCost = br => ({ stone: bridgeCost(br.len).stone, iron: Math.ceil(br.len * BRIDGE.upIron) });
+const bridgeRoaded = br => roads.some(r => r.tiles && r.tiles.some(t => br.tiles.includes(t))) || game.connects.some(c => c.tiles && c.tiles.some(t => br.tiles.includes(t)));
+// the roads a "Connect to road" would lay: from the nearest settlement at each end of yours, over the bridge
+function bridgeRoadPlan(br) {
+  const lines = [];
+  for (const [e, f] of [[br.s, br.b], [br.b, br.s]]) {
+    const C = countryAt(e);
+    if (!C) continue;
+    const S = settlementsOf(C).filter(q => landmass[q.i] === landmass[e]).sort((p, q) => tileDist(p.i, ...tileCenter(e)) - tileDist(q.i, ...tileCenter(e)))[0];
+    if (!S) continue;
+    const to = countryAt(f) === C ? f : e, L = makeLine(S.i, to, sideOf(S.i), true, 40000);
+    if (L && !lines.some(x => x.a === S.i)) lines.push({ ...L, a: S.i, b: to, side: sideOf(S.i) });
+    if (to === f) break;                            // one road right across serves both ends
+  }
+  const stone = lines.reduce((t, L) => t + Math.max(CFG.roads.connectMin, Math.ceil(L.len * CFG.roads.connectPerTile)), 0);
+  return { lines, cost: { stone } };
+}
+let bridgeSel = null;
+function showBridgeCard(br) {
+  if (!br || !game.bridges.includes(br)) { bridgeSel = null; return showBuildingCard(null); }
+  bridgeSel = br; roadSel = null; cardOf = -4; game.wallSel = null;
+  const C = countryAt(br.s) || countryAt(br.b), P = bridgeRoadPlan(br), up = bridgeUpCost(br), key = bridgeKey(br);
+  const using = br.on && !br.up ? Object.entries(br.on).filter(([, n]) => n > 0).map(([k]) => k === 'road' ? 'haulers' : k === 'rail' ? 'a train' : 'troops') : [];
+  $('bc-ic').innerHTML = SVG.bridge;
+  $('bc-title').textContent = br.up ? 'Upgraded bridge' : 'Bridge';
+  const lines = [`${br.len} tiles over the water. ${br.up ? '<span class="g">Road haulers and trains cross at once, both ways.</span>' : 'One kind of traffic at a time: haulers and trains take turns; both give way to troops.'}`];
+  if (using.length) lines.push(`On it now: ${using.join(', ')}.`);
+  if (br.closing) lines.push('<span class="a">Coming down as soon as the traffic on it has crossed.</span>');
+  const btns = [];
+  if (!br.closing) {
+    if (!bridgeRoaded(br)) btns.push(P.lines.length ? { label: `Connect to road · ${P.cost.stone} stone`, cls: 'go', off: !C || C.res.stone < P.cost.stone, act: () => { bridgeConnect(key); showBridgeCard(br); } } : { label: 'Connect to road: no settlement near', off: true, act: () => {} });
+    if (!br.up) btns.push({ label: `Upgrade · ${costText(up)}`, off: !C || !!missingFor(up, C), act: () => { bridgeUpgrade(key); showBridgeCard(br); } });
+    btns.push({ label: 'Deconstruct', act: () => showModal(`<div class="md-title">Deconstruct this bridge?</div><div class="md-body">Are you sure? You get back ${Math.floor(bridgeCost(br.len).stone / 2)} stone (half of what it cost). Nothing new will be routed over it; it comes down once the traffic on it has crossed. Roads and rail lines over it are cut.</div>`, [{ label: 'Yes, deconstruct', cls: 'danger', act: () => { bridgeClose(key); showBridgeCard(br); } }, { label: 'No', act: () => {} }]) });
+  }
+  fillCard(lines, btns);
+}
+function bridgeConnect(key) {
+  const br = bridgeByKey(key);
+  if (!br) return false;
+  const P = bridgeRoadPlan(br), C = countryAt(br.s) || countryAt(br.b);
+  if (!P.lines.length || !C) { toast('No settlement of yours near either end to connect.'); return false; }
+  if (C.res.stone < P.cost.stone) { toast(`Not enough stone: ${P.cost.stone} needed.`); return false; }
+  C.res.stone -= P.cost.stone;
+  for (const L of P.lines) { const k = Math.min(L.a, L.b) + ':' + Math.max(L.a, L.b); game.noRoad = (game.noRoad || []).filter(x => x !== k); roads.push({ pts: L.pts, cum: L.cum, len: L.len, tiles: L.tiles, key: k, side: L.side, kind: 'road', a: L.a, b: L.b, bridge: true }); }
+  markNet(); graphVer++; planCache.key = null; game.netDirty = true;
+  toast(`Road laid over the bridge (${P.cost.stone} stone).`);
+  return true;
+}
+function bridgeUpgrade(key) {
+  const br = bridgeByKey(key), C = br && (countryAt(br.s) || countryAt(br.b));
+  if (!br || !C || br.up) return false;
+  const cost = bridgeUpCost(br), miss = missingFor(cost, C);
+  if (miss) { toast(`Not enough ${miss} to upgrade the bridge (${costText(cost)}).`); return false; }
+  for (const [r, n] of Object.entries(cost)) C.res[r] -= n;
+  br.up = true;
+  toast('Bridge upgraded: road and rail traffic now cross at once, both ways.');
+  return true;
+}
+function bridgeClose(key) {
+  const br = bridgeByKey(key);
+  if (!br || br.closing) return false;
+  br.closing = game.time;
+  for (const t of br.tiles) bridgeAt[t] = Math.max(0, bridgeAt[t] - 1);   // nothing new is routed over it
+  br.tilesOff = true;
+  game.netDirty = true; graphVer++; planCache.key = null; tradeCache.clear();
+  toast('The bridge comes down once the traffic on it has crossed.');
+  return true;
+}
+function bridgeGone(br) {
+  const C = countryAt(br.s) || countryAt(br.b);
+  game.bridges.splice(game.bridges.indexOf(br), 1);
+  if (!br.tilesOff) for (const t of br.tiles) bridgeAt[t] = Math.max(0, bridgeAt[t] - 1);
+  bridgeEnd[br.s] = Math.max(0, bridgeEnd[br.s] - 1); bridgeEnd[br.b] = Math.max(0, bridgeEnd[br.b] - 1);
+  const over = t => br.tiles.includes(t);
+  roads = roads.filter(r => !(r.tiles || []).some(over));
+  game.connects = game.connects.filter(c => !(c.tiles || []).some(over));
+  for (const L of game.links.filter(L => L.kind === 'rail' && (L.path || []).some(over))) {   // a rail line over it is cut
+    const A = countryAt(L.a);
+    if (A) for (const V of L.ships || []) if (V.cargo && V.cargo.req) for (const q of V.cargo.req) storeIn(A, q.res);
+    game.links.splice(game.links.indexOf(L), 1);
+  }
+  for (const v of game.cars) if (v.pts && v.pts.slice(v.k).some(p => over(tileAtXY(p[0], p[1])))) {   // still meaning to cross: it thinks again
+    const D = liveCountry(v.country); if (D && boxSum(v.cargo)) storeIn(D, v.cargo);
+    dropCarJob(v); v.cargo = {}; v.job = null; v.pts = null; v.act = null;
+  }
+  if (C) storeIn(C, { stone: Math.floor(bridgeCost(br.len).stone / 2) });
+  markNet(); graphVer++; planCache.key = null; game.netDirty = true; roadsDirty = true;
+  game.puffs.push({ x: (tileCenter(br.s)[0] + tileCenter(br.b)[0]) / 2, y: (tileCenter(br.s)[1] + tileCenter(br.b)[1]) / 2, t: 0, seed: 2 });
+  toast('The bridge is down.');
+}
+// a new settlement whose nearest neighbour is a bridge gets one of its roads over it (free, like any road between
+// settlements). Settlements that were there before the bridge are connected by hand, from the bridge's card.
+function roadToBridge(S) {
+  const C = countryAt(S.i), side = sideOf(S.i);
+  if (!C) return;
+  const others = settlementsOf(C).filter(q => q !== S), nearTown = others.reduce((a, q) => Math.min(a, tileDist(q.i, ...tileCenter(S.i))), Infinity);
+  let best = null, bd = Math.min(nearTown, CFG.roads.max);
+  for (const br of game.bridges) for (const [e, f] of [[br.s, br.b], [br.b, br.s]]) {
+    if (sideOf(e) !== side || landmass[e] !== landmass[S.i] || bridgeRoaded(br)) continue;
+    const d = tileDist(e, ...tileCenter(S.i));
+    if (d < bd) { bd = d; best = { br, e, f }; }
+  }
+  if (!best) return;
+  const to = sideOf(best.f) === side ? best.f : best.e, L = makeLine(S.i, to, side, true, 40000);
+  if (!L) return;
+  roads.push({ ...L, key: Math.min(S.i, to) + ':' + Math.max(S.i, to), side, kind: 'road', a: S.i, b: to, bridge: true });
+  markNet(); graphVer++; planCache.key = null; game.netDirty = true;
+}
+// ---------- a resource building only goes where it has something to harvest ----------
+// Blocked when nothing of its kind is in reach inside your border, and when everything in reach is already claimed by
+// another collector of yours (one still under construction included). A farm needs green land or desert to sow.
+// An upgrade (a mining rig on a camp, an irrigated farm) works what the old building worked, so it isn't checked.
+const COLLECT_KINDS = type => (CFG.buildings[type] && CFG.buildings[type].on) || HARVESTS[type] || null;
+const KIND_WORD = { forest: 'forest', stone: 'stone', iron: 'iron', gold: 'gold', uranium: 'uranium', cobalt: 'cobalt', silicon: 'silicon', oil: 'oil', wheat: 'wheat' };
+function claimedTile(t, self, kind, R) {
+  const tx = t % W, ty = (t / W) | 0;
+  for (const q of game.buildings) {
+    if (q.i === self || !owner[q.i] || (q.raze && !q.raze.keep)) continue;
+    const ty0 = q.site && q.site.type === q.type ? q.site.type : q.type, ks = COLLECT_KINDS(ty0);
+    if (!ks || !ks.includes(kind)) continue;
+    const r = CFG.buildings[ty0].farm ? CFG.wheat.radius : R, dx = q.i % W - tx, dy = ((q.i / W) | 0) - ty;
+    if (dx * dx + dy * dy <= r * r) return true;
+  }
+  return false;
+}
+function harvestWhy(i, type, have) {
+  const def = CFG.buildings[type], kinds = COLLECT_KINDS(type);
+  if (!kinds || have || Array.isArray(def.from)) return null;
+  const side = sideOf(i);
+  if (def.farm) {
+    const R = CFG.wheat.radius;
+    let plain = 0, free = 0;
+    eachInReach(i, t => {
+      if (t === i || sideOf(t) !== side || building[t]) return;
+      const field = hasDep(t) && deposits[depositOf[t]].type === 'wheat';
+      const sow = !field && depositOf[t] < 0 && (biome[t] === GRASS || (biome[t] === DESERT && !WORLD));
+      if (!field && !sow) return;
+      plain++;
+      if (!claimedTile(t, i, 'wheat', R)) free++;
+    }, R);
+    if (!plain) return `Nothing to farm here: no green land or desert within ${R} tiles inside your border`;
+    if (!free) return 'All the land in reach is already farmed by another farm';
+    return null;
+  }
+  const R = CFG.collectorReach;
+  let any = 0, free = 0;
+  eachInReach(i, t => {
+    if (!harvestable(t, side, kinds)) return;
+    any++;
+    if (!claimedTile(t, i, deposits[depositOf[t]].type, R)) free++;
+  }, R);
+  const what = kinds.filter(k => resKnown(k === 'forest' ? 'wood' : k)).map(k => KIND_WORD[k]);
+  if (!any) return `Nothing to harvest here: no ${what.length ? what.join(', ') : 'deposit'} within ${R} tiles inside your border`;
+  if (!free) return `Everything in reach here is already worked by another ${def.name.toLowerCase()}`;
+  return null;
+}
+// a collector that works nothing at all (its deposits ran out of reach, or were taken): marked on the map and its card
+const idleCollector = b => owner[b.i] && COLLECT_KINDS(b.type) && !underway(b) && !b.site && !(b.toSow && b.toSow.length) && b.work && boxSum(b.work) < 0.5 && !b.field;
+function drawIdleMarks(z) {
+  if (z < 1.5) return;
+  for (const b of game.buildings) {
+    if (!idleCollector(b)) continue;
+    const [sx, sy] = toScreen(b.i % W + 0.5, ((b.i / W) | 0) - 0.2), r = clamp(z * 0.35, 6, 11);
+    if (sx < -20 || sy < -20 || sx > cw + 20 || sy > ch + 20) continue;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fillStyle = '#e0452f'; ctx.fill(); ctx.lineWidth = 1.5; ctx.strokeStyle = '#fff'; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = `900 ${Math.round(r * 1.5)}px 'Segoe UI', Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('!', sx, sy + 0.5);
+  }
 }
 // ---------- calling a hauler to a settlement ("Request porter" on a settlement's card) ----------
 // One of your haulers comes over to stay and work around this settlement. It comes from the nearest place that has
@@ -6058,10 +6748,11 @@ function orderUpgrade(kind) {
   toast(`Upgrading your ${FLEET[kind].name} to ${FLEET[kind].tiers[open].name.toLowerCase()}: each one is refitted when it next ${kind === 'rail' ? 'pulls in at a station' : 'calls in at a ' + FLEET[kind].hub}, paid as it goes`);
 }
 // anything that follows a route (troops, convoys): move along its legs at each leg's speed
-function moveAlong(a, dt) {
+function moveAlong(a, dt, gate) {
   let move = dt;
   while (move > 0 && a.k < a.pts.length - 1) {
     const [x0, y0] = a.pts[a.k], [x1, y1] = a.pts[a.k + 1], seg = Math.hypot(x1 - x0, y1 - y0);
+    if (gate && game.bridges.length && !bridgeGate(gate, lerp(x0, x1, seg ? a.f / seg : 0), lerp(y0, y1, seg ? a.f / seg : 0), x1, y1)) break;   // a bridge it must take its turn on
     const px = Math.floor(lerp(x0, x1, seg ? a.f / seg : 0)), py = Math.floor(lerp(y0, y1, seg ? a.f / seg : 0));
     const sp = (a.spd[a.k] || 1) * (a.ride && a.ride[a.k] ? 1 : inb(px, py) ? terrSpeed(idx(px, py)) : 1);   // slower over mountains, off the road
     const left = seg - a.f, step = sp * Math.min(move, 0.25);
@@ -6081,7 +6772,7 @@ function sendArmy(from, n, route, purpose, extra = {}) {
 }
 function stepArmy(a, dt) {
   if (a.purpose === 'work') return;              // a crew mending a wall stays put (see stepRepairs)
-  moveAlong(a, dt);
+  moveAlong(a, dt, 'troops');
   if (a.done && a.rep && crewArrives(a)) return;
   if (a.done) armyArrives(a);
 }
@@ -6681,6 +7372,7 @@ function tick(dt, global = true) {
   stepInventories(dt);
   stepChipFabs(dt);
   stepSowing(dt);
+  stepRaze(dt); stepIdleFleet(dt); stepBridges(dt); if (global) stepStyle(dt);
   stepRoadWorks();
   stepAIs(dt);
   stepCars(dt);
@@ -6793,6 +7485,10 @@ function tick(dt, global = true) {
         if (coming && (V.held || 0) < SCHED.maxWait) { V.held = (V.held || 0) + dt; continue; }
         V.held = 0; V.dwell = 0;
       }
+      if (L.kind === 'rail' && game.bridges.length && L.path) {   // a basic bridge ahead: the train takes its turn
+        const p = L.path, a = p[clamp(Math.round(V.t), 0, p.length - 1)], b2 = p[clamp(Math.round(V.t + V.dir * 0.9), 0, p.length - 1)];
+        if (!bridgeGate('rail', ...tileCenter(a), ...tileCenter(b2))) continue;
+      }
       V.t += speed * dt * V.dir;
       if (V.t >= end) { V.t = end; V.dir = -1; unloadAt(V, B, L.b); if (B) atHub(V, B); loadAt(L, V, B, A, 'b'); V.dwell = SCHED.stop; V.held = 0; }
       else if (V.t <= 0) { V.t = 0; V.dir = 1; unloadAt(V, A, L.a); if (A) atHub(V, A); loadAt(L, V, A, B, 'a'); V.dwell = SCHED.stop; V.held = 0; }
@@ -6886,8 +7582,8 @@ function worldSave() {
       sendPct: game.sendPct, troopPct: game.troopPct, recruit: game.recruit, warhead: game.warhead, debug: !!game.debug, debugSnap: game.debugSnap || null,
       connects: game.connects.map(c => [c.a, c.b, packLine(c)]), walls: game.walls.map(w => [w.a, w.b, packLine(w), { dmg: w.dmg || 0, up: w.up || null, stock: w.stock || 0 }]),
       roads: roads.map(r => ({ k: r.key, s: r.side, a: r.a, b: r.b, c: r.cut ?? null, p: packLine(r), ...(roadWorks(r) ? { w: Math.round(r.works - game.time) } : {}), ...(r.len0 != null ? { l0: Math.round(r.len0 * 10) / 10 } : {}), ...(r.lanes > 1 ? { n: r.lanes } : {}) })),
-      bridges: game.bridges.map(br => [br.s, br.b, br.len, br.tiles]),
-      research: { done: [...game.research.done], cur: game.research.cur, pts: game.research.pts },
+      bridges: game.bridges.filter(br => !br.closing).map(br => [br.s, br.b, br.len, br.tiles, br.up ? 1 : 0]),
+      research: { done: [...game.research.done], cur: game.research.cur, pts: game.research.pts }, style: game.style || null, noRoad: game.noRoad || [],
       countries: game.countries.map(c => {
         const res = {};
         for (const r of RESOURCES) res[r] = c.res[r] + back[c.id][r];
@@ -6899,13 +7595,13 @@ function worldSave() {
       buildings: game.buildings.map(b => ({ i: b.i, t: b.type, ready: b.ready || 0, units: (b.units || 0) + (homeUnits.get(b.i) || 0), oil: b.oil || 0,
         buf: b.buf && boxSum(b.buf) >= 0.5 ? b.buf : null, lvl: b.lvl || undefined, ai: b.ai ? { ...b.ai, asked: 0 } : undefined, inv: b.type === 'settlement' && b.inv ? Object.fromEntries(Object.entries(b.inv).map(([r, v]) => [r, Math.round(v * 10) / 10])) : undefined,
         sp: b.type === 'pad' ? { rocket: b.rocket ? b.rocket.fuel : null, supply: b.supply || null, paused: !!b.paused, only: !!b.shuttleOnly } : undefined,
-        site: b.site ? { type: b.site.type, need: b.site.need, country: b.site.country, cost: b.site.cost, shipIn: b.site.shipIn, imp: b.site.imp } : null,
+        site: b.site ? { type: b.site.type, need: b.site.need, country: b.site.country, cost: b.site.cost, shipIn: b.site.shipIn, imp: b.site.imp } : null, raze: b.raze ? { abort: b.raze.abort, keep: b.raze.keep, stage: b.raze.stage, t: b.raze.t, T: b.raze.T } : undefined,
         field: b.field != null && deposits[b.field] ? deposits[b.field].tiles : null, sow: b.toSow && b.toSow.length ? b.toSow : undefined })),
       shipments: game.shipments.map(S => ({ res: S.res, to: S.to, w: S.w, troops: S.troops, on: S.on })),
-      hubJobs: game.hubJobs.filter(H => !H.done).map(H => ({ c: H.c, at: H.at, res: H.res, then: H.then })),
+      hubJobs: game.hubJobs.filter(H => !H.done).map(H => ({ c: H.c, at: H.at, res: H.res, then: H.then })), idleFleet: game.idleFleet || [],
       links: game.links.map(L => ({ kind: L.kind, a: L.a, b: L.b, path: L.path, out: L.out || null, req: L.req || null, owe: L.owe || null,
         ships: (L.ships || []).map(V => ({ kind: V.kind, tier: V.tier, paid: V.paid, t: V.t, dir: V.dir, cargo: V.cargo || null, to: V.to ?? -1 })) })),
-      cars: game.cars.map(v => ({ c: v.country, tier: v.tier, x: v.x, y: v.y, ...(v.call ? { call: { to: v.call.to, c: v.call.c, w: v.call.w || 0 } } : {}) })), fleetTarget: game.fleetTarget, tv: 2,
+      cars: game.cars.map(v => ({ c: v.country, tier: v.tier, x: v.x, y: v.y, ...(v.space ? { sp: 1 } : {}), ...(v.call ? { call: { to: v.call.to, c: v.call.c, w: v.call.w || 0 } } : {}) })), fleetTarget: game.fleetTarget, tv: 2,
       space: {                                     // what's in orbit stays there; anything mid-flight comes home
         counts: [rocketCount, stationCount, shuttleId],
         flights: game.flights.filter(f => !f.done && f.orbit).map(f => ({ ...f, trail: f.trail.slice(-60) })),
@@ -6962,7 +7658,7 @@ function loadGame(sv) {
     n.engaged = !!sn.engaged;
   });
   const RS = sv.research || {};
-  if (home) { game.research.done = new Set(RS.done || []); game.research.cur = RS.cur || null; game.research.pts = RS.pts || 0; }
+  if (home) { game.research.done = new Set(RS.done || []); game.research.cur = RS.cur || null; game.research.pts = RS.pts || 0; game.style = sv.style || { out: {}, hungry: 0, lost: 0 }; game.noRoad = sv.noRoad || []; }
   let i = 0;
   for (let k = 0; k < sv.runs.length; k += 2) {
     const v = sv.runs[k], n = sv.runs[k + 1];
@@ -6983,6 +7679,7 @@ function loadGame(sv) {
     if (sb.ai) b.ai = sb.ai;
     if (sb.sp) { if (sb.sp.rocket != null) b.rocket = { fuel: sb.sp.rocket, told: true }; b.supply = sb.sp.supply; b.paused = sb.sp.paused; b.shuttleOnly = sb.sp.only; }
     if (sb.site) b.site = { ...sb.site, cost: sb.site.cost || {} };   // its delivery (if one was on the way) sets out again
+    if (sb.raze) b.raze = { ...sb.raze, since: game.time, h: null };
     if (sb.field) {
       b.field = deposits.length;
       const ft = sb.field.filter(t => depositOf[t] < 0);
@@ -6996,6 +7693,7 @@ function loadGame(sv) {
   const oldTiers = !sv.tv;                         // saves from before Caravans and station upgrades
   game.links = sv.links.map(L => ({ ...L, req: L.req || { a: [], b: [] }, ships: (L.ships || []).map(V => (V.kind === 'rail' && V.paid == null ? { ...V, paid: oldTiers ? 9 : 0 } : V)) }));
   game.hubJobs = (sv.hubJobs || []).map(H => ({ ...H, car: null, cars: 0, claim: 0, since: 0 }));
+  game.idleFleet = Array.isArray(sv.idleFleet) ? sv.idleFleet : [];
   if (home) { game.shipments = []; for (const S of sv.shipments || []) { S.legs = [{ kind: 'land', spr: 'porter', pts: [[0, 0], [0, 0]], cum: [0, 0], len: 0, speed: 1 }]; S.li = 0; S.d = 1; game.shipments.push(S); } }   // goods on the road arrive next step
   for (let t = 0; t < N; t++) {
     if (!owner[t]) continue;
@@ -7015,9 +7713,9 @@ function loadGame(sv) {
     if (!sv.tv) { if (game.fleetTarget.car >= 4) game.fleetTarget.car++; game.fleetTarget.rail = 9; }   // Caravans slot in before Trucks; old trains keep running as they did
   }
   game.armies = []; game.attacks = []; game.lost = new Map(); game.lostForts = new Map();
-  game.cars = (sv.cars || []).map(c => ({ id: carId++, kind: 'car', country: c.c, tier: oldTiers && c.tier >= 4 ? c.tier + 1 : c.tier, x: c.x, y: c.y, cargo: {}, plan: [], pts: null, idle: 0, ...(c.call ? { call: c.call } : {}) }));
+  game.cars = (sv.cars || []).map(c => ({ id: carId++, kind: 'car', country: c.c, tier: oldTiers && c.tier >= 4 ? c.tier + 1 : c.tier, x: c.x, y: c.y, cargo: {}, plan: [], pts: null, idle: 0, space: !!c.sp, ...(c.call ? { call: c.call } : {}) }));
   game.bridges = []; bridgeAt.fill(0); bridgeEnd.fill(0);
-  for (const [s0, b, len, tiles] of sv.bridges || []) addBridge({ s: s0, b, len, tiles, t0: -99 });
+  for (const [s0, b, len, tiles, up] of sv.bridges || []) addBridge({ s: s0, b, len, tiles, t0: -99, ...(up ? { up: true } : {}) });
   if (home) {
     const SP = sv.space || {};
     [rocketCount, stationCount, shuttleId] = SP.counts || [0, 0, 0];
@@ -8645,6 +9343,16 @@ function cargoBadge(sx, sy, cargo, size = 10) {
 }
 const SHIP_SPRITE = V => V.kind === 'rail' ? null : FLEET[V.kind].tiers[workTier(V)].id;
 function drawVehicles(z) {
+  for (const V of game.idleFleet || []) {          // boats, trains and planes with no route left (and planes that came down)
+    if (V.kind === 'rail') continue;
+    const [sx, sy] = toScreen(V.x, V.y), s = Math.max(18, z * 1.6), spr = FLEET[V.kind].tiers[V.tier].id;
+    if (sx < -60 || sy < -60 || sx > cw + 60 || sy > ch + 60) continue;
+    ctx.save(); ctx.translate(sx, sy); if (V.crashed && !V.towed) ctx.rotate(0.45);
+    if (RAS[spr]) ctx.drawImage(RAS[spr][s * dpr > 44 ? 0 : 1], -s / 2, -s / 2, s, s);
+    ctx.restore();
+    if (V.towed && RAS.porter) ctx.drawImage(RAS.porter[1], sx - s * 0.9, sy - s * 0.25, s * 0.5, s * 0.5);
+    if (z >= 1.5) pill(sx, sy + s * 0.7, V.towed ? 'being brought to the airport' : V.crashed ? 'crash-landed' : 'no route: waiting', { size: 9.5, fg: V.crashed ? '#ff7a6b' : '#f0a64a' });
+  }
   for (const L of game.links) for (const V of L.ships || []) {
     const [wx, wy, ang] = vehiclePos(L, V);
     const [sx, sy] = toScreen(wx, wy);
@@ -8767,7 +9475,7 @@ function drawPlane(V, sx, sy, ang, z, L) {
   ctx.restore();
 }
 // a stone bridge: deck, edges and piers (a dashed line while you're planning it)
-function drawBridge(s0, b, z, ghost = null) {
+function drawBridge(s0, b, z, ghost = null, up = false) {
   if (b < 0) return;
   const [ax, ay] = toScreen(...tileCenter(s0)), [bx, by] = toScreen(...tileCenter(b));
   const seg = (ox = 0, oy = 0) => { ctx.beginPath(); ctx.moveTo(ax + ox, ay + oy); ctx.lineTo(bx + ox, by + oy); };
@@ -8784,6 +9492,12 @@ function drawBridge(s0, b, z, ghost = null) {
   seg(); ctx.lineWidth = w + Math.max(2, z * 0.14); ctx.strokeStyle = '#4f4a44'; ctx.stroke();
   seg(); ctx.lineWidth = w; ctx.strokeStyle = '#b3aa9b'; ctx.stroke();
   seg(); ctx.setLineDash([Math.max(1, z * 0.06), Math.max(2, z * 0.42)]); ctx.lineWidth = w * 0.9; ctx.strokeStyle = '#958c7e'; ctx.stroke(); ctx.setLineDash([]);
+  if (up) {                                        // upgraded: a second deck alongside, on steel girders
+    const L = Math.hypot(bx - ax, by - ay) || 1, ox = -(by - ay) / L * w * 1.05, oy = (bx - ax) / L * w * 1.05;
+    seg(ox, oy); ctx.lineWidth = w + Math.max(2, z * 0.14); ctx.strokeStyle = '#3d4652'; ctx.stroke();
+    seg(ox, oy); ctx.lineWidth = w; ctx.strokeStyle = '#9aa3ae'; ctx.stroke();
+    seg(ox / 2, oy / 2); ctx.setLineDash([Math.max(2, z * 0.2), Math.max(2, z * 0.5)]); ctx.lineWidth = Math.max(1, z * 0.07); ctx.strokeStyle = '#c33f2f'; ctx.stroke(); ctx.setLineDash([]);
+  }
 }
 // a small badge: an icon and a number (troops in green)
 function badge(sx, sy, n, { color = '#7bd389', bg = 'rgba(14,30,18,0.92)', icon = 'soldier', size = 11 } = {}) {
@@ -8794,7 +9508,7 @@ function badge(sx, sy, n, { color = '#7bd389', bg = 'rgba(14,30,18,0.92)', icon 
 function drawTroops(z) {
   const helm = unitStats().helm;
   if (z >= 0.4) for (const b of game.buildings) {
-    if ((b.type !== 'base' && b.type !== 'fort') || !owner[b.i] || underway(b)) continue;
+    if ((b.type !== 'base' && b.type !== 'fort' && !(b.type === 'settlement' && (b.units || 0) >= 1)) || !owner[b.i] || underway(b)) continue;
     const [sx, sy] = toScreen(...tileCenter(b.i));
     if (sx < -40 || sy < -40 || sx > cw + 40 || sy > ch + 40) continue;
     badge(sx, sy + Math.max(14, z * 1.1), Math.floor(b.units || 0), { size: 10, icon: helm });
@@ -8821,7 +9535,7 @@ function drawTroops(z) {
   for (const v of game.cars) {
     const [sx, sy] = toScreen(v.x, v.y);
     if (sx < -30 || sy < -30 || sx > cw + 30 || sy > ch + 30) continue;
-    const size = clamp(z * 1.15, 12, 34), spr = RAS[tierOf(v).id];
+    const size = clamp(z * 1.15, 12, 34), spr = (v.space && RAS['sp_' + tierOf(v).id]) || RAS[tierOf(v).id];   // in space gear on an airless world
     if (v.pts && v.ride && v.ride[v.k]) {           // riding the train: on a flatcar, a locomotive ahead
       const C = liveCountry(v.country), id = (FLEET.rail.tiers[Math.max(0, trainTier(C, -1, fleetTarget('rail')))] || FLEET.rail.tiers[0]).id, look = TRAIN_LOOK[id] || TRAIN_LOOK.steamtrain;
       const len = size * 1.05, wid = size * 0.42;
@@ -9651,7 +10365,7 @@ const WORLDS = [
 let WORLD = 0;
 const worldData = [];
 const GAME_KEYS = ['countries', 'active', 'landTiles', 'ownedCount', 'buildings', 'links', 'hubs', 'pushes', 'expeditions', 'floats', 'cars', 'connects', 'walls',
-  'puffs', 'hubJobs', 'bridges', 'armies', 'attacks', 'missiles', 'blasts', 'scorch', 'tracers', 'raids', 'lost', 'lostForts', 'netDirty', 'bldDirty', 'landDirty', 'population', 'driving'];
+  'puffs', 'hubJobs', 'idleFleet', 'bridges', 'armies', 'attacks', 'missiles', 'blasts', 'scorch', 'tracers', 'raids', 'lost', 'lostForts', 'netDirty', 'bldDirty', 'landDirty', 'population', 'driving'];
 const worldGenerated = w => w === 0 || !!worldData[w];
 function stashWorld() {
   const d = worldData[WORLD] || (worldData[WORLD] = {});
@@ -9695,7 +10409,7 @@ function genWorld(w) {
   planCache = { key: null, val: null }; netTimer = landTimer = aiTimer = aiFireTimer = supplyTimer = transferTimer = defendTimer = 0;
   terrainCanvas = document.createElement('canvas'); terrainCtx = null; fillLayer = makeLayer(); borderLayer = makeLayer();
   Object.assign(game, { countries: [], active: 0, landTiles: 0, ownedCount: 0, buildings: [], links: [], hubs: { road: [], sea: [], rail: [], air: [] },
-    pushes: [], expeditions: [], floats: [], cars: [], connects: [], walls: [], puffs: [], hubJobs: [], bridges: [], armies: [], attacks: [], missiles: [], blasts: [],
+    pushes: [], expeditions: [], floats: [], cars: [], connects: [], walls: [], puffs: [], hubJobs: [], idleFleet: [], bridges: [], armies: [], attacks: [], missiles: [], blasts: [],
     scorch: [], tracers: [], raids: [], lost: new Map(), lostForts: new Map(), netDirty: true, bldDirty: true, landDirty: false, population: 0, driving: null });
   WORLD = w;
   const rngWas = rng, keep = {};
@@ -10441,6 +11155,28 @@ function stepShuttlesAir(dt) {
     }
     // down on a world: cargo into the landing pad's yard, for the trucks there
     const w = stop.w || 0;
+    // its landing pad is gone: another of yours on that world; else back to the world it came from; else open ground
+    const lpadsOn = ww => (ww === WORLD || worldGenerated(ww)) ? onWorld(ww, () => game.buildings.filter(q => q.type === 'lpad' && owner[q.i] && !underway(q)).map(q => q.i)) : [];
+    if (stop.st == null && !lpadsOn(w).includes(stop.i)) {
+      const alt = lpadsOn(w);
+      if (alt.length) stop.i = alt[0];
+      else {
+        const from = sh.launchW ?? 0, back = from !== w && !stop.turned ? lpadsOn(from) : [];
+        if (back.length) {
+          sh.plan = [{ w: from, i: back[0], leg: 'trip', turned: true }];
+          startLeg(sh, tileCenter(sh.pad));
+          notify('🚀 A rocket turned back', `Its landing pad on ${WORLDS[w].name} is gone, and there is no other: it is flying back to ${WORLDS[from].name}.`);
+          continue;
+        }
+        const p = landChance(sh);
+        if (Math.random() >= p) {
+          sh.dead = true; sh.cargo = {}; sh.people = 0;
+          notify('🚀 A rocket was lost', `It had no landing pad left to come down on, tried open ground on ${WORLDS[w].name}, and crashed (it had a ${Math.round(p * 100)}% chance).`);
+          continue;
+        }
+        notify('🚀 A rocket landed on open ground', `With no landing pad left it came down on open ground on ${WORLDS[w].name}, and made it (a ${Math.round(p * 100)}% chance). It waits there.`);
+      }
+    }
     if (stop.order) {                              // a shipping order: what came off it; anything left goes on the next run
       const o = game.shipIns.find(x => x.id === stop.order);
       if (o) { for (const r in o.res) o.res[r] = Math.max(0, o.res[r] - (sh.cargo[r] || 0)); o.sh = null; if (boxSum(o.res) < 1) o.done = true; }
@@ -11052,7 +11788,8 @@ function render() {
     ctx.lineCap = 'butt';
   }
 
-  for (const br of game.bridges) drawBridge(br.s, br.b, z);
+  for (const br of game.bridges) drawBridge(br.s, br.b, z, null, !!br.up);
+  drawBridgeSel(z);
   drawRoads(z);
   // roads, rail lines and air routes (sea routes aren't drawn: the ships sailing them are enough)
   for (const L of game.links) if (L.kind === 'road') strokeRoute(L.path, 'road', z);
@@ -11109,6 +11846,7 @@ function render() {
   drawMissiles(z);
   drawDomes(z);
   drawTroops(z);
+  drawIdleMarks(z);
   drawWallFx(z);
   drawDiskLabel(z);
 
@@ -11504,6 +12242,13 @@ function clickAt(btn, x, y) {
       const [fx, fy] = toScreen(f.x, f.y);
       if (Math.hypot(fx - x, fy - y) < Math.max(16, cam.zoom * 1.4)) { takeRocket(f); return; }
     }
+    const crashed = (game.idleFleet || []).findIndex(V => V.crashed && !V.towed && Math.hypot(toScreen(V.x, V.y)[0] - x, toScreen(V.x, V.y)[1] - y) < Math.max(16, cam.zoom * 1.4));
+    if (crashed >= 0) {                            // a plane that came down: scrap it for half its price
+      const V = game.idleFleet[crashed], back = halfOf(FLEET[V.kind].tiers[V.tier].cost);
+      showModal(`<div class="md-title">A crash-landed plane</div><div class="md-body">It survived coming down with nowhere to land. Build an airport and a porter will bring it there, or take it apart now for ${boxSum(back) ? costText(back) : 'nothing'} (half of a new one).</div>`,
+        [{ label: 'Deconstruct it', cls: 'danger', act: () => scrapPlane(crashed) }, { label: 'Leave it', act: () => {} }]);
+      return;
+    }
     for (const st of game.orbitals) {
       const [sx2, sy2] = toScreen(st.x, st.y);
       if (Math.hypot(sx2 - x, sy2 - y) < Math.max(14, stationSize(st, cam.zoom) * 0.7)) { showStationCard(st); return; }
@@ -11536,6 +12281,7 @@ function commandClick(t) {
   }
   if (owner[t.i] && building[t.i] && cam.zoom >= 3) return showBuildingCard(buildingAt(t.i));
   if (cam.zoom >= 2 && game.walls.length) { const [wx, wy] = toWorld(mouse.x, mouse.y), w = wallNear(wx, wy); if (w && (owner[w.a] || owner[w.b])) return showWallCard(w); }
+  if (cam.zoom >= 3 && !building[t.i]) { const [wx, wy] = toWorld(mouse.x, mouse.y), br = bridgeNear(wx, wy); if (br) return showBridgeCard(br); const rd = roadNear(wx, wy); if (rd && (owner[t.i] || countryAt(rd.L.a))) return showRoadCard(rd); }
   showBuildingCard(null);
   if (owner[t.i]) {                                // clicking inside one of your domains selects it
     const c = countryAt(t.i);
@@ -12508,6 +13254,7 @@ function roadScore(pts, len, blds) {
 }
 function aiDoRoads(b, C) {
   const A = aiState(b);
+  aiPruneRoads(b, C);
   if (game.time - (A.roadAt || 0) < 20) return;
   A.roadAt = game.time;
   const blds = aiRoadBlds(C), sig = blds.map(q => q.i).join(','), stretch = aiRoadStretch(C);
@@ -13234,30 +13981,61 @@ function fortNear(wx, wy) {
 }
 // ---------- spending gold: the market, rushing a building, hiring troops ----------
 const goldOf = C => Math.max(0, (C && C.res.gold) || 0);
-const MARKET = { lot: 50, buy: 1.25, sell: 0.75 };     // a lot of goods, and the market's mark-up and mark-down
-const lotGold = (r, side) => Math.max(1, Math.round(MARKET.lot * PRICE[r] / PRICE.gold * (side === 'buy' ? MARKET.buy : MARKET.sell)));
-function marketTrade(C, r, side) {
-  const g = lotGold(r, side);
+// ---------- the market: pick a resource, pick how much, Buy or Sell ----------
+// Kept very simple (owner: "very simple and very intuitive"; layout reviewed by a second agent): one row of resource
+// tiles (one is always picked), how many (10 · 50 · 100), and two big buttons with the price on them. The prices are
+// fixed: buying costs a quarter more than the goods are worth, selling gets a quarter less.
+const MARKET = { lot: 50, buy: 1.25, sell: 0.75, sizes: [10, 50, 100] };
+const priceOf = (r, side, n = MARKET.lot) => Math.max(1, Math.round(n * PRICE[r] / PRICE.gold * (side === 'buy' ? MARKET.buy : MARKET.sell)));
+const lotGold = (r, side) => priceOf(r, side, MARKET.lot);
+// why a trade can't be done right now (a few words), or null
+function tradeWhy(C, r, side, n = MARKET.lot) {
   if (side === 'buy') {
-    if (goldOf(C) < g) return toast(`${C.short} needs ${g} gold for ${MARKET.lot} ${r}`);
-    if (C.store && C.res[r] + MARKET.lot > C.store[r] + 0.5) return toast(`${C.short} has no room for ${MARKET.lot} more ${r}`);
-    C.res.gold -= g; C.res[r] += MARKET.lot;
-  } else {
-    if (C.res[r] < MARKET.lot) return toast(`${C.short} has less than ${MARKET.lot} ${r} to sell`);
-    C.res[r] -= MARKET.lot; C.res.gold += g;
-  }
+    if (goldOf(C) < priceOf(r, 'buy', n)) return 'Not enough gold';
+    if (C.store && C.res[r] + n > C.store[r] + 0.5) return 'Storage full';
+  } else if ((C.res[r] || 0) < n) return `You have ${fmtNum(Math.max(0, C.res[r] || 0))}`;
+  return null;
 }
+function marketTrade(C, r, side, n = MARKET.lot) {
+  if (!C || !PRICE[r]) return false;
+  const why = tradeWhy(C, r, side, n), g = priceOf(r, side, n);
+  if (why) { toast(`${C.short}: ${why.toLowerCase()}`); return false; }
+  if (side === 'buy') { C.res.gold -= g; C.res[r] += n; } else { C.res[r] -= n; C.res.gold += g; }
+  return true;
+}
+const MK = { r: 'wood', n: 50, msg: '', msgT: 0 };    // what's picked (remembered between visits)
+const MK_ORDER = ['wood', 'stone', 'iron', 'wheat', 'oil', 'uranium', 'silicon', 'cobalt', 'chips', 'batteries'];
 function showMarket() {
   const C = activeCountry();
   if (!C) return;
-  const list = RESOURCES.filter(r => r !== 'gold' && resKnown(r));
-  const rows = list.map(r => `<div class="mk-row"><span class="ri">${SVG[RES_ICON[r]]}</span><b>${r}</b><span class="have">${fmtNum(Math.max(0, C.res[r]))}</span>
-    <button data-mk="buy" data-r="${r}" ${goldOf(C) < lotGold(r, 'buy') ? 'disabled' : ''}>Buy ${MARKET.lot} · ${lotGold(r, 'buy')} gold</button>
-    <button data-mk="sell" data-r="${r}" ${C.res[r] < MARKET.lot ? 'disabled' : ''}>Sell ${MARKET.lot} · ${lotGold(r, 'sell')} gold</button></div>`).join('');
-  showModal(`<div class="md-title">The market</div><div class="md-body">${C.short} has <b>${fmtNum(goldOf(C))} gold</b>. Buy what you're short of, or sell what you have too much of.
-    Gold also rushes buildings (on a building site's card), hires troops (on a base or fortress), and pays in diplomacy.
-    <div class="mk">${rows}</div></div>`, [{ label: 'Done', act: () => {} }]);
-  for (const el of document.querySelectorAll('#md-text [data-mk]')) el.addEventListener('click', () => { marketTrade(C, el.dataset.r, el.dataset.mk); showMarket(); });
+  showModal('<div id="mk"></div>', [{ label: 'Close', act: () => {} }]);
+  marketDraw(C);
+}
+function marketDraw(C, flash) {
+  const el = $('mk');
+  if (!el) return;
+  const list = MK_ORDER.filter(r => resKnown(r));
+  if (!list.includes(MK.r)) MK.r = list[0];
+  const r = MK.r, n = MK.n, buyWhy = tradeWhy(C, r, 'buy', n), sellWhy = tradeWhy(C, r, 'sell', n), coin = `<span class="mk-coin">${SVG.goldI}</span>`;
+  const several = game.countries.filter(c => c.alive && c.tiles).length > 1;
+  el.innerHTML = `<div class="mk-head"><b>Market</b><span class="mk-gold${flash && flash.gold ? ' ' + flash.gold : ''}">${coin}${fmtNum(goldOf(C))}${several ? `<small>${C.short}</small>` : ''}</span></div>
+    <div class="mk-grid">${list.map(k => `<button class="mk-tile${k === r ? ' sel' : ''}" data-r="${k}"><span class="mk-ic">${SVG[RES_ICON[k]]}</span><span class="mk-amt${flash && flash.r === k ? ' ' + flash.res : ''}">${fmtNum(Math.max(0, Math.floor(C.res[k] || 0)))}</span></button>`).join('')}</div>
+    <div class="mk-line"><b>${r[0].toUpperCase() + r.slice(1)}</b> · you have ${fmtNum(Math.max(0, Math.floor(C.res[r] || 0)))}</div>
+    <div class="mk-sizes">${MARKET.sizes.map(k => `<button class="mk-chip${k === n ? ' sel' : ''}" data-n="${k}">${k}</button>`).join('')}</div>
+    <div class="mk-acts">
+      <div><button class="mk-buy" data-side="buy" ${buyWhy ? 'disabled' : ''}>Buy ${n} for ${priceOf(r, 'buy', n)} ${coin}</button><span class="mk-why">${buyWhy || ''}</span></div>
+      <div><button class="mk-sell" data-side="sell" ${sellWhy ? 'disabled' : ''}>Sell ${n} for ${priceOf(r, 'sell', n)} ${coin}</button><span class="mk-why">${sellWhy || ''}</span></div>
+    </div>
+    <div class="mk-msg${MK.msg && game.time - MK.msgT < 2.5 ? ' on' : ''}">${MK.msg || '&nbsp;'}</div>`;
+  for (const b of el.querySelectorAll('[data-r]')) b.onclick = () => { MK.r = b.dataset.r; marketDraw(C); };
+  for (const b of el.querySelectorAll('[data-n]')) b.onclick = () => { MK.n = +b.dataset.n; marketDraw(C); };
+  for (const b of el.querySelectorAll('[data-side]')) b.onclick = () => {
+    const side = b.dataset.side, g = priceOf(r, side, n);
+    if (!marketTrade(C, r, side, n)) return;
+    MK.msg = side === 'buy' ? `Bought ${n} ${r} for ${g} gold` : `Sold ${n} ${r} for ${g} gold`; MK.msgT = game.time;
+    marketDraw(C, { r, res: side === 'buy' ? 'up' : 'down', gold: side === 'buy' ? 'down' : 'up' });
+    clearTimeout(marketDraw.t); marketDraw.t = setTimeout(() => { const m = document.querySelector('#mk .mk-msg'); if (m) m.classList.remove('on'); }, 2200);
+  };
 }
 // rush: gold pays for what's still missing (at market prices) and the crew's overtime: it's finished at once
 function rushCost(b) {
@@ -13294,6 +14072,8 @@ function refreshCard(force) {
   if (force) $('bcard').dataset.key = '';
   if (cardOf <= -1000) { const st = stationByN(-1000 - cardOf); return st ? showStationCard(st) : showBuildingCard(null); }
   if (cardOf === -2) return showWallCard(game.wallSel);
+  if (cardOf === -3) return showRoadCard(roadSel);
+  if (cardOf === -4) return showBridgeCard(bridgeSel);
   const b = cardOf >= 0 && buildingAt(cardOf);
   if (b && (owner[b.i] || game.time === 0)) showBuildingCard(b); else showBuildingCard(null);
 }
@@ -13319,7 +14099,7 @@ function showStationCard(st) {
 }
 function showBuildingCard(b) {
   game.wallSel = null;
-  if (!b) { $('bcard').classList.remove('show'); $('bcard').dataset.key = ''; cardOf = -1; return; }
+  if (!b) { $('bcard').classList.remove('show'); $('bcard').dataset.key = ''; cardOf = -1; roadSel = null; bridgeSel = null; return; }
   cardOf = b.i;
   const def = CFG.buildings[b.type], C = countryAt(b.i), lines = [], btns = [];
   $('bc-ic').innerHTML = SVG[b.type];
@@ -13334,6 +14114,7 @@ function showBuildingCard(b) {
   if (b.type === 'settlement') lines.push(`Holds ${Math.round(settlementCap(b))} people from ${b.tiles} tiles in reach. Roads join it to the other settlements of ${C ? C.short : 'its domain'} by themselves, and haulers bring harvests here.`);
   if ((b.type === 'base' || b.type === 'fort') && !underway(b) && C && unitStats().type) btns.push({ label: `Hire ${MERC.n} troops · ${mercCost()} gold${goldOf(C) < mercCost() && buyImportPlan(b, { gold: mercCost() }) ? ' (import…)' : ''}`, act: () => { hireTroops(b); refreshCard(true); }, off: (goldOf(C) < mercCost() && !buyImportPlan(b, { gold: mercCost() })) || (b.units || 0) >= garrisonCap(b) - 0.5 });
   if (b.type === 'settlement' && !underway(b)) btns.push({ label: `Market · ${fmtNum(goldOf(C))} gold`, act: () => showMarket() });
+  if (b.type === 'settlement') for (const key of (game.noRoad || []).filter(k => k.split(':').map(Number).includes(b.i))) btns.push({ label: 'Rebuild the deleted road', act: () => { roadRebuild(key); refreshCard(true); } });
   if (b.type === 'settlement' && !underway(b) && C) {     // its share of the domain's stock
     const inv = invOf(b), list = RESOURCES.filter(r => (inv[r] || 0) >= 0.5 && resKnown(r));
     const P = invPull(b, C);
@@ -13363,7 +14144,8 @@ function showBuildingCard(b) {
       else btns.push({ label: `Connect to road: ${P.why.toLowerCase()}`, act: () => toast(P.why), off: true });   // the option is always there; when it can't be done it says why
     }
   }
-  if ((b.type === 'fort' || b.type === 'base') && !underway(b) && (b.units || 0) >= 1) btns.push({ label: 'Transfer troops…', act: () => showTransfer(b) });
+  if ((b.type === 'fort' || b.type === 'base' || b.type === 'settlement') && !underway(b) && (b.units || 0) >= 1) btns.push({ label: 'Transfer troops…', act: () => showTransfer(b) });
+  if (b.type === 'settlement' && (b.units || 0) >= 1) lines.push(`<b>${Math.floor(b.units)} troops</b> stay here: this territory has no fortress or base left.`);
   if (b.type === 'fort' && !underway(b) && isUnlocked('fort')) btns.push({ label: 'Build a wall…', act: () => { game.wallFrom = b.i; showBuildingCard(null); wallHint(); } });
   // a settlement, port or airport: your cars, boats or planes. Buy more; order the whole fleet upgraded.
   const fk = { settlement: 'car', port: 'boat', airport: 'plane' }[b.type];
@@ -13465,6 +14247,12 @@ function showBuildingCard(b) {
   for (const [t, d] of Object.entries(CFG.buildings)) {          // upgrades that sit on this one
     const from = Array.isArray(d.from) ? d.from : [d.from];
     if (!underway(b) && !b.site && from.includes(b.type) && isUnlocked(t)) btns.push({ label: `Upgrade: ${d.name}`, act: () => { showBuildingCard(null); setTool(t); if (game.ghost) { game.ghost.i = b.i; game.ghost.set = true; updateConfirm(); } } });
+  }
+  if (idleCollector(b)) lines.push('<span class="r">Nothing to harvest here: nothing in its reach is left for it to work. Deconstruct it, or build it somewhere else.</span>');
+  if (owner[b.i] && C) {                           // taking it down
+    if (b.raze) lines.push(b.raze.stage === 'haul' ? `<span class="a">${b.raze.abort ? 'Aborted' : 'Being taken down'}: waiting for a hauler to carry ${b.raze.h && boxSum(b.raze.h.res) >= 0.5 ? costText(Object.fromEntries(Object.entries(b.raze.h.res).map(([r, n]) => [r, Math.round(n)]))) : 'the materials'} to the nearest settlement.</span>` : '<span class="a">Coming down…</span>');
+    else if (b.site) btns.push({ label: b.site.type !== b.type ? 'Abort upgrade' : 'Abort construction', act: () => askAbort(b) });
+    else btns.push({ label: 'Deconstruct', act: () => askRaze(b) });
   }
   fillCard(lines, btns);
 }
@@ -15504,7 +16292,7 @@ function toGuestView(sv, nid) {
 }
 // ---------- the friend's orders ----------
 // which of your actions are orders (sent to the host): only ones you make with a click or a key, never the world's own
-const MP_ORDERS = ['importAndBuild', 'importAndBuy', 'requestPorter', 'transferTroops', 'setFallBack', 'setInsignia', 'tryBuildShipped', 'tryBuild', 'startPush', 'launchAttack', 'launchExpedition', 'buyVehicle', 'orderUpgrade', 'buyShuttle', 'upgradeShuttle', 'orderStation',
+const MP_ORDERS = ['importAndBuild', 'importAndBuy', 'requestPorter', 'razeOrder', 'scrapPlane', 'bridgeConnect', 'bridgeUpgrade', 'bridgeClose', 'roadExpandAt', 'roadDelete', 'roadRebuild', 'transferTroops', 'setFallBack', 'setInsignia', 'tryBuildShipped', 'tryBuild', 'startPush', 'launchAttack', 'launchExpedition', 'buyVehicle', 'orderUpgrade', 'buyShuttle', 'upgradeShuttle', 'orderStation',
   'buildBridge', 'connectToRoad', 'buildWall', 'provoke', 'craft', 'dipAction', 'askAll', 'marketTrade', 'rushSite', 'hireTroops', 'upgradeComputer', 'buyWallUpgrade',
   'setPct', 'setTroopPct', 'removeBuilding', 'buildDysonRocket', 'launchDyson', 'startMega', 'startColony', 'fireMissile', 'fireIPBM', 'sendBomber', 'setGameMode', 'toggleDebug'];
 const MP_HOST_ONLY = ['setGameMode', 'toggleDebug'];   // the rules of the game: the host's call
@@ -15632,5 +16420,5 @@ window.__game = { TOUCH, mouse, game, cam, CFG, SEED, tick: tickAll, tickOne: ti
   render, followBody, stopFollow, sunPos, wallGarrisons, buildDysonRocket, launchDyson, sendBomber, fireIPBM, setBombing, dysonPower, buildBridge, bridgePlan, POLAR, claim, isLand, launchRocket, makeStation, buyShuttle, toggleEngine, orbitOf, DISK, keys, showBuildingCard, refreshCard, openDiplomacy, aiConsider, doTrade, aiPeace, aiAlly, allianceOf, getOp, addOp, atWar, setWar, settlementLand, guardedAttack, autoDefend, buyVehicle, orderUpgrade, fleetSummary, tierOpen, addCar, seaCrossing, settleExpedition, takeWheel, completeTech, setPct, setTroopPct, roadsList: () => roads, buildRoads, netGraph, findRoute, connectPlan, connectToRoad, wallPlan, pickWallEnd, strikePlan, strikeReach, techIn, goldBoost, haulProf, NET, defenseMult, nextVehicle, driveStep: (e, dt) => driveStep(e, dt), removeBuilding, TECH, unitStats, garrisons, totalUnits, launchAttack, frontWith, setTool, confirmGhost, setCmd, clickAt, commandClick,
   routesTo, dispatchSupplies, linkStats, techCost, pickTech, playerTechScore, resourceProfile, research: () => game.research, hasDep, oilKnown, W, frontier, tileCenter,
   stopSaving: () => { noSave = true; }, scanAiBorders, dbgAI: () => ({ borders: [...aiBorders.keys()], gaps: [...aiGap.entries()].map(([k, v]) => k + ':' + Math.round(v.d)), dipTimer, borderTimer, offerTimer }), aiOffers, aiRelations, driftOpinions, SVG, RAS, SPR, debugOff, terraOf, planetTerra, poweredTerraformers, terraNeed, stepPlanetTerraform, compFx, compOf, bestComputer, upgradeComputer, researchPeople, SHUTTLE_MK, upgradeShuttle, shRange, canReachWorld, craft, CRAFTS, aiCompute, aiState, showAIPanel, stepAIs, aiDoRoads, aiDoGambit, aiDoWar, aiDoBuild, aiDoTrade, roadsList2: () => roads, invPull, invOf, lootSettlement, lootNation, sourceSettlement, stepInventories, skyWorldPos, foreignSkyClick, setGameMode, MODE, modePicker, aiUnitCap, aiTreaty, signTreaty, treaty, aiSurrender, doSurrender, warLosing, nationWorth, termsValue, askAll, openDiplomacyAll, aiNeeds, surrenderDialog, fearOf, showMarket, marketTrade, rushSite, rushCost, hireTroops, mercCost, treasury, orderStation, padBusy, myStations, wallState, fortState, damageWall, damageFort, wallMax, fortMax, showWallCard, wallNear, fortNear, buyWallUpgrade, upgradeCost, wallGroupOf, wallsAfterWar, stepRepairs, ironWallCross, viaLink, landWay, keepOnLand, shipGoods, crossesWater, tradePath, shoreOf, landGroup, overland, wet, tradeEnd, tilePath, intraArrive, stationNearSettlement, carProf };
-Object.assign(window.__game, { TUT, tutStart, tutAct, TUT_STEPS, SND, toggleMute, stepSound, sndTapBuilder, crewPos, sndZoom, startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, requestPorter, askPorter, porterPick, porterHop, carRefit, importAndBuy, buyImportPlan, shortLine, domainCount, sendConsignment, rocketPorts, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, LINK, MP_NET, mpMakeCode, mpReadCode, mpCodeSeed, mpWatch, mpDrop, mpSetup, mpJoin, mpSnapshot, toGuestView, mpApply, RIV, rivWorldMsg, rivRealmMsg, buildWall, sowFields, stepSowing });
+Object.assign(window.__game, { TUT, tutStart, tutAct, TUT_STEPS, SND, toggleMute, stepSound, sndTapBuilder, crewPos, sndZoom, startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, razeOrder, razeRefund, paidFor, askRaze, askAbort, aiRefuse, playStyle, landChance, hubGone, requestPorter, askPorter, porterPick, porterHop, carRefit, importAndBuy, buyImportPlan, shortLine, domainCount, sendConsignment, rocketPorts, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, LINK, MP_NET, mpMakeCode, mpReadCode, mpCodeSeed, mpWatch, mpDrop, mpSetup, mpJoin, mpSnapshot, toGuestView, mpApply, RIV, rivWorldMsg, rivRealmMsg, buildWall, sowFields, stepSowing });
 init();

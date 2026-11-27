@@ -25,7 +25,7 @@ or two. There is no other server, build step or database.
 - 8. Code style
 - 9. Keeping these notes up to date
 
-Last updated: 2026-11-26.
+Last updated: 2026-11-27.
 
 ---
 
@@ -51,8 +51,11 @@ the game?") need neither the re-read of the notes nor clarifying questions: just
    silently pick one: point it out and ask.
 
 ### Step 2: Ask clarifying questions (still no code)
-The owner wants **as many clarifying questions as possible, designed to get the best result**, and **no code changes
-until they have answered all of them** (2026-11-26). Even when a request says "fix" or looks obvious, ask. The only
+The owner wants **clarifying questions that focus on quality over quantity** (2026-11-27, replacing "as many as
+possible"): ask only what genuinely changes the result and can't be reliably decided from the notes, the code and good
+judgement; decide small things yourself and say what you chose. Many questions are fine **only** when there genuinely
+are many things that are very unclear and you cannot reliably tell what is better. Keep each question short; avoid
+long lists of options. **No code changes until they have answered** (2026-11-26). Even when a request says "fix" or looks obvious, ask. The only
 exception is a message that only gives answers or permission (for example "I give you permission to implement the
 edits"): then build or publish what was agreed.
 Reply with:
@@ -117,7 +120,7 @@ The owner plays mostly on an **iPhone** (Safari), sometimes on desktop. They car
 and the game being fun. They are not a programmer.
 
 Standing preferences:
-1. **Re-read all the notes, then ask as many clarifying questions as possible, then wait for every answer before
+1. **Re-read all the notes, then ask clarifying questions (quality over quantity, 2026-11-27), then wait for every answer before
    changing code** (section 0). This applies to every new message (owner, 2026-11-26).
 1b. **Ask follow-up questions** when an answer is unclear, illogical, or could hurt the game (section 0, Step 2).
 2. **Build in stages and test each stage.**
@@ -166,7 +169,7 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 | `.nojekyll` | Makes GitHub Pages serve files as they are. Keep it. |
 
 **Cache tag:** `index.html` loads `style.css?v=N` and `game.js?v=N`. **Increase N by one on every push**, in both
-places, or phones keep running the old code. Look in `index.html` for the current N (it was 28 on 2026-11-26).
+places, or phones keep running the old code. Look in `index.html` for the current N (it was 29 on 2026-11-27).
 
 ---
 
@@ -225,6 +228,25 @@ lines). The order of sections in the file:
   `carNextJob` once it is free), `porterArrive` (acts `calledIn`, `boardCall`, `liftoff`), `porterLands`. The call is
   `v.call = { to, c, w }` (saved). Across a link it travels as a consignment `{ porter: ... }` on `L.req`; between
   worlds as a `game.troopFlights` entry with `porter`.
+- **Taking buildings down (round 18):** `razeOrder(i, abort)` (the order, in `MP_ORDERS`), `askRaze` / `askAbort`
+  (the questions), `razeRefund`, `paidFor`, `halfOf`, `razeTime`, `stepRaze` (haul → dust → `razeDone`), `townGone`,
+  `razeTroops`, `hubGone`, `stepIdleFleet` / `game.idleFleet` (per world, saved), `scrapPlane`, `RAZE`, `CRASH`.
+  `b.raze = { abort, keep, stage, t, T, h }` (saved). Rockets: the landing check at the top of the "down on a world"
+  part of `stepShuttlesAir`, `landChance`, `RLAND`, `aiPowerAll`. The C.A.I.S. talk: `aiGuards`, `aiRefuse`, `AI_WARN`,
+  `aiVerdict`, `playStyle`, `stepStyle` (`game.style`, saved), `IMPORTANT_TECH`.
+- **Roads you tap:** shown in the bottom building card (`cardOf === -3`; bridges `cardOf === -4`, `bridgeSel`,
+  `drawBridgeSel`), so the picked road stays visible. `roadNear`, `showRoadCard`, `roadExpand` / `roadExpandAt`, `askRoadDelete`, `roadDelete`,
+  `roadRebuild`, `drawRoadSel` (`roadSel`), `ROAD_MAX_LANES`, `aiPruneRoads`, `altRoadLen`; `buildRoads` skips
+  `game.noRoad` pairs. Lanes are drawn 1×, 1.75×, 2.45× wide (a highway gets a gold centre line).
+- **Bridges:** `BRIDGE`, `bridgeOf` (tile → bridge, cached), `stepBridges` (`br.on`, troop breaks, closing),
+  `canCross`, `bridgeGate`, `bridgeNear`, `showBridgeCard`, `bridgeConnect` / `bridgeUpgrade` / `bridgeClose` (by key
+  `s:b`, in `MP_ORDERS`), `bridgeGone`, `bridgeRoadPlan`, `roadToBridge` (from `finishSite`). `br.up` is saved.
+- **Placement and fields:** `harvestWhy`, `claimedTile`, `COLLECT_KINDS`, `idleCollector`, `drawIdleMarks`,
+  `DESERT_WHEAT` (in `stepSowing` and `recomputeHarvest`).
+- **Space gear:** `airless()`, `v.space`, sprites `sp_porter`, `sp_handcart`, `sp_horse`, `sp_carriage`, `sp_caravan`,
+  `sp_truck`, `sp_etruck`, `sp_autohauler` (made right after the last `Object.assign(SHAPES, ...)`).
+- **Market:** `MARKET` (now beside the market code), `priceOf`, `lotGold`, `tradeWhy`, `marketTrade(C, r, side, n)`,
+  `showMarket`, `marketDraw`, `MK` (the picked resource and amount), styles `.mk-*` in `style.css`.
 - **Importing for a purchase:** `askBuyImport`, `importAndBuy`, `buyImportPlan`, `sendImports` (shared with
   `importAndBuild`), `buyArrived` (called from `impArrive`), `game.pendingBuys` (not saved).
 - **Haulers:** `carRefit(v, C)` (the upgrade, whenever an empty hauler stops in a settlement: called from `carArrive`
@@ -490,62 +512,82 @@ AI** (the owner gave only the rule), it is marked *(AI's number)*: you may sugge
   stable** (it "often would not connect or work properly"). *(AI's choices: 6-character codes; the link is still
   offered as a second way in; all the timings in `MP_NET`.)*
 
-### Round 18 (IN PROGRESS, started 2026-11-26: questions asked, answers recorded, follow-ups pending, NO code yet)
-The owner's request: (1) deconstruct any building for half its cost, after an "Are you sure?"; abort a building under
-construction; (2) resource buildings can't be placed where they can't harvest; (3) explain the Market (done; owner:
-"not intuitive at all", make it simpler and easier to understand, keep the design very simple); (4) explain the free
-electric trucks (done); (5) roads onto bridges. The owner's answers so far (numbers = the AI's questions):
-- **Deconstruct (finished buildings):** every building except the central computer once it is a C.A.I.S. given 100%
-  of the energy share (`aiState(b).energy === 1`). A territory's last settlement too, after an "Are you sure?" that
-  explains the consequences. Refund: half of **everything paid for all the upgrade steps**; an upgraded building is
-  removed completely. The refund is left at the site for haulers to carry to the nearest settlement. Takes **3 to 5 s**,
-  longer for more advanced buildings, with a small dust cloud. The confirmation shows the resources you get back.
-  Allowed in war and in creative mode. Computer nations and the in-game AI never deconstruct buildings.
-- **Settlements:** before a settlement is deconstructed, haulers carry all its goods to the nearest settlements. Its
-  roads stay; the in-game AI may modify them freely.
-- **New feature asked in the answers: tap a stretch of road → "Expand road" or "Delete".** Expand = the existing
-  second lane (see Traffic above), on demand; keep the automatic widening as it is.
-- **Fortress/base deconstructed:** its troops walk to the nearest fortress or base of the territory; with none, they
-  stay in the settlement nearest enemies or potential enemies.
-- **Port/airport/launch pad deconstructed:** their vehicles go on existing, docking only at the remaining hubs of
-  their kind; with none, they sit idle. A plane in the air when the **last airport** goes flies around and crash-lands:
-  **13% survive** and sit on the ground; when an airport is built again a porter brings the plane to it. A rocket in
-  transit when the **last landing pad** goes tries to land on open ground: **2% (lowest mark) to 10% (highest mark)**
-  survive, raised up to **30%** with a C.A.I.S., by the **quantity** of energy it has (not the share).
-- **In-game AI and roads:** with Road restructuring on and an energy share of **75% or more**, it may delete roads
-  when it judges a more efficient layout exists.
-- **Abort (building under construction):** asks "Are you sure?" (without listing resources). Materials already
-  delivered are refunded **at half**, left at the site and picked up by haulers; the deconstruction finishes (with
-  the dust cloud, a few seconds) once a hauler has picked them up. Materials still on the way are dropped at the
-  settlement nearest to where their hauler is. Gold spent rushing is lost. Aborting an upgrade leaves the old building.
-- **Placement of resource buildings** (cabin, camp, refinery, derrick, rig, farms): blocked when no deposit of their
-  kind is in reach, **and** when every such deposit in reach is already claimed by another collector, **including one
-  still under construction**. Farms: blocked when there is no green land or desert in reach. Deposits outside your
-  border don't count. Keep the current look (red ghost, greyed Confirm). Collectors already placed that harvest
-  nothing are **marked**. The in-game AI follows the same rule.
-- **Desert wheat** (new rule from the answers): fields spread onto desert much more slowly, and desert fields are
-  harvested at **half** speed.
-- **Bridges:** railways already cross bridges (the owner's earlier report was a mistake). Roads must run onto bridges
-  (not seen so far). A basic bridge lets **one kind of vehicle across at a time**, switching between road haulers and
-  trains. Tapping a bridge offers **Deconstruct** or **Upgrade**; the upgrade lets both cross at once, both ways.
-  Roads onto a bridge are paid in stone. A road goes to a bridge **only** when a **new** settlement is placed and a
-  bridge is among the closest things it should join; existing settlements are connected by hand. Show the track on a
-  bridge when a railway is built over it.
-- **Free models** (electric trucks, self-driving haulers, diesel freighters, container ships, wide-body freighters):
-  should cost **a small amount of gold** (the AI chooses the amounts).
-- **Airless worlds:** people and animals hauling wear little astronaut helmets; trucks become space buggies (electric
-  and self-driving ones too); same stats as at home; back to normal once the world is fully terraformed. The AI draws
-  the art.
-- Second player: everything, in both modes ("almost no functional difference" between single player and co-op). In
-  Rivals you can never control anything of the other player's.
-Follow-up questions were sent on 2026-11-26; record their answers here, then move these lines into the sections
-above once round 18 is built.
+### Round 18 (2026-11-27): taking things down, roads, bridges, placement, market, space gear
+The owner answered every question ("push through"; numbers marked *AI's* were left to the AI).
+- **Deconstruct** any finished building (owner): "Are you sure?" listing what comes back. Refund: **half of everything
+  paid for all its upgrade steps** (`paidFor`); the building is removed completely. The refund waits at the site as a
+  yard job for a hauler to carry to the nearest settlement; then a dust cloud for **3 to 5 s** by how advanced it is
+  (*AI's split*: by the tech's place in the tree, under 30% → 3 s, under 60% → 4 s, else 5 s; `razeTime`). While it
+  comes down it no longer works (`underway` is true for `b.raze`). Allowed in war and in creative mode. Computer
+  nations and the in-game AI never deconstruct buildings.
+- **Settlement:** its goods (its `b.inv` share) are carried to the other settlements first; its people move to your
+  other settlements with room (this territory first, then others on the world; the rest leave: owner answers 4a, 5a);
+  its roads stay. The **last** settlement of a territory may go: the land stays yours, empty.
+- **Fortress/base:** its troops march to the nearest fortress or base of the territory; with none, to the settlement
+  nearest an enemy (at peace: the nearest nation), where they stay as its garrison: settlements with troops count in
+  `garrisons()` (they defend, and offer Transfer troops), cap 3× a base's (*AI's number*).
+- **Port/station/airport/launch pad:** its vehicles move to your other routes of that kind; with none they wait unused
+  (`game.idleFleet`, drawn where they stopped). A plane in the air when your **last airport** goes: **13% survive**
+  (owner's number), sit on the ground, can be tapped and scrapped for half a new plane's cost, and are towed at a
+  porter's pace to the next airport built. Rockets docked on a deconstructed pad wait for another pad.
+- **Rockets whose landing pad is gone** (any cause): another landing pad on that world; else fly back to the world
+  they came from (once); else land on open ground with **2% (Mk I) to 10% (Mk IV)** survival (owner), plus a C.A.I.S.
+  bonus by the **power it draws** (owner: quantity, not share), **up to 30%** in all (*AI's numbers*: Mk II 5%, Mk III
+  7%, +0.1% per MW, all worlds' C.A.I.S. together; `RLAND`, `landChance`). Crashing loses cargo and passengers.
+- **Abort** a site (owner): "Are you sure?" **without** listing resources. Delivered materials come back at **half**
+  (`razeRefund`); paid-but-not-yet-carried goods go straight back to stock (*AI's reading*: they never left the
+  settlement); loads on haulers are set down at the nearest settlement (stored on arrival); rush gold is lost.
+  Aborting an upgrade keeps the old building (`b.raze.keep`).
+- **The C.A.I.S. guards itself** (owner): while it is a C.A.I.S. with 100% of the energy share (`aiGuards`), Deconstruct
+  makes it speak instead: 11 escalating warnings (`AI_WARN`, written by the AI at the owner's request), then a verdict
+  on the player's game (`playStyle` / `aiVerdict`): an insult about running out of a resource, a neglected important
+  tech, land lost in war, or famine; or, for a good player, grudging respect and "I will be good. Please don't kill
+  me." After an insult every further try gets "There is nothing you can do to me." After respect the button works:
+  each click shows the plea with **Spare it** / **Flip the kill switch** (= deconstruct). *(AI's choices: 5 verdicts
+  in all, 4 insults + respect, owner asked for "five"; thresholds: a resource missing 4+ minutes, an important tech
+  skipped while 4+ later ones are done, 60+ tiles lost, 2+ minutes of famine; stats in `game.style`, saved; the talk
+  state is in `b.ai.talk`, saved; in co-op each player's dialogue counts on its own screen.)*
+- **Roads** (owner): tap a road (zoom 3+): it turns **bright green**, with **Expand** (one more lane, **3 lanes max** =
+  highway; same price as the automatic second lane, `LANE.stone` per tile per lane) and **Delete**. Deleting a road
+  between settlements warns that it **won't come back** until rebuilt (button "Rebuild the deleted road" on either
+  settlement's card; `game.noRoad`, saved); it was free, so nothing comes back. A road out to a building gives back
+  half its stone (owner liked the idea). The automatic widening stays as it was (two lanes).
+- **The in-game AI may delete roads** (owner): only with Road restructuring on and an energy share of **75%+**.
+  *(AI's rule: a little-used settlement road (busy < 0.08, one lane) with another way round at most 25% longer; at
+  most one a minute; `aiPruneRoads`.)*
+- **Placement of collectors** (owner): cabin, camp, refinery, derrick, farms are blocked where nothing of their kind
+  is in reach inside your border, **and** where everything in reach is already claimed by another collector of
+  yours, including one under construction (`harvestWhy`, called from `canBuild`; *AI's choice*: "claimed" = within
+  that collector's reach; upgrades such as the mining rig aren't checked). Farms need green land or desert in reach
+  (home only for desert). Same red ghost and greyed Confirm as before. Collectors left with nothing get a red "!" and
+  a card line (`idleCollector`, `drawIdleMarks`). The in-game AI's building goes through `canBuild`, so it obeys.
+- **Desert wheat** (owner): sown **3× slower** (*AI's number*, approved) and harvested at **half** (`DESERT_WHEAT`).
+  Terraforming turns desert green, which ends both.
+- **Bridges** (owner): a basic bridge carries **one kind of traffic at a time**, road haulers or trains, each both
+  ways; both give way to **troops**. *(AI's rules, `BRIDGE`: a kind that has waited 20 s goes next, so neither is
+  locked out; troops crossing for 20 s pause 6 s to let the others through; checks at the moment of stepping onto
+  the bridge, in `moveAlong` (haulers, armies), `stepShipments` (marching troops, trade porters) and the train loop.)*
+  Tapping a bridge: **Upgrade** (no tech; its stone again + 2 iron a tile: *AI's prices*, owner liked them) = all
+  traffic at once; **Connect to road** (paid in stone, `bridgeRoadPlan`); **Deconstruct** (half the stone back;
+  nothing new routes over it; it comes down once the traffic on it has crossed; roads and rail lines over it are cut).
+  A **new** settlement whose nearest neighbour is a bridge gets one road over it, free (`roadToBridge`); existing
+  settlements are connected by hand. Upgraded bridges are drawn with a second deck.
+- **Automatic models cost a little gold** (owner: "a small amount of gold"; *AI's numbers*): electric truck 10,
+  self-driving hauler 25, diesel freighter 15, container ship 30, wide-body freighter 30. No gold: the old model stays.
+- **Airless worlds** (owner): people and animals hauling wear glass helmets, carts get metal wheels ("the works"),
+  trucks become **space buggies** (electric and self-driving versions too), same stats, on any world with no
+  breathable air until it is fully terraformed. The look changes when a hauler stops in a settlement, like an
+  upgrade (`v.space`, set in `atHub` / `addCar`; sprites `sp_*` in `SHAPES`). Art drawn by the AI.
+- **Market** (owner: "not intuitive at all", "hyper-simplify", design left to the AI, cross-checked by a second
+  agent): a grid of the resources you know (one always picked, last choice remembered), one line "Wood · you have
+  120", amount chips 10 · 50 · 100, two big buttons "Buy 50 for 10 🪙" / "Sell 50 for 6 🪙" with a short reason under a
+  greyed one, a fading confirmation, Close. Same prices as before (`MARKET`, `priceOf`, `tradeWhy`, `marketDraw`).
 
 ### Earlier rounds (done; listed so you know they exist)
 Tech tree edits; gun ranges; Casimir drive and Alcubierre drive; megaprojects; all the art redrawn (round 9); walls
 (picking ends, straight walls); the transport progression; imports (from your nearest territory on the same planet
 first, other worlds only if none); troop transfers; an iPhone freeze fix (the command panel closes when you pick
-Expedition, Attack or Fire); diplomacy by envoy; counter-offers; round 17 (2026-11-26): multiplayer Host/Join with a 6-character code and
+Expedition, Attack or Fire); diplomacy by envoy; counter-offers; round 18 (2026-11-27, above); round 17 (2026-11-26): multiplayer Host/Join with a 6-character code and
 self-healing connections, Request porter, upgrades of empty haulers at any settlement stop, importing to hire troops
 and buy haulers, Connect to road reaching 90 tiles, messages that fit one or several territories.
 
@@ -586,6 +628,11 @@ cd <repo folder>/tests && node r13.mjs                # run any test
     game on a phone-sized screen with the code typed in small letters with a space → both in; then the line is cut,
     goes silent, the host reloads, the guest reloads: each time both come back by themselves. It needs a matchmaking
     server on this machine: `npm i peer`, then `node tests/peerserver.cjs` (the test passes `?ps=127.0.0.1:9000`).
+  - Round 18: `r18raze` (deconstruct a fort for half, its troops march; abort a site; the C.A.I.S. warnings, verdict,
+    plea and kill switch; the last-settlement warning; rocket landing chances; also `node r18raze.mjs phone`),
+    `r18map` (the placement rule and greyed Confirm, a road tapped, expanded to three lanes, deleted, kept deleted,
+    rebuilt; a bridge's turn-taking, troops first, upgrade, card, deconstruction; automatic-model gold prices),
+    `r18market` (the market on phone and desktop sizes).
   - Round 17 fixes: `r17fix` (one territory: no "shipped in" wording; upgrades of parked haulers and of one walking in
     empty to load; Connect to road far away and greyed; Request porter across a sea route; importing to buy a hauler
     and to hire troops). It runs about 5 minutes: the imports are carried by a few slow haulers.
@@ -631,6 +678,15 @@ End commit messages with whatever attribution lines your own environment require
 - Request porter: a hauler waiting on a quay for a boat that never comes (no boat on the route) waits for ever, like
   goods do. Imports ordered for a purchase (`game.pendingBuys`) are not saved: after a reload the goods still arrive,
   but go into stock and the player buys by hand. Calling a hauler from another world was not tested in a browser.
+- Round 18, not tested in a browser: a plane actually crashing when the last airport goes, a towed plane reaching a
+  new airport, a rocket turning back or landing on open ground (only the chances were checked), troops crossing a
+  basic bridge while a train waits (the rules were checked directly), a new settlement's road over a bridge, the
+  space buggies on the Moon (the sprites were checked side by side), and the in-game AI deleting a road.
+- Bridges between two **different** territories: roads stay inside one territory (each road belongs to one), so
+  "Connect to road" stops at the bridge's end when the far shore is another territory.
+- When a deconstructed hub's vessels move to another route they start at its first end, wherever that is.
+- In co-op, the C.A.I.S. dialogue count is kept on each player's own screen (the host's game decides only the kill
+  switch). Not saved: imports for purchases (as before), a bridge that was coming down (it is saved as gone).
 - **Rivals:** computer nations raid only the host; their offers go only to the host; fights between computer nations
   and the second player are worked out on the host's side using a copy of the second player's troops.
 - Troops sent to another world by rocket: if their launch pad is across water, the march to it may still show a boat
