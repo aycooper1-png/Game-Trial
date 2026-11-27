@@ -59,6 +59,12 @@ produce; offers from nations stay on screen until you answer; a building's card 
 picking a colony's landing site has a **Cancel** button; and in co-op the second player's expeditions, colony ships,
 defence settings, warhead choice and C.A.I.S. settings now reach the host's game.
 
+## Round 23: the "frozen" game
+A friend's game froze a few minutes after he bought a lot of porters. With his game in hand the cause was found: the
+way porters work out a path round a coast could go round in circles and give up on places it could actually reach, so
+with hundreds of porters looking for work at once the game stopped for over a minute at a time. That's fixed, and big
+fleets can no longer hold up the game: his game now runs smoothly where it used to stop.
+
 ## Sending your game to someone
 **Command → 📤 Send my game** makes a link to your game exactly as it is now, to send by WhatsApp, text or anything else
 (for example, so someone can look into a problem). If your game is too big to fit in a message as a link, it becomes a

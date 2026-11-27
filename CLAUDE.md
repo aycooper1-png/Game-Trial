@@ -170,7 +170,7 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 | `.nojekyll` | Makes GitHub Pages serve files as they are. Keep it. |
 
 **Cache tag:** `index.html` loads `style.css?v=N` and `game.js?v=N`. **Increase N by one on every push**, in both
-places, or phones keep running the old code. Look in `index.html` for the current N (it was 33 on 2026-11-27). Since round 21 the game also checks on start whether
+places, or phones keep running the old code. Look in `index.html` for the current N (it was 34 on 2026-11-27). Since round 21 the game also checks on start whether
 `index.html` online names a newer N than the script it is running, and if so saves and reloads once (`checkFresh`), so
 phones that kept an old copy catch up. (Side effect for tests: a page whose `index.html` changes mid-run reloads itself.)
 
@@ -751,6 +751,31 @@ specifically to that iteration of the game so it can let you analyze it", sendab
   receiver's own game is untouched, and a banner says "A copy of someone's game (… played) · nothing here is saved"
   with **Back to my game**. *(AI's choices.)*
 
+### Round 23 (2026-11-27): the friend's freeze, found in his own game
+The owner forwarded the friend's game (sent with Send my game; it arrived as a Word file holding the text, and the
+payload was read out of `word/document.xml`) with his note: he "spent the majority of [his] time planting machine gun
+nests and expanding territory until [he] finally realized [he] need[ed] to buy porters and from that point until it
+froze was a matter of minutes". His game: creative mode, 185 settlements, 230 gun nests and mortars, **1,788 porters**.
+It is kept as `tests/fixtures/friend-freeze.txt` (`r23`).
+- **The cause (a real bug, old):** `tilePath` stored distances as 32-bit numbers (`AS_G`). A second way to a tile
+  exactly as good as the first then looked like an improvement after rounding, so the search re-queued it and, in a
+  ripple, went over the same ground again and again. On a big map a long way round a coast used up the whole 400,000
+  allowance and the place was taken as **unreachable** (even a 5,000,000 search failed on 349,000 tiles of land).
+  Every free porter retried such searches (`carNextJob` → `carGo` → `findRoute` → `keepOnLand` → `landWay` →
+  `tilePath`): one step of his game took **91 s**, then 0.5–0.7 s stalls every few seconds, and the porters never got
+  anywhere. Fixed: `AS_G` is 64-bit, and a stale queued copy is skipped without counting (identical results, far less
+  work). The same route now takes 57,000 steps and 0.12 s.
+- **Also, so a huge fleet can't freeze a step:** at most `CAR_THINK_MS` (8 ms) per step of haulers choosing a job (the
+  rest choose next step; one always does); `landWayCache` holds 6,000 ways and forgets its oldest third when full (it
+  forgot everything at 400); a long way round (past 40,000 steps) is shared by everything starting in the same 8×8
+  patch for the same goal (`longWayCache`, only when the short hop into the patch is dry). `militaryTick`'s base →
+  fortress transfers work out marching routes only to the 6 fortresses nearest as the crow flies (it was every base ×
+  every fortress every 3 s). `landGroup` remembers its answer per landmass until the bridges change (`bridgeVer`).
+- Result on his game: 600 steps 110 s → 23 s; steps over 0.3 s 119 → 1–2 (just after loading); a step averages ~29 ms
+  and 330+ porters are on the move. (*AI's numbers*: 8 ms, 6,000 / 1,500 cache sizes, 8×8 patches, 6 fortresses.)
+- Side effect: where two ways are exactly as good, the search may now pick the other one of the two (same length), so a
+  new road or wall can come out slightly differently shaped than it would have before.
+
 ### Earlier rounds (done; listed so you know they exist)
 Tech tree edits; gun ranges; Casimir drive and Alcubierre drive; megaprojects; all the art redrawn (round 9); walls
 (picking ends, straight walls); the transport progression; imports (from your nearest territory on the same planet
@@ -818,6 +843,9 @@ cd <repo folder>/tests && node r13.mjs                # run any test
     very same game as a copy with the banner; the receiver's own save untouched; Back to my game; a broken link says so
     and doesn't loop; and with a big save as argument, `node r22.mjs <file with {k, v}>`, the file route and opening
     the file).
+  - Round 23: `r23` (the friend's frozen game from `tests/fixtures/friend-freeze.txt`: it loads with its 1,788 porters;
+    five routes round the coast that were "unreachable" are found in under 1 s each; a minute of play has no step over
+    1.5 s and at most a few over 0.3 s, with porters moving). Suite runners must copy `tests/fixtures/` too.
   - Round 17 fixes: `r17fix` (one territory: no "shipped in" wording; upgrades of parked haulers and of one walking in
     empty to load; Connect to road far away and greyed; Request porter across a sea route; importing to buy a hauler
     and to hire troops). It runs about 5 minutes: the imports are carried by a few slow haulers.
@@ -875,6 +903,9 @@ End commit messages with whatever attribution lines your own environment require
 - Round 22: the share menu with a file (`navigator.share` with files) and WhatsApp itself were not tested (no phone
   here); the page falls back to saving the file. A game played from a home-screen icon keeps its save apart from Safari's:
   then `save.html` must be opened from that icon's app (the page says so when it finds no game).
+- Round 23: the friend's game still runs below real time on a desktop (about 0.55 game seconds per second here, most
+  of it drawing 1,788 porters in this machine's software graphics); on his phone it will be slower but should no
+  longer stop. Not tried on his phone yet.
 - Round 19/20/21: the friend's freeze was never seen on a real iPhone. Round 21's iOS 15 finding matches the screenshot
   exactly, but the friend's iOS version is not known. If it happens again: ask which iOS (Settings → General → About)
   and for a screenshot of the "Something keeps going wrong" notice if one appears.

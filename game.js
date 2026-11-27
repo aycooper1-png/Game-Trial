@@ -1858,6 +1858,7 @@ function generateTerrain() {
     }
     lm++;
   }
+  lgMemo.clear();                                  // land groups worked out before are void now
 }
 
 // Spawn on open grassland near the middle of the disk: search the central 35% of the
@@ -3240,7 +3241,9 @@ function stepRoadWorks() {
   if (open) markNet();
 }
 // ---------- A* over tiles (8 directions), with a cost for stepping onto each tile ----------
-const AS_G = new Float32Array(N), AS_STAMP = new Int32Array(N), AS_FROM = new Int32Array(N);
+// (AS_G is 64-bit: with 32-bit numbers, a second way to a tile exactly as good as the first looked like an improvement
+// after rounding, so the search went over the same ground again and again and, on a big map, gave up on places it could reach)
+const AS_G = new Float64Array(N), AS_STAMP = new Int32Array(N), AS_FROM = new Int32Array(N);
 let asRun = 0;
 const D8 = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
 function tilePath(a, b, cost, maxExp = 30000) {
@@ -3270,10 +3273,15 @@ function tilePath(a, b, cost, maxExp = 30000) {
   AS_STAMP[a] = asRun; AS_G[a] = 0; AS_FROM[a] = -1;
   push(a, Math.hypot(a % W - bx, ((a / W) | 0) - by));
   let exp = 0;
-  while (heapI.length && exp++ < maxExp) {
-    const i = pop();
+  while (heapI.length && exp < maxExp) {
+    const f0 = heapF[0], i = pop();
     if (i === b) break;
     const x = i % W, y = (i / W) | 0, g = AS_G[i];
+    // a stale copy (the tile was queued again since, with a better way to it): going over it again would redo work
+    // already done and change nothing, so it is skipped and doesn't count. (Without this, a long way round on a big map
+    // used up the whole allowance on repeats, and places that can be reached were taken as unreachable.)
+    if (f0 > g + Math.hypot(x - bx, y - by) + 1e-9 * (1 + f0)) continue;
+    exp++;
     for (const [dx, dy, d] of D8) {
       const nx = x + dx, ny = y + dy;
       if (!inb(nx, ny)) continue;
@@ -3620,17 +3628,29 @@ function crossesWater(ax, ay, bx, by) {
   for (let k = 1; k < n; k++) { const x = Math.floor(ax + (bx - ax) * k / n), y = Math.floor(ay + (by - ay) * k / n); if (inb(x, y) && wet(idx(x, y))) return true; }
   return false;
 }
-let landWayCache = new Map();
+let landWayCache = new Map(), longWayCache = new Map();
 // the way over land (and bridges) from one point to another, as corner points; null if there is none
 function landWay(ax, ay, bx, by) {
   const a = idx(clamp(Math.floor(ax), 0, W - 1), clamp(Math.floor(ay), 0, H - 1)), b = idx(clamp(Math.floor(bx), 0, W - 1), clamp(Math.floor(by), 0, H - 1));
   const key = WORLD + ':' + (a * N + b) + ':' + game.bridges.length;
   if (landWayCache.has(key)) return landWayCache.get(key);
-  if (landWayCache.size > 400) landWayCache = new Map();
+  if (landWayCache.size > 6000) { let k = 0; for (const old of landWayCache.keys()) { landWayCache.delete(old); if (++k >= 2000) break; } }   // full: forget the oldest third (forgetting all at once made big fleets search again and again)
   let out = null;
   if (!wet(a) && !wet(b) && landGroup(a) === landGroup(b)) {
     const cost = i => (wet(i) ? Infinity : 1 / terrSpeed(i));
-    const P = tilePath(a, b, cost, 40000) || tilePath(a, b, cost, 400000);   // round a big lake takes a longer search
+    // a long way round a bay or a big lake is worked out once for each 8×8 patch of starting tiles and shared by
+    // everything starting there (a big fleet would otherwise search the whole coast once per hauler, for seconds)
+    const blk = (((ay / 8) | 0) * 1000 + ((ax / 8) | 0)) + ':' + b + ':' + WORLD + ':' + game.bridges.length;
+    let P = null, far = longWayCache.get(blk);
+    if (far && far.rep !== a && !crossesWater(ax, ay, far.rep % W + 0.5, ((far.rep / W) | 0) + 0.5) && landGroup(far.rep) === landGroup(a)) P = far.P ? [a, ...far.P] : null;
+    else {
+      P = tilePath(a, b, cost, 40000);
+      if (!P) {
+        P = tilePath(a, b, cost, 400000);            // round a big lake takes a longer search
+        if (longWayCache.size > 1500) { let k = 0; for (const old of longWayCache.keys()) { longWayCache.delete(old); if (++k >= 500) break; } }
+        longWayCache.set(blk, { rep: a, P });
+      }
+    }
     if (P) {
       const pts = P.map(t => [t % W + 0.5, ((t / W) | 0) + 0.5]), key2 = [[ax, ay]];
       let i = 0;
@@ -4722,8 +4742,15 @@ function bridgePlan(a, c) {
 }
 const railable = i => isLand(i) || bridgeAt[i] > 0;
 // landmasses joined by bridges count as one, so a station finds the stations across a bridge
+// (remembered per landmass until the world's bridges change: it was worked out afresh for every settlement in many lookups)
+let lgArr = null, lgKey = '', bridgeVer = 0;
+const lgMemo = new Map();
 function landGroup(i) {
-  let k = landmass[i];
+  const key = game.bridges.length + ':' + bridgeVer;
+  if (lgArr !== game.bridges || lgKey !== key) { lgMemo.clear(); lgArr = game.bridges; lgKey = key; }
+  const k0 = landmass[i], had = lgMemo.get(k0);
+  if (had !== undefined) return had;
+  let k = k0;
   const seenK = new Set();
   for (let changed = true; changed;) {
     changed = false;
@@ -4733,11 +4760,13 @@ function landGroup(i) {
       if ((b === k || seenK.has(b)) && !seenK.has(a) && a !== k) { seenK.add(a); changed = true; }
     }
   }
-  return Math.min(k, ...seenK);
+  const g = Math.min(k, ...seenK);
+  lgMemo.set(k0, g);
+  return g;
 }
 const bridgeEndsOf = i => game.bridges.flatMap(br => (br.s === i ? [br.b] : br.b === i ? [br.s] : []));
 function addBridge(br) {
-  game.bridges.push(br);
+  game.bridges.push(br); bridgeVer++;
   bridgeEnd[br.s]++; bridgeEnd[br.b]++;
   for (const t of br.tiles) bridgeAt[t]++;
 }
@@ -5929,11 +5958,13 @@ function stepTraffic(dt) {
     notify('🛣 A busy road got a second lane', `The road out of ${C.short} was jammed with haulers: it's two lanes now (${cost} stone).`);
   }
 }
+const CAR_THINK_MS = 8;                          // ms per step for haulers choosing a job, at most (one always gets to)
 function stepCars(dt) {
   stepTraffic(dt);
   if (game.hubJobs.some(H => H.done)) game.hubJobs = game.hubJobs.filter(H => !H.done);
   // a yard nobody can empty (no cars left in that domain): straight into stock
   for (const H of game.hubJobs) if (!H.done && !(H.cars > 0) && !game.cars.some(v => v.country === H.c)) { const C = liveCountry(H.c); if (C) yardDone(C, H.res, H.then); H.done = true; }
+  let thinkMs = 0;                                 // time spent this step on haulers choosing their next job
   for (const v of game.cars) {
     const C = liveCountry(v.country);
     if (!C) { v.gone = true; continue; }
@@ -5950,7 +5981,9 @@ function stepCars(dt) {
     }
     v.moving = false;
     v.idle += dt;
-    if (v.idle > 0.4) { v.idle = 0; carNextJob(v, C); }
+    // with hundreds of haulers free at once, only so many choose a job each step (the rest choose in the next one),
+    // or one step could take seconds and freeze the game
+    if (v.idle > 0.4 && thinkMs < CAR_THINK_MS) { v.idle = 0; const t0 = performance.now(); carNextJob(v, C); thinkMs += performance.now() - t0; }
   }
   game.cars = game.cars.filter(v => !v.gone);
 }
@@ -6547,14 +6580,14 @@ function bridgeClose(key) {
   br.closing = game.time;
   for (const t of br.tiles) bridgeAt[t] = Math.max(0, bridgeAt[t] - 1);   // nothing new is routed over it
   br.tilesOff = true;
-  game.netDirty = true; graphVer++; planCache.key = null; tradeCache.clear(); landWayCache = new Map();
+  game.netDirty = true; graphVer++; planCache.key = null; tradeCache.clear(); landWayCache = new Map(); longWayCache = new Map();
   toast('The bridge comes down once the traffic on it has crossed.');
   return true;
 }
 function bridgeGone(br) {
   const C = countryAt(br.s) || countryAt(br.b);
-  game.bridges.splice(game.bridges.indexOf(br), 1);
-  landWayCache = new Map(); tradeCache.clear();   // ways overland worked out with this bridge are forgotten
+  game.bridges.splice(game.bridges.indexOf(br), 1); bridgeVer++;
+  landWayCache = new Map(); longWayCache = new Map(); tradeCache.clear();   // ways overland worked out with this bridge are forgotten
   if (!br.tilesOff) for (const t of br.tiles) bridgeAt[t] = Math.max(0, bridgeAt[t] - 1);
   bridgeEnd[br.s] = Math.max(0, bridgeEnd[br.s] - 1); bridgeEnd[br.b] = Math.max(0, bridgeEnd[br.b] - 1);
   const over = t => br.tiles.includes(t);
@@ -6956,7 +6989,10 @@ function militaryTick(dt) {
   for (const b of garrisons()) {
     if (b.type !== 'base' || b.units < 1) continue;
     let best = null, bl = Infinity, route = null;
-    for (const f of forts) {
+    // the way there is worked out only for the few fortresses nearest as the crow flies (every base against every
+    // fortress, every 3 s, took seconds in a big realm)
+    const near = forts.filter(f => garrisonCap(f) - (f.units || 0) - (f.incoming || 0) >= 1).sort((p, q) => tileDist(p.i, ...tileCenter(b.i)) - tileDist(q.i, ...tileCenter(b.i))).slice(0, 6);
+    for (const f of near) {
       const room = garrisonCap(f) - (f.units || 0) - (f.incoming || 0);
       if (room < 1) continue;
       const r = armyRoute(b.i, ...tileCenter(f.i), countryAt(f.i));
