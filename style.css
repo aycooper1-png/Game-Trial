@@ -512,3 +512,10 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
 #tut-hl { position: fixed; z-index: 59; pointer-events: none; border: 3px solid #f2c14e; box-shadow: 0 0 0 4px rgba(242,193,78,0.25), 0 0 22px rgba(242,193,78,0.8); animation: tutpulse 1.2s ease-in-out infinite; }
 @keyframes tutpulse { 50% { box-shadow: 0 0 0 8px rgba(242,193,78,0.12), 0 0 30px rgba(242,193,78,1); } }
 @media (max-width: 600px) { #tut .tut-pic img { width: 42px; height: 42px; } #tut .tut-text { font-size: 14px; } #tut.bottom { bottom: calc(160px + env(safe-area-inset-bottom)); } }
+
+/* multiplayer: the game code, the code box, and the strip that says the line is down */
+.mp-code { font: 800 34px ui-monospace, Menlo, monospace; letter-spacing: 6px; text-align: center; padding: 10px 6px; margin: 8px 0; border-radius: 10px; border: 1px dashed #7bd389; background: #121821; color: #f2c14e; cursor: pointer; user-select: all; -webkit-user-select: all; }
+.mp-code.small { font-size: 20px; letter-spacing: 4px; padding: 5px; cursor: default; border-color: #3a4658; }
+.mp-code-in { display: block; width: 100%; box-sizing: border-box; margin: 10px 0 6px; padding: 10px 8px; border-radius: 10px; border: 1px solid #5b8bd8; background: #121821; color: #f2c14e; font: 800 28px ui-monospace, Menlo, monospace; letter-spacing: 6px; text-align: center; text-transform: uppercase; }
+.mp-code-in::placeholder { color: #3a4658; }
+#mp-net { position: fixed; left: 50%; top: calc(var(--top-h, 58px) + 8px); transform: translateX(-50%); z-index: 40; max-width: calc(100vw - 20px); padding: 7px 14px; border-radius: 9px; background: rgba(60, 28, 22, 0.95); border: 1px solid #ff7a6b; color: #ffe1dc; font-size: 13px; text-align: center; pointer-events: none; }

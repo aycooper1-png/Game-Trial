@@ -311,7 +311,7 @@ const CFG = {
   // Other buildings join when you connect them (stone per tile). Walls join two fortresses you pick.
   // links inside one domain: worth having only between hubs at least this far apart (tiles)
   intraLink: { rail: 20, air: 60, sea: 40 },
-  roads: { max: 40, links: 2, connectPerTile: 0.4, connectMin: 4, connectReach: 30, offRoad: 0.2, troopRoad: 4, repair: 30 },
+  roads: { max: 40, links: 2, connectPerTile: 0.4, connectMin: 4, connectReach: 30, connectFar: 90, offRoad: 0.2, troopRoad: 4, repair: 30 },
   // off the roads and walls, rough ground slows everything that walks or drives (x speed)
   terrainSpeed: { mountain: 0.35, polar: 0.55 },
   walls: { range: 36, stonePerTile: 1.5, ironPerTile: 0, speed: 0.8, speedTech: { firearms: 0.9, automobile: 1 },
@@ -2669,6 +2669,11 @@ function stepTroopFlights(dt) {
     f.t += dt;
     if (f.t < f.T) continue;
     f.done = true;
+    if (f.porter) {                                // a hauler you called from another world
+      if (worldGenerated(f.to)) onWorld(f.to, () => porterLands(f.porter, liveCountry(f.c) || game.countries.find(D => D.alive), f.lpad));
+      notify(`🚀 Your hauler has landed on ${WORLDS[f.to].name}`, 'It makes its way from the landing pad to the settlement that asked for it.');
+      continue;
+    }
     const land = () => { const C = liveCountry(f.c); if (!C) return; const g = buildingAt(f.g); shipGoods({ side: 'P', C }, { side: 'P', C }, {}, { a: f.lpad, b: g ? g.i : f.lpad, troops: f.n, on: { kind: 'troops', n: f.n, w: f.to, c: f.c, g: f.g } }); };
     if (worldGenerated(f.to)) onWorld(f.to, land);
     notify(`🚀 ${f.n} troops landed on ${WORLDS[f.to].name}`, 'They march from the landing pad to their garrison.');
@@ -2681,7 +2686,7 @@ function drawTroopFlights(z) {
       const x = lerp(a[0], b[0], e), y = lerp(a[1], b[1], e), dx = x - DISK.cx, dy = y - DISK.cy, d = Math.hypot(dx, dy) || 1, bow = Math.sin(Math.PI * u) * 60; return [x + dx / d * bow, y + dy / d * bow]; };
     const [x, y] = pos(0), [x2, y2] = pos(0.05);
     drawMovingRocket(x, y, x2, y2, z * 1.3, 'rocket');
-    const [sx, sy] = toScreen(x, y); if (z >= 0.5) badge(sx, sy - 18, f.n, { icon: unitStats().helm });
+    const [sx, sy] = toScreen(x, y); if (z >= 0.5 && !f.porter) badge(sx, sy - 18, f.n, { icon: unitStats().helm });
   }
 }
 // the transfer dialog: how many, then where (grouped by world), then confirm
@@ -4055,7 +4060,7 @@ function troopsAtQuay(on) {
 // goods reach the site they were sent for: what it still needs, it takes; anything over goes into the stock
 function impArrive(C, site, res) {
   const b = buildingAt(site), C2 = (b && countryAt(b.i)) || C;
-  if (!b || !b.site) return storeIn(C2, res);
+  if (!b || !b.site) { if (!buyArrived(site, res, C2)) storeIn(C2, res); return; }
   const S = b.site;
   S.imported = S.imported || {};
   for (const r in res) {
@@ -4070,6 +4075,7 @@ function impArrive(C, site, res) {
 // a consignment has reached domain C at one of its hubs: its hauler (if one came along) gets off, and the goods go on
 function deliver(q, C, hub = -1) {
   if (q.troops) return troopLeg(q, C, hub >= 0 ? hub : tileAt(C.lx, C.ly));
+  if (q.porter) return porterLands(q.porter, C, hub);   // a hauler you called: it gets off and carries on by itself
   if (q.rider) {
     const at = hub >= 0 ? hub : (nearestSettlement(C, C.lx, C.ly) || {}).i;
     const D = liveCountry(q.dest) || C;
@@ -4763,6 +4769,12 @@ function importAndBuild(i, type, P) {
   let ok = false;
   try { ok = tryBuild(i, type); } finally { buildAuto = was; }
   if (!ok) return false;
+  sendImports(P, C, i);
+  toast(`Importing ${costText(P.short)} into ${C.short} from ${P.from.map(f => game.countries[f.id].short).join(', ')}.`);
+  return true;
+}
+// the goods of an import plan leave their territories for tile i of C (a building site, or a building that's waiting for them)
+function sendImports(P, C, i) {
   for (const f of P.from) {                        // take it now and send it on its way
     const D = game.countries[f.id];
     for (const r in f.res) D.res[r] -= f.res[r];
@@ -4773,7 +4785,51 @@ function importAndBuild(i, type, P) {
       else impArrive(C, i, f.res);
     } else sendConsignment(D, { dest: C.id, site: i, res: { ...f.res }, imp: true });
   }
+}
+// ---------- importing for something you hire or buy (troops at a base or fort, a hauler at a settlement) ----------
+// The territory is short of what it costs, and your other territories on this world can send it: you're asked, the
+// goods travel like any import, and the hiring or buying is done by itself when the last of them arrives.
+// game.pendingBuys: [{ kind: 'troops' | 'car', at: tile, need: what is still on its way }]
+function buyImportPlan(b, cost) {
+  const C = b && countryAt(b.i);
+  if (!C) return null;
+  const short = shortfall(cost, C);
+  return Object.keys(short).length ? importPlan(C, short, b.i) : null;
+}
+function askBuyImport(b, kind, cost, what) {
+  const P = buyImportPlan(b, cost), C = countryAt(b.i);
+  if (!P) return false;
+  if (buildAuto === 'remote') return true;         // a second player's order: their own game asks them, and sends the answer
+  if ((game.pendingBuys || []).some(x => x.at === b.i && x.kind === kind && x.w === WORLD)) { toast(`The goods for that are already on their way to ${C.short}.`); return true; }
+  const srcs = P.from.map(f => `${game.countries[f.id].short} (${costText(f.res)})`).join(', '), short = costText(P.short);
+  showModal(`<div class="md-title">Import from your other territories?</div><div class="md-body">${C.short} doesn't have enough for ${what}: it's short of <b>${short}</b>.
+    <br><br>Your nearest territories have it: ${srcs}. Their haulers carry it over land, or out to their port, station or airport for the boat, train or plane across. ${kind === 'troops' ? 'The troops are hired' : 'It is bought'} as soon as it arrives.</div>`,
+    [{ label: `Import ${short}`, cls: 'go', act: () => importAndBuy(b, kind, P, cost) }, { label: 'No', act: () => {} }]);
+  return true;
+}
+function importAndBuy(b, kind, P, cost) {
+  const C = game.countries[P.to];
+  if (!C || !C.alive || !b || !buildingAt(b.i)) return false;
+  for (const f of P.from) { const D = game.countries[f.id]; for (const r in f.res) if (!D.alive || (D.res[r] || 0) < f.res[r]) { toast(`${D.short} no longer has ${f.res[r]} ${r} to spare`); return false; } }
+  (game.pendingBuys || (game.pendingBuys = [])).push({ kind, at: b.i, w: WORLD, need: { ...P.short }, short: { ...P.short }, cost: cost || null });
   toast(`Importing ${costText(P.short)} into ${C.short} from ${P.from.map(f => game.countries[f.id].short).join(', ')}.`);
+  sendImports(P, C, b.i);
+  return true;
+}
+// imported goods reach tile `at`: if something there is waiting to be bought with them, they are kept for it (not
+// lost to a full store), and when the last of them is in, it is bought. true: the goods were taken for that.
+function buyArrived(at, res, C) {
+  const x = (game.pendingBuys || []).find(q => q.at === at && q.w === WORLD);
+  if (!x) return false;
+  x.got = x.got || {};
+  for (const r in res) { x.got[r] = (x.got[r] || 0) + res[r]; if (x.need[r] != null) x.need[r] -= res[r]; }
+  if (Object.values(x.need).some(n => n > 0.5)) return true;
+  game.pendingBuys = game.pendingBuys.filter(q => q !== x);
+  for (const r in x.got) C.res[r] = (C.res[r] || 0) + Math.max(x.got[r], (x.short || {})[r] || 0);   // straight to the purchase (loads are shared out in fractions: made whole again here)
+  const b = buildingAt(at);
+  if (!b || !owner[at]) return true;
+  const was = buildAuto; buildAuto = 'imported';   // (no second question if it's still a little short)
+  try { if (x.kind === 'troops') hireTroops(b, x.cost && x.cost.gold); else buyVehicle('car', at); } finally { buildAuto = was; }   // troops at the price agreed when the gold was sent for
   return true;
 }
 // what's short (beyond what this world's linked domains can send), and the nearest world that can send all of it
@@ -4855,7 +4911,7 @@ function tryBuild(i, type) {
     const fromWorld = shipInPlan(C, i, short, {});
     if (fromWorld) return askShipIn(i, type, fromWorld);
     const lack = Object.keys(short)[0], all = game.countries.filter(D => D.alive).reduce((a, D) => a + Math.max(0, D.res[lack] || 0), 0);
-    toast(`Not enough ${lack}: ${C.short} needs ${fmtNum(cost[lack])}, and all your territories on ${WORLDS[WORLD].name} have ${fmtNum(all)} between them.`);
+    toast(game.countries.filter(D => D.alive && D.tiles).length > 1 ? `Not enough ${lack}: ${C.short} needs ${fmtNum(cost[lack])}, and all your territories on ${WORLDS[WORLD].name} have ${fmtNum(all)} between them.` : `Not enough ${lack}: ${C.short} needs ${fmtNum(cost[lack])} and has ${fmtNum(Math.max(0, C.res[lack] || 0))}.`);
     return false;
   }
   C.people -= settlers;
@@ -5272,12 +5328,12 @@ function addCar(C, S, tier = fleetTarget('car')) {
 // Only when it must: a hauler needed somewhere very far off, with no road there but a rail stop much closer.
 // Otherwise it drives itself (goods can still go by train without it: it sets them down at the station).
 function carRideRoute(v, x, y, walk) {
-  const C = liveCountry(v.country);
-  if (!C || Math.hypot(x - v.x, y - v.y) < 60) return null;
+  const C = liveCountry(v.country), called = !!(v.job && v.job.type === 'called');   // a hauler you called takes the train whenever it's quicker
+  if (!C || Math.hypot(x - v.x, y - v.y) < (called ? 20 : 60)) return null;
   const prof0 = carProf(v);
   let offLen = 0;
   for (let k = 0; k < walk.spd.length; k++) if (walk.spd[k] <= prof0.off * 1.01) offLen += Math.hypot(walk.pts[k + 1][0] - walk.pts[k][0], walk.pts[k + 1][1] - walk.pts[k][1]);
-  if (!walk.wet && offLen < 40) return null;       // a road (most of the way) takes it there: it drives
+  if (!walk.wet && offLen < 40 && !called) return null;       // a road (most of the way) takes it there: it drives
   const prof = carProf(v), T = scaledTier('rail', Math.max(0, trainTier(C, -1, fleetTarget('rail'))));
   if (!T) return null;
   let best = null, bt = walk.wet ? Infinity : walk.len * 0.8;
@@ -5293,7 +5349,7 @@ function carRideRoute(v, x, y, walk) {
   const a = findRoute(v.x, v.y, ...tileCenter(best[0]), prof), c = findRoute(...tileCenter(best[best.length - 1]), x, y, prof);
   if (a.wet || c.wet) return null;
   const offOf = r => { let t = 0; for (let k = 0; k < r.spd.length; k++) if (r.spd[k] <= prof.off * 1.01) t += Math.hypot(r.pts[k + 1][0] - r.pts[k][0], r.pts[k + 1][1] - r.pts[k][1]); return t; };
-  if (!walk.wet && offOf(a) + offOf(c) > offLen * 0.5) return null;   // the rail stop isn't much closer: it drives
+  if (!walk.wet && !called && offOf(a) + offOf(c) > offLen * 0.5) return null;   // the rail stop isn't much closer: it drives
   const pts = [...a.pts], spd = [...a.spd], ride = a.spd.map(() => false);
   for (let k = 2; k < best.length; k += 2) { pts.push(tileCenter(best[k])); spd.push(T.speed); ride.push(true); }
   pts.push(tileCenter(best[best.length - 1])); spd.push(T.speed); ride.push(true);
@@ -5321,6 +5377,8 @@ const carLoad = v => boxSum(v.cargo);
 // the next job for an idle car: a construction site whose goods are ready, an oil run to a base, the best pickup
 function carNextJob(v, C) {
   if (carLand(v) < 0) { const S0 = nearestSettlement(C, v.x, v.y); if (S0) [v.x, v.y] = tileCenter(S0.i); }   // stranded on water (an old save): back home
+  if (carRefit(v, C)) return;                      // standing empty in a settlement: the upgrade first, then the next job
+  if (v.call) return porterGo(v, C);               // called to a settlement: it has finished what it was doing, and sets off
   const here = t => carReach(v, t);
   // a settlement of C on the same land as tile t (goods are only ever carried over land, or across a bridge)
   const landSettlement = t => { const S = nearestSettlement(C, ...tileCenter(t)); return S && sameLand(S.i, t) ? S : null; };
@@ -5453,6 +5511,8 @@ function carArrive(v, C) {
   const act = v.act;
   v.act = null; v.pts = null;
   const J = v.job || {};
+  if (act === 'calledIn' || act === 'boardCall' || act === 'liftoff') return porterArrive(v, C, act, J);
+  carRefit(v, C);                                  // empty, in a settlement: the upgrade you ordered, before anything else
   if (act === 'loadSite') {
     const b = buildingAt(J.site);
     if (!b || !b.site) { v.job = null; return; }
@@ -5618,6 +5678,18 @@ function trainTier(C, cur = -1, cap = 99) {
     if (T[k].wood && C.res.wood > 5) return k;
   }
   return -1;
+}
+// A hauler that stops in a settlement of its territory with nothing on its back takes the upgrade you've ordered there
+// and then (a couple of seconds for each model) carries on with what it came for: loading for a site, parking, anything.
+function carRefit(v, C) {
+  if (v.kind !== 'car' || !C || carLoad(v) >= 0.01) return false;
+  const T = FLEET.car.tiers, nx = T[v.tier + 1];
+  if (!(v.tier < fleetTarget('car') || v.down || (nx && nx.auto && tierOpen('car') >= v.tier + 1))) return false;
+  const S = nearestSettlement(C, v.x, v.y);
+  if (!S || Math.hypot(S.i % W + 0.5 - v.x, ((S.i / W) | 0) + 0.5 - v.y) > 1.6) return false;
+  const was = v.tier;
+  atHub(v, C);
+  return v.tier !== was;
 }
 function atHub(v, C) {
   if (v.kind === 'rail') {                         // the upgrade you ordered, paid as it pulls in; then the best its fuel allows
@@ -5794,6 +5866,7 @@ function buyVehicle(kind, from) {
     const S = B && B.type === 'settlement' ? B : C && nearestSettlement(C, C.lx, C.ly);
     if (!C || !S) return toast('Buy carts and trucks at one of your settlements.');
     const miss = missingFor(cost, C);
+    if (miss && buildAuto !== 'imported' && askBuyImport(S, 'car', cost, `a ${FLEET.car.tiers[tgt].name.toLowerCase().replace(/s$/, '')}`)) return;   // short here: your other territories can send it
     if (miss) return toast(`${C.short} doesn't have enough ${miss} for a ${FLEET.car.tiers[tgt].name.toLowerCase().replace(/s$/, '')} (${costText(cost)})`);
     for (const [r, n] of Object.entries(cost)) C.res[r] -= n;
     const v = addCar(C, S, tgt);
@@ -5812,6 +5885,157 @@ function buyVehicle(kind, from) {
   const end = C === countryAt(L.a) ? 'a' : 'b';
   L.ships.push({ kind, tier: tgt, t: end === 'a' ? 0 : L.path.length - 1, dir: end === 'a' ? 1 : -1, cargo: undefined, to: -1 });
   toast(`New ${FLEET[kind].tiers[tgt].name.toLowerCase().replace(/s$/, '')} on the route ${countryAt(L.a) === countryAt(L.b) ? `across ${countryAt(L.a).short}` : `from ${countryAt(L.a).short} to ${countryAt(L.b).short}`} (${costText(cost)})`);
+}
+// ---------- calling a hauler to a settlement ("Request porter" on a settlement's card) ----------
+// One of your haulers comes over to stay and work around this settlement. It comes from the nearest place that has
+// haulers standing idle; if none is idle anywhere, from the territory whose haulers have the least waiting for them
+// (it finishes what it is carrying first). Never a territory's last hauler. It walks or drives if it can; otherwise it
+// rides: a train where that is quicker than the road, a boat rather than a plane between territories, and a rocket
+// between worlds (launch pad to landing pad). v.call = { to: settlement tile, c: its territory, w: its world }.
+const carWord = () => FLEET.car.tiers[Math.max(0, fleetTarget('car'))].name.toLowerCase().replace(/s$/, '');
+const PORTER_WAY = { rail: 1, sea: 1.2, air: 3 };   // which link a called hauler would rather ride (lower: sooner)
+// the first link to board in territory A on the way to territory B, by the cheapest kinds of link (or null: no way)
+function porterHop(A, B) {
+  const g = linkGraph(), cost = new Map([[B.id, 0]]), hop = new Map(), todo = [B];
+  while (todo.length) {
+    todo.sort((p, q) => cost.get(p.id) - cost.get(q.id));
+    const C = todo.shift();
+    for (const e of g.get(C.id) || []) {
+      const c = cost.get(C.id) + (PORTER_WAY[e.L.kind] || 2);
+      if (cost.has(e.to.id) && cost.get(e.to.id) <= c) continue;
+      cost.set(e.to.id, c); hop.set(e.to.id, { L: e.L, end: e.end === 'a' ? 'b' : 'a' });
+      todo.push(e.to);
+    }
+  }
+  return hop.get(A.id) || null;
+}
+// on the world that's swapped in: the hauler to send. can(v, A) says whether hauler v of territory A can make the
+// trip, and how far it is ({ d, way }), or null. Returns the pick (with why it was picked) or null.
+function porterChoose(can) {
+  const cars = game.cars.filter(v => !v.gone && !v.call), per = new Map();
+  for (const v of cars) per.set(v.country, (per.get(v.country) || 0) + 1);
+  const opts = [];
+  for (const v of cars) {
+    const A = liveCountry(v.country);
+    if (!A) continue;
+    const r = can(v, A);
+    if (!r || (!r.stays && per.get(A.id) < 2)) continue;   // never a territory's last hauler (unless it stays in that territory)
+    opts.push({ v, A, base: nearestSettlement(A, v.x, v.y), idle: (!v.job || v.job.type === 'park') && carLoad(v) < 0.01, ...r });
+  }
+  if (!opts.length) return null;
+  const idle = opts.filter(o => o.idle).sort((p, q) => p.d - q.d);
+  if (idle.length) return { ...idle[0], plenty: true, n: idle.filter(o => o.base === idle[0].base).length };
+  const need = new Map();
+  for (const o of opts) if (!need.has(o.A.id)) need.set(o.A.id, carNeed(o.A));
+  opts.sort((p, q) => need.get(p.A.id) - need.get(q.A.id) || carLoad(p.v) - carLoad(q.v) || p.d - q.d);
+  return { ...opts[0], plenty: false };
+}
+// the hauler that would answer a call from settlement S: on this world if there is one, else from another world
+function porterPick(S) {
+  const B = countryAt(S.i), [sx, sy] = tileCenter(S.i), home = WORLD;
+  if (!B) return null;
+  const here = porterChoose((v, A) => {
+    const base = nearestSettlement(A, v.x, v.y), d = Math.hypot(v.x - sx, v.y - sy);
+    if ((A === B && base && base.i === S.i) || d < 6) return null;   // it's already here
+    if (carReach(v, S.i)) return { d, way: 'land', stays: A === B };
+    if (A === B) return null;
+    const hop = porterHop(A, B);
+    return hop && carReach(v, hop.end === 'a' ? hop.L.a : hop.L.b) ? { d: d + 30, way: hop.L.kind } : null;
+  });
+  if (here) return { ...here, w: home };
+  // another world: by rocket, from a launch pad there to a landing pad here
+  if (!game.countries.some(D => D.alive && rocketPorts(home, D.id))) return null;
+  let best = null;
+  for (const P of WORLDS) {
+    if (P.id === home || !worldGenerated(P.id)) continue;
+    const pick = onWorld(P.id, () => {
+      const pads = game.countries.filter(D => D.alive).map(D => rocketPorts(P.id, D.id)).filter(Boolean);
+      return pads.length ? porterChoose(v => (pads.some(x => carReach(v, x.pad)) ? { d: worldGap(P.id, home), way: 'rocket' } : null)) : null;
+    });
+    if (pick && (!best || (pick.plenty && !best.plenty) || (pick.plenty === best.plenty && pick.d < best.d))) best = { ...pick, w: P.id };
+  }
+  return best;
+}
+const PORTER_BY = { land: 'over land', rail: 'by train', sea: 'by boat', air: 'by plane', rocket: 'by rocket' };
+// the question: who would come, from where and how; Confirm sends for it
+function askPorter(S) {
+  const B = countryAt(S.i), pick = porterPick(S), word = carWord();
+  if (!B) return;
+  if (!pick) {
+    return showModal(`<div class="md-title">Request ${word}</div><div class="md-body">No hauler can come to this settlement right now. One can be spared only if it is not already based here, is not its territory's last one, and has a way over: by land, by a sea route, rail line or air route between the territories, or (from another world) by rocket between launch and landing pads.
+      <br><br>You can buy one here instead.</div>`, [{ label: 'OK', act: () => {} }]);
+  }
+  const name = FLEET.car.tiers[pick.v.tier].name.toLowerCase().replace(/s$/, ''), from = `${pick.A.short}${pick.w !== WORLD ? ` on ${WORLDS[pick.w].name}` : ''}`;
+  showModal(`<div class="md-title">Request ${word}</div><div class="md-body">${pick.plenty
+    ? `A ${name} will come from ${from}, where ${pick.n > 1 ? `${pick.n} are` : 'one is'} standing idle${pick.A === B && pick.w === WORLD ? ' at another settlement' : ''}.`
+    : `None of your haulers is standing idle. A ${name} will come from ${from}, where they have the least waiting for them, as soon as it has set down what it is carrying.`}
+    It travels ${PORTER_BY[pick.way] || 'over land'}${pick.way === 'land' ? '' : ' (to the ' + (pick.way === 'rocket' ? 'launch pad' : HUB_NAME[pick.way] || 'port') + ' first)'}, then stays to work around this settlement.</div>`,
+    [{ label: 'Confirm', cls: 'go', act: () => { requestPorter(S); refreshCard(true); } }, { label: 'Cancel', act: () => {} }]);
+}
+// the order itself (also what a second player's game sends to the host)
+function requestPorter(S) {
+  const B = S && countryAt(S.i), pick = B && S.type === 'settlement' ? porterPick(S) : null;
+  if (!pick) { toast('No hauler can come to this settlement right now.'); return false; }
+  const call = { to: S.i, c: B.id, w: WORLD };
+  const go = () => { pick.v.call = call; if (pick.idle) { dropCarJob(pick.v); pick.v.job = null; pick.v.pts = null; pick.v.act = null; pick.v.idle = 1; } };
+  if (pick.w === WORLD) go(); else onWorld(pick.w, go);
+  toast(`A ${FLEET.car.tiers[pick.v.tier].name.toLowerCase().replace(/s$/, '')} from ${pick.A.short} is ${pick.plenty ? 'setting off' : 'coming once it has finished its load'}: ${PORTER_BY[pick.way] || 'over land'}.`);
+  return true;
+}
+// a called hauler with nothing left to do sets off: straight there if it can, else to the hub (or launch pad) it rides from
+function porterGo(v, C) {
+  const call = v.call, giveUp = why => { v.call = null; v.job = null; notify('🚶 A hauler could not come', why); };
+  if (carLoad(v)) { storeIn(C, v.cargo); v.cargo = {}; }
+  if ((call.w || 0) !== WORLD) {                   // another world: to a launch pad first
+    const pad = game.countries.filter(D => D.alive).map(D => rocketPorts(WORLD, D.id)).filter(p => p && carReach(v, p.pad))[0];
+    if (!pad) return giveUp(`It has no launch pad to leave ${WORLDS[WORLD].name} from.`);
+    v.job = { type: 'called', pad: pad.pad };
+    return carGo(v, ...tileCenter(pad.pad), 'liftoff');
+  }
+  const S = buildingAt(call.to), B = S && S.type === 'settlement' && owner[S.i] ? countryAt(S.i) : null;
+  if (!B) { v.call = null; v.job = null; return; }  // the settlement that asked is gone: it stays where it is
+  if (carReach(v, S.i)) {                          // it can walk or drive there: it now belongs to that settlement
+    v.country = B.id; v.home = S.i; v.local = S.i; v.localUntil = game.time + 90;
+    v.call = { ...call, walking: true };
+    v.job = { type: 'called' };
+    return carGo(v, ...tileCenter(S.i), 'calledIn');
+  }
+  const hop = C !== B ? porterHop(C, B) : null, hub = hop ? (hop.end === 'a' ? hop.L.a : hop.L.b) : -1;
+  if (!hop || !carReach(v, hub)) return giveUp(`There is no way from ${C.short} over to ${B.short} any more.`);
+  v.job = { type: 'called', hop: { a: hop.L.a, b: hop.L.b, end: hop.end } };
+  return carGo(v, ...tileCenter(hub), 'boardCall');
+}
+// a called hauler reaches where it was going: the settlement, the quay, or the launch pad
+function porterArrive(v, C, act, J) {
+  if (act === 'calledIn') {
+    v.call = null; v.job = null;
+    floatText(v.x, v.y - 1, `The ${FLEET.car.tiers[v.tier].name.toLowerCase().replace(/s$/, '')} you asked for has arrived`, '#9fd0ff');
+    atHub(v, C);
+    return;
+  }
+  if (act === 'boardCall') {                       // aboard the next boat, train or plane (it waits on the quay for one)
+    const L = J.hop && linkByEnds(J.hop.a, J.hop.b);
+    if (!L) { v.job = null; return; }              // the link is gone: it thinks again
+    (L.req || (L.req = { a: [], b: [] }))[J.hop.end].push({ dest: v.call.c, res: {}, porter: { tier: v.tier, call: { to: v.call.to, c: v.call.c, w: v.call.w || 0 } } });
+    floatText(v.x, v.y - 1, `A ${FLEET.car.tiers[v.tier].name.toLowerCase().replace(/s$/, '')} boards`, '#9fd0ff');
+    v.gone = true; v.job = null;
+    return;
+  }
+  if (act === 'liftoff') {                         // by rocket to the other world's landing pad
+    const to = v.call.w || 0, there = rocketPorts(to, v.call.c) || WORLDS.length && onWorld(to, () => game.countries.filter(D => D.alive).map(D => rocketPorts(to, D.id)).filter(Boolean)[0]);
+    if (!there) { v.call = null; v.job = null; notify('🚀 A hauler could not come', `There is no landing pad for it on ${WORLDS[to].name} any more.`); return; }
+    game.troopFlights.push({ n: 1, porter: { tier: v.tier, call: { to: v.call.to, c: v.call.c, w: to } }, from: WORLD, to, c: v.call.c, g: -1, lpad: there.lpad, pad: J.pad, t: 0, T: Math.max(12, worldGap(WORLD, to) * 0.6) });
+    floatText(v.x, v.y - 1, `A ${FLEET.car.tiers[v.tier].name.toLowerCase().replace(/s$/, '')} lifts off for ${WORLDS[to].short}`, '#f2c14e');
+    v.gone = true; v.job = null;
+  }
+}
+// a called hauler gets off a boat, train, plane or rocket at tile `at` of territory C, and carries on from there
+function porterLands(P, C, at) {
+  const D = (at >= 0 && countryAt(at)) || C;
+  if (!D) return;
+  const v = addCar(D, { i: at >= 0 ? at : (nearestSettlement(D, D.lx, D.ly) || { i: tileAt(D.lx, D.ly) }).i }, P.tier);
+  v.call = { ...P.call };
+  v.idle = 1;
 }
 // your whole fleet of a kind: how many, at what tier, and the cost of upgrading them all
 function fleetSummary(kind) {
@@ -6289,6 +6513,7 @@ let netTimer = 0, landTimer = 0, aiTimer = 0, aiFireTimer = 0, supplyTimer = 0;
 // every world advances each step: home first (it also runs research, nations and space), then the others
 function tickAll(dt) {
   if (MP.waiting || (mpGuest() && !MP.joined)) return;   // multiplayer: the game starts when both players are in
+  if (mpGuest() && !mpRival() && !LINK.up) return;       // co-op: the host's game is the world; while the line is down, wait for it
   const was = WORLD;
   useWorld(0); tick(dt, true);
   for (let w = 1; w < WORLDS.length; w++) if (worldData[w]) { useWorld(w); tick(dt, false); }
@@ -6680,7 +6905,7 @@ function worldSave() {
       hubJobs: game.hubJobs.filter(H => !H.done).map(H => ({ c: H.c, at: H.at, res: H.res, then: H.then })),
       links: game.links.map(L => ({ kind: L.kind, a: L.a, b: L.b, path: L.path, out: L.out || null, req: L.req || null, owe: L.owe || null,
         ships: (L.ships || []).map(V => ({ kind: V.kind, tier: V.tier, paid: V.paid, t: V.t, dir: V.dir, cargo: V.cargo || null, to: V.to ?? -1 })) })),
-      cars: game.cars.map(v => ({ c: v.country, tier: v.tier, x: v.x, y: v.y })), fleetTarget: game.fleetTarget, tv: 2,
+      cars: game.cars.map(v => ({ c: v.country, tier: v.tier, x: v.x, y: v.y, ...(v.call ? { call: { to: v.call.to, c: v.call.c, w: v.call.w || 0 } } : {}) })), fleetTarget: game.fleetTarget, tv: 2,
       space: {                                     // what's in orbit stays there; anything mid-flight comes home
         counts: [rocketCount, stationCount, shuttleId],
         flights: game.flights.filter(f => !f.done && f.orbit).map(f => ({ ...f, trail: f.trail.slice(-60) })),
@@ -6790,7 +7015,7 @@ function loadGame(sv) {
     if (!sv.tv) { if (game.fleetTarget.car >= 4) game.fleetTarget.car++; game.fleetTarget.rail = 9; }   // Caravans slot in before Trucks; old trains keep running as they did
   }
   game.armies = []; game.attacks = []; game.lost = new Map(); game.lostForts = new Map();
-  game.cars = (sv.cars || []).map(c => ({ id: carId++, kind: 'car', country: c.c, tier: oldTiers && c.tier >= 4 ? c.tier + 1 : c.tier, x: c.x, y: c.y, cargo: {}, plan: [], pts: null, idle: 0 }));
+  game.cars = (sv.cars || []).map(c => ({ id: carId++, kind: 'car', country: c.c, tier: oldTiers && c.tier >= 4 ? c.tier + 1 : c.tier, x: c.x, y: c.y, cargo: {}, plan: [], pts: null, idle: 0, ...(c.call ? { call: c.call } : {}) }));
   game.bridges = []; bridgeAt.fill(0); bridgeEnd.fill(0);
   for (const [s0, b, len, tiles] of sv.bridges || []) addBridge({ s: s0, b, len, tiles, t0: -99 });
   if (home) {
@@ -11411,7 +11636,7 @@ function nextCountry(dir) {
 function askNewGame() {
   modePicker('Start a new map?', 'This deletes your saved game. Pick how the other nations play (you can change it later from the Command menu):', m => newGame(m));
   const b = document.createElement('button');      // or play with a friend
-  b.className = 'mode-btn mp'; b.innerHTML = '<b>🎮 Multiplayer</b><span>Play with a friend: you send them a link. Rivals or co-op.</span>';
+  b.className = 'mode-btn mp'; b.innerHTML = '<b>🎮 Multiplayer</b><span>Play with a friend: host a game and give them the code, or join theirs. Rivals or co-op.</span>';
   b.onclick = () => { closeModal(); mpSetup(); };
   document.querySelector('#md-text .mode-list').appendChild(b);
 }
@@ -11738,6 +11963,22 @@ function confirmGhost() {
   }
   updateConfirm();
 }
+// how many territories you hold, on every world (the wording of several messages depends on it)
+function domainCount() {
+  let n = 0;
+  forWorlds(() => { n += game.countries.filter(c => c.alive && c.tiles).length; });
+  return n;
+}
+// placing a building its territory can't pay for: what would really happen, said plainly
+function shortLine(C, short, i) {
+  const what = Object.keys(short).join(', ');
+  if (domainCount() < 2) return `<span class="r">Not enough ${what}: ${C.short} needs ${costText(short)} more</span>`;
+  const here = importPlan(C, short, i);
+  if (here) return `<span class="a">${C.short} is short of ${what}: you'll be asked to import it from ${here.from.map(f => game.countries[f.id].short).join(', ')}</span>`;
+  if (importPlan(C, short)) return `<span class="r">${C.short} is short of ${what}: your other territories have it, but there's no way across (link them with ports, stations or airports)</span>`;
+  if (shipInPlan(C, i, short, {})) return `<span class="a">${C.short} is short of ${what}: you'll be asked to ship it in by rocket from another world</span>`;
+  return `<span class="r">Not enough ${what}: ${C.short} needs ${costText(short)} more, and your other territories can't spare it</span>`;
+}
 // what the building being placed would do there, and why it can't go there if it can't
 function updateConfirm() {
   const g = game.ghost, el = $('cf-info');
@@ -11757,7 +11998,7 @@ function updateConfirm() {
   let line = '';
   if (!why && C) {
     const short = shortfall(cost, C);
-    line = Object.keys(short).length ? `<span class="a">${C.short} is short of ${Object.keys(short).join(', ')}: it will be shipped in</span>` : `<span class="g">Paid by ${C.short}</span>`;
+    line = Object.keys(short).length ? shortLine(C, short, i) : `<span class="g">Paid by ${C.short}</span>`;
     if (def.people) line += ` · ${def.people} settlers`;
     if (plan && plan.note) line += ` · <span class="d">${plan.note}</span>`;
     else if (plan && plan.routes) line += ` · <span class="g">${LINK_NAME[def.link]}: ${plan.tiles} tiles</span>`;
@@ -11793,7 +12034,7 @@ function researchHtml() {
 }
 function renderBuildMenu() {
   const C = activeCountry();
-  $('bm-sub').textContent = C ? `Building in ${C.short}: it pays, or has the rest shipped from your linked domains` : '';
+  $('bm-sub').textContent = C ? (domainCount() > 1 ? `Building in ${C.short}: it pays, or you can import the rest from your other territories` : `Building in ${C.short}: it pays for what you build`) : '';
   $('research-box').innerHTML = researchHtml();
   const grid = $('bm-grid');
   grid.innerHTML = '';
@@ -11903,15 +12144,23 @@ function connectPlan(b, own = null) {
   const mine = own ? new Set(own.tiles) : null;    // when re-routing: its own road doesn't count as a road to join
   if (!C) return { why: 'Not your land' };
   let to = -1, td = Infinity;
-  for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
-    const d = dx * dx + dy * dy;
-    if (d >= td || d > R * R || !inb(bx + dx, by + dy)) continue;
-    const t = idx(bx + dx, by + dy);
-    if (t === b.i || countryAt(t) !== C) continue;
-    if (((NET[t] & 1) && !(mine && mine.has(t))) || building[t] === BLD_CODE.settlement) { td = d; to = t; }
+  const scan = R => {
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+      const d = dx * dx + dy * dy;
+      if (d >= td || d > R * R || !inb(bx + dx, by + dy)) continue;
+      const t = idx(bx + dx, by + dy);
+      if (t === b.i || countryAt(t) !== C) continue;
+      if (((NET[t] & 1) && !(mine && mine.has(t))) || building[t] === BLD_CODE.settlement) { td = d; to = t; }
+    }
+  };
+  scan(R);
+  if (to < 0 && !own) scan(CFG.roads.connectFar);  // nothing near (a far-off mine or rig): look further; the road just costs more
+  if (to < 0) return { why: `No road or settlement of ${C.short} within ${own ? R : CFG.roads.connectFar} tiles` };
+  let line = makeLine(b.i, to, sideOf(b.i), true, td > R * R ? 60000 : 20000);
+  if (!line && !own) {                             // the nearest road can't be reached over your land: try the nearest settlement on this land
+    const S = nearestSettlement(C, bx + 0.5, by + 0.5);
+    if (S && S.i !== to && S.i !== b.i && sameLand(S.i, b.i)) { line = makeLine(b.i, S.i, sideOf(b.i), true, 60000); if (line) to = S.i; }
   }
-  if (to < 0) return { why: `No road or settlement of ${C.short} within ${R} tiles` };
-  const line = makeLine(b.i, to, sideOf(b.i), true, 20000);
   if (!line) return { why: 'No way over your land from here to the road' };
   const RC = CFG.roads;
   return { line, to, cost: { stone: Math.max(RC.connectMin, Math.ceil(line.len * RC.connectPerTile)) } };
@@ -13029,11 +13278,14 @@ function rushSite(b) {
 // mercenaries: troops for gold, at once (dearer as your troops get better)
 const MERC = { n: 10, each: 3 };
 const mercCost = () => Math.ceil(MERC.n * MERC.each * techFactor(game.research.done));
-function hireTroops(b) {
-  const C = countryAt(b.i), g = mercCost(), room = garrisonCap(b) - (b.units || 0);
+function hireTroops(b, price) {
+  const C = countryAt(b.i), g = price > 0 ? Math.min(price, mercCost()) : mercCost(), room = garrisonCap(b) - (b.units || 0);
   if (!C) return;
   if (room < 1) return toast('No room for more troops here');
-  if (goldOf(C) < g) return toast(`${C.short} needs ${g} gold to hire ${MERC.n} troops`);
+  if (goldOf(C) < g) {                             // short of gold here: your other territories can send it
+    if (buildAuto !== 'imported' && askBuyImport(b, 'troops', { gold: g }, `${MERC.n} hired troops`)) return;
+    return toast(`${C.short} needs ${g} gold to hire ${MERC.n} troops (it has ${fmtNum(goldOf(C))})`);
+  }
   C.res.gold -= g; b.units = (b.units || 0) + Math.min(MERC.n, room);
   floatText(b.i % W + 0.5, ((b.i / W) | 0) - 1, `+${Math.min(MERC.n, Math.floor(room))} hired`, '#f2c14e');
 }
@@ -13080,7 +13332,7 @@ function showBuildingCard(b) {
   if (b.site && b.site.wet && !(b.site.cars > 0)) lines.push('<span class="r">Its materials are across the water: porters, carts and trucks can\'t swim. Build a bridge, or a port or airport at both ends.</span>');
   else if (b.site) lines.push(`<span class="a">${(b.site.cars || 0) > 0 ? `Materials on their way: ${b.site.cars} hauler${b.site.cars > 1 ? 's' : ''}${boxSum(siteHaul(b.site)) - (b.site.claim || 0) >= 0.5 ? `, ${Math.ceil(boxSum(siteHaul(b.site)) - (b.site.claim || 0))} more to carry` : ''}` : (b.site.pending || 0) > 0.5 ? 'Materials on their way by train' : b.site.ready ? 'Waiting for a free car (buy more at any settlement)' : 'Waiting for ' + (Object.entries(b.site.need).filter(([, v]) => v >= 0.5).map(([r, v]) => `${Math.ceil(v)} ${r}`).join(', ') || 'a delivery')}</span>`);
   if (b.type === 'settlement') lines.push(`Holds ${Math.round(settlementCap(b))} people from ${b.tiles} tiles in reach. Roads join it to the other settlements of ${C ? C.short : 'its domain'} by themselves, and haulers bring harvests here.`);
-  if ((b.type === 'base' || b.type === 'fort') && !underway(b) && C && unitStats().type) btns.push({ label: `Hire ${MERC.n} troops · ${mercCost()} gold`, act: () => { hireTroops(b); refreshCard(true); }, off: goldOf(C) < mercCost() || (b.units || 0) >= garrisonCap(b) - 0.5 });
+  if ((b.type === 'base' || b.type === 'fort') && !underway(b) && C && unitStats().type) btns.push({ label: `Hire ${MERC.n} troops · ${mercCost()} gold${goldOf(C) < mercCost() && buyImportPlan(b, { gold: mercCost() }) ? ' (import…)' : ''}`, act: () => { hireTroops(b); refreshCard(true); }, off: (goldOf(C) < mercCost() && !buyImportPlan(b, { gold: mercCost() })) || (b.units || 0) >= garrisonCap(b) - 0.5 });
   if (b.type === 'settlement' && !underway(b)) btns.push({ label: `Market · ${fmtNum(goldOf(C))} gold`, act: () => showMarket() });
   if (b.type === 'settlement' && !underway(b) && C) {     // its share of the domain's stock
     const inv = invOf(b), list = RESOURCES.filter(r => (inv[r] || 0) >= 0.5 && resKnown(r));
@@ -13108,6 +13360,7 @@ function showBuildingCard(b) {
       const P = connectPlan(b);
       lines.push(P.why ? `<span class="d">Not on a road (${P.why.toLowerCase()}). Haulers and troops go slower off-road.</span>` : '<span class="d">Not on a road yet: haulers and troops go slower off-road.</span>');
       if (!P.why) btns.push({ label: `Connect to road · ${P.cost.stone} stone`, cls: 'go', act: () => connectToRoad(b), off: C && C.res.stone < P.cost.stone });
+      else btns.push({ label: `Connect to road: ${P.why.toLowerCase()}`, act: () => toast(P.why), off: true });   // the option is always there; when it can't be done it says why
     }
   }
   if ((b.type === 'fort' || b.type === 'base') && !underway(b) && (b.units || 0) >= 1) btns.push({ label: 'Transfer troops…', act: () => showTransfer(b) });
@@ -13119,7 +13372,12 @@ function showBuildingCard(b) {
     const tiers = {};
     for (const v of F.list) { const n = FLEET[fk].tiers[workTier(v)].name; tiers[n] = (tiers[n] || 0) + 1; }
     lines.push(`<b>${F.count} ${FLEET[fk].name}</b>${F.count ? ` (${Object.entries(tiers).map(([n, k]) => `${k} ${n.toLowerCase()}`).join(', ')}) · ${busy} busy` : ''}${fk === 'car' ? ` · carrying ${T.cargo} each` : ''}`);
-    btns.push({ label: `Buy ${T.name.toLowerCase().replace(/s$/, '')} · ${costText(T.cost)}`, cls: 'go', act: () => { buyVehicle(fk, b.i); showBuildingCard(b); } });
+    btns.push({ label: `Buy ${T.name.toLowerCase().replace(/s$/, '')} · ${costText(T.cost)}${fk === 'car' && C && missingFor(T.cost, C) && buyImportPlan(b, T.cost) ? ' (import…)' : ''}`, cls: 'go', act: () => { buyVehicle(fk, b.i); if (!modalOpen) showBuildingCard(b); } });
+    if (fk === 'car' && C) {                         // call one over from where your haulers have least to do
+      const coming = game.cars.filter(v => !v.gone && v.call && v.call.to === b.i && (v.call.w || 0) === WORLD).length;
+      if (coming) lines.push(`<span class="g">${coming} hauler${coming > 1 ? 's' : ''} on the way here, as you asked.</span>`);
+      btns.push({ label: `Request ${carWord()}`, act: () => askPorter(b) });
+    }
     if (F.behind && F.tgt > 0) lines.push(`<span class="a">Upgrading to ${FLEET[fk].tiers[F.tgt].name.toLowerCase()}: ${F.behind} still to refit (${costText(F.leftCost)} left), each as it next calls in.</span>`);
     if (F.up) btns.push({ label: `Upgrade all to ${F.up.name.toLowerCase()} · ${costText(F.upCost)}`, act: () => { orderUpgrade(fk); showBuildingCard(b); } });
   }
@@ -14005,7 +14263,7 @@ const TUT_STEPS = {
     { title: 'Space', pic: ['pad', 'rocket', 'lpad'],
       text: `Far up the research tree: launch pads, rockets and colonies on the Moon and beyond, each its own territory with its own landing pad. Getting things there takes rockets, patience, and fuel.` },
     { title: 'Playing with a friend', pic: ['person', 'person'],
-      text: `<b>New map → Multiplayer</b> sends a friend a link. <b>Rivals</b>: you each run your own realm, as neighbours (friendly or not). <b>Co-op</b>: you run one empire together.` },
+      text: `<b>New map → Multiplayer</b>: one of you taps <b>Host a game</b> and gets a code; the other taps <b>Join a game</b> and types it. <b>Rivals</b>: you each run your own realm, as neighbours (friendly or not). <b>Co-op</b>: you run one empire together.` },
     { title: 'All done!', pic: ['rocket', 'settle1'], last: true,
       text: `That's everything. Go forth and rule wisely (or at least loudly). The 📖 book in the Command panel brings this tour back any time.` },
   ],
@@ -14493,8 +14751,34 @@ if (params.get('join')) Object.assign(MP, { role: 'guest', style: params.get('st
 const mpGuest = () => MP.role === 'guest';
 const mpRival = () => MP.style === 'rivals';
 const SNAP_EVERY = 2;
-// the link the host sends: the same map (seed and mode), the room to join, the style
-const mpLink = () => `${location.origin}${location.pathname}?join=${MP.room}&seed=${SEED}&style=${MP.style}&mode=${game.gmode}${MP.tr === 'bc' ? '&tr=bc' : ''}`;
+// the link the host can also send: the same map (seed and mode), the room to join, the style
+const mpLink = () => `${location.origin}${location.pathname}?join=${MP.room}&seed=${SEED}&style=${MP.style}&mode=${game.gmode}${mpTestQ()}`;
+// tests only: &tr=bc (two tabs of one browser, no network) and &ps=host:port (a matchmaking server of your own)
+const mpTestQ = () => (MP.tr === 'bc' ? '&tr=bc' : '') + (params.get('ps') ? '&ps=' + params.get('ps') : '');
+// ---------- game codes: six letters and digits that say everything a friend's game needs ----------
+// The first five are random (they name the room, and the map's seed is worked out from them); the last one holds the
+// style and how the other nations play. No 0, O, 1 or I: they are too easy to mix up when read out.
+const MP_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const MP_MODES = ['peaceful', 'easy', 'normal', 'hard', 'murder'];
+function mpCodeSeed(code) {
+  let h = 2166136261;
+  for (const ch of code.slice(0, 5)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  return (h >>> 0) % 1000000;
+}
+function mpMakeCode(style, mode) {
+  const rnd = n => { try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] % n; } catch (e) { return (Math.random() * n) | 0; } };
+  let s = '';
+  for (let k = 0; k < 5; k++) s += MP_ABC[rnd(32)];
+  const v = (style === 'coop' ? 5 : 0) + Math.max(0, MP_MODES.indexOf(mode));
+  return s + MP_ABC[v + 10 * rnd(3)];
+}
+// what a typed code means (spaces, dashes and small letters are fine), or null if it can't be a code
+function mpReadCode(text) {
+  const code = String(text || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (code.length !== 6 || [...code].some(ch => !MP_ABC.includes(ch))) return null;
+  const v = MP_ABC.indexOf(code[5]) % 10;
+  return { code, seed: mpCodeSeed(code), style: v >= 5 ? 'coop' : 'rivals', mode: MP_MODES[v % 5] };
+}
 // ---------- the wire: PeerJS (or, for testing, two tabs of one browser) ----------
 // PeerJS (MIT licence) ships with the game; the copy on unpkg is the fallback
 function mpLoadPeer() {
@@ -14506,53 +14790,198 @@ function mpLoadPeer() {
   if (window.Peer) return Promise.resolve();
   return load('peerjs.min.js').catch(() => load('https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'));
 }
+// The state of the line between the two players. A watchdog (mpWatch, once a second) keeps it alive: it sends a
+// heartbeat, notices a dead line within seconds, and redials by itself, so nobody has to reload the page.
+const LINK = { up: false, rx: 0, tx: 0, nextPeer: 0, nextDial: 0, dialAt: 0, fails: 0, lostAt: 0, gone: false, timer: null, lock: null, notFound: 0 };
+const MP_NET = { ping: 2, dead: 12, wake: 5, dialWait: 15, grace: 45, busy: 1500000 };   // seconds (busy: bytes still waiting to go out)
+const mpPeerId = () => 'gametrial-' + MP.room;
+const mpOpen = () => !!MP.conn && MP.conn.open !== false;
+// too much still waiting to go out (a slow line): big updates wait a moment instead of piling up
+function mpBusy() {
+  const c = MP.conn, dc = c && c.dataChannel;
+  return !!dc && ((dc.bufferedAmount || 0) + (c.bufferSize || 0) * 16000 > MP_NET.busy);
+}
 function mpSend(msg) {
-  if (!MP.conn) return;
-  try { MP.conn.send(JSON.stringify(msg)); } catch (e) { console.warn('mp send', e); }
+  if (!mpOpen()) return false;
+  try { MP.conn.send(JSON.stringify(msg)); LINK.tx = performance.now(); return true; } catch (e) { console.warn('mp send', e); return false; }
+}
+function mpOnData(d, c) {
+  if (c !== MP.conn) return;                       // a line we've already given up on
+  LINK.rx = performance.now();
+  if (!LINK.up) mpUp();
+  let m;
+  try { m = typeof d === 'string' ? JSON.parse(d) : d; } catch (e) { console.warn('mp message', e); return; }
+  if (!m || m.t === 'ping') return;
+  try { mpOnMsg(m); } catch (e) { console.warn('mp message', m.t, e); }
+}
+function mpPeerOpts() {
+  const ps = (params.get('ps') || '').split(':');
+  return { debug: 0, ...(ps[1] ? { host: ps[0], port: +ps[1], path: '/', secure: false } : {}), config: { iceServers: [
+    { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+    { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' }], sdpSemantics: 'unified-plan' } };
+}
+const MP_NETERR = ['network', 'server-error', 'socket-error', 'socket-closed'];
+// the line is up (again)
+function mpUp() {
+  LINK.up = true; LINK.fails = 0; LINK.notFound = 0;
+  if (LINK.lostAt) { LINK.lostAt = 0; mpBanner(''); }
+}
+// hook a data connection up: the newest one is the line, older ones are ignored
+function mpWire(c) {
+  c.on('open', () => {
+    if (c !== MP.conn) return;
+    LINK.rx = performance.now();
+    if (mpGuest()) { mpStatus('Connected. Getting the world…'); mpSend({ t: MP.joined ? 'rejoin' : 'join' }); }
+  });
+  c.on('data', d => mpOnData(d, c));
+  c.on('close', () => mpDrop(c));
+  c.on('error', e => { console.warn('mp line', e && e.type); mpDrop(c); });
+}
+// this line is dead: let go of it (the watchdog brings a new one up)
+function mpDrop(c) {
+  if (c !== MP.conn) return;
+  MP.conn = null;
+  const was = LINK.up;
+  LINK.up = false;
+  try { c.close(); } catch (e) { /* already closed */ }
+  LINK.nextDial = performance.now() + 800;
+  if (was || MP.joined) mpLost();
+}
+// open (or reopen) our place on the matchmaking service
+function mpPeer() {
+  const now = performance.now();
+  LINK.nextPeer = now + 5000;
+  if (MP.peer && !MP.peer.destroyed) { try { MP.peer.destroy(); } catch (e) { /* gone already */ } }
+  let p;
+  try { p = MP.peer = MP.role === 'host' ? new window.Peer(mpPeerId(), mpPeerOpts()) : new window.Peer(mpPeerOpts()); }
+  catch (e) { mpStatus('This browser cannot open a direct connection (WebRTC is switched off or blocked).'); return; }
+  p.on('open', () => {
+    if (p !== MP.peer) return;
+    if (MP.role === 'host') { if (MP.waiting) mpStatus('Room open. Waiting for your friend…'); }
+    else { mpStatus('Looking for your friend\'s game…'); LINK.nextDial = 0; mpWatch(); }
+  });
+  p.on('disconnected', () => { if (p === MP.peer) LINK.nextPeer = performance.now() + 1500; });   // lost the matchmaking service: the watchdog signs in again (a line already up carries on)
+  p.on('error', e => {
+    if (p !== MP.peer) return;
+    const t = e && e.type;
+    if (t === 'peer-unavailable') {                // the host's room isn't there (yet): keep trying
+      const c = MP.conn;
+      if (c && !c.open) { MP.conn = null; try { c.close(); } catch (e2) { /* never opened */ } }
+      LINK.notFound++; LINK.nextDial = performance.now() + Math.min(8000, 2000 + LINK.notFound * 500);
+      mpStatus(MP.joined ? 'Waiting for the host to come back…' : LINK.notFound < 4 ? 'Looking for your friend\'s game…' : 'Can\'t find that game yet: still trying. Check the code with your friend, and that their game is open on their screen.');
+      return;
+    }
+    if (t === 'unavailable-id') { LINK.nextPeer = performance.now() + 4000; if (MP.waiting) mpStatus('Reopening the room…'); return; }   // a reload: the old room takes a moment to close
+    if (MP_NETERR.includes(t)) { LINK.nextPeer = performance.now() + 3000; if (!mpOpen()) mpStatus('Can\'t reach the free matchmaking service (PeerJS) right now: trying again…'); return; }
+    if (t === 'browser-incompatible' || t === 'webrtc') { mpStatus('This browser cannot open a direct connection (WebRTC is switched off or blocked).'); return; }
+    console.warn('mp peer', t, e && e.message);
+  });
+  if (MP.role === 'host') p.on('connection', c => {
+    const cid = (c.metadata && c.metadata.cid) || null;
+    const alive = MP.conn && MP.conn.open && performance.now() - LINK.rx < 8000;
+    if (alive && cid !== MP.guestId) {             // two players only: a stranger while your friend is in
+      c.on('open', () => { try { c.send(JSON.stringify({ t: 'full' })); } catch (e) { /* they've gone */ } setTimeout(() => { try { c.close(); } catch (e) { /* gone */ } }, 800); });
+      return;
+    }
+    const old = MP.conn;                           // your friend dialling again: the new line replaces the old one
+    MP.conn = c; MP.guestId = cid; LINK.up = false;
+    if (old && old !== c) { try { old.close(); } catch (e) { /* gone */ } }
+    mpWire(c);
+  });
+}
+// the friend dials the host's room
+function mpDial() {
+  const p = MP.peer, now = performance.now();
+  if (!p || p.destroyed || !p.open || p.disconnected) return;
+  LINK.dialAt = now; LINK.nextDial = now + 3000;
+  let c;
+  try { c = p.connect(mpPeerId(), { reliable: true, metadata: { cid: MP.cid } }); } catch (e) { console.warn('mp dial', e); return; }
+  if (!c) return;
+  MP.conn = c;
+  mpWire(c);
+}
+// once a second: heartbeat, dead-line check, and bringing back whatever has gone
+function mpWatch() {
+  if (!MP.role || MP.tr === 'bc' || !window.Peer) return;
+  const now = performance.now(), c = MP.conn;
+  if (c && c.open) {
+    if (now - LINK.tx > MP_NET.ping * 1000) mpSend({ t: 'ping' });
+    const ice = c.peerConnection && c.peerConnection.iceConnectionState;
+    if (now - LINK.rx > MP_NET.dead * 1000 || ice === 'failed' || ice === 'closed') mpDrop(c);
+  } else if (c && mpGuest() && now - LINK.dialAt > MP_NET.dialWait * 1000) {   // a dial that never got through
+    MP.conn = null;
+    try { c.close(); } catch (e) { /* never opened */ }
+    LINK.fails++;
+    LINK.nextDial = now + Math.min(6000, 1000 * LINK.fails);
+    if (LINK.fails % 2 === 0) LINK.nextPeer = 0, mpPeer();   // a fresh start sometimes gets through where a retry doesn't
+    if (!MP.joined) mpStatus('Still connecting… (try ' + (LINK.fails + 1) + '). Some networks block direct connections: if this goes on, one of you could try another Wi-Fi or mobile data.');
+  }
+  const p = MP.peer;
+  if (!p || p.destroyed) { if (now >= LINK.nextPeer) mpPeer(); }
+  else if (p.disconnected) { if (now >= LINK.nextPeer) { LINK.nextPeer = now + 5000; try { p.reconnect(); } catch (e) { mpPeer(); } } }
+  else if (mpGuest() && p.open && !MP.conn && now >= LINK.nextDial) mpDial();
+  // the host: a friend gone for good (not just a hiccup) hands their rivals nation to the computer
+  if (MP.role === 'host' && LINK.lostAt && !LINK.gone && now - LINK.lostAt > MP_NET.grace * 1000) {
+    LINK.gone = true;
+    const n = game.nations[MP.nid];
+    if (n && mpRival()) { n.human = false; mpBanner('Your friend has left: the computer runs their nation until they come back (the same code works).', true); }
+    else mpBanner('Your friend has left. The same code lets them back in.', true);
+  }
 }
 async function mpConnect() {
-  const onData = d => { try { mpOnMsg(typeof d === 'string' ? JSON.parse(d) : d); } catch (e) { console.warn('mp message', e); } };
   if (MP.tr === 'bc') {                            // testing: two tabs talk over a BroadcastChannel
     const ch = new BroadcastChannel('gt-' + MP.room), me = MP.role;
-    ch.onmessage = e => { const m = e.data; if (m.from !== me) onData(m.d); };
-    MP.conn = { send: d => ch.postMessage({ from: me, d }), close: () => ch.close() };
+    const conn = { send: d => ch.postMessage({ from: me, d }), close: () => ch.close() };
+    ch.onmessage = e => { const m = e.data; if (m.from !== me) mpOnData(m.d, conn); };
+    MP.conn = conn; LINK.up = true;
     if (mpGuest()) mpSend({ t: 'join' });
     return;
   }
-  try { await mpLoadPeer(); } catch (e) { mpStatus('Could not reach the matchmaking service (PeerJS). Check your connection and try again.'); return; }
-  const id = 'gametrial-' + MP.room;
-  if (MP.role === 'host') {
-    MP.peer = new window.Peer(id);
-    MP.peer.on('connection', c => {
-      if (MP.conn && MP.conn.open) { c.on('open', () => { c.send(JSON.stringify({ t: 'full' })); c.close(); }); return; }   // two players only
-      MP.conn = c;
-      c.on('data', onData);
-      c.on('close', () => mpLost());
-    });
-    MP.peer.on('error', e => {
-      if (e.type === 'unavailable-id') { mpStatus('Reopening the room…'); MP.peer.destroy(); setTimeout(mpConnect, 4000); return; }   // a reload: the old room takes a moment to close
-      mpStatus(['network', 'server-error', 'socket-error'].includes(e.type) ? "Can't reach the free matchmaking service (PeerJS) right now. Check your connection, then reload." : 'Connection problem: ' + (e.type || e.message));
-    });
-    MP.peer.on('open', () => mpStatus('Room open. Waiting for your friend…'));
-  } else {
-    MP.peer = new window.Peer();
-    MP.peer.on('open', () => {
-      const c = MP.peer.connect(id, { reliable: true });
-      MP.conn = c;
-      c.on('open', () => mpSend({ t: 'join' }));
-      c.on('data', onData);
-      c.on('close', () => mpLost());
-    });
-    MP.peer.on('error', e => mpStatus(e.type === 'peer-unavailable' ? 'That game is not open (the host may have closed it, or not started it yet). Reload to try again.' : ['network', 'server-error', 'socket-error'].includes(e.type) ? "Can't reach the free matchmaking service (PeerJS) right now. Check your connection, then reload." : 'Connection problem: ' + (e.type || e.message)));
+  try { MP.cid = localStorage.getItem('gt-mp-cid') || ''; } catch (e) { MP.cid = ''; }
+  if (!MP.cid) { MP.cid = Math.random().toString(36).slice(2, 12); try { localStorage.setItem('gt-mp-cid', MP.cid); } catch (e) { /* storage blocked */ } }
+  try { await mpLoadPeer(); } catch (e) { mpStatus('Could not load the connection library (PeerJS). Check your connection and reload.'); return; }
+  mpPeer();
+  if (!LINK.timer) {
+    LINK.timer = setInterval(() => { try { mpWatch(); } catch (e) { console.warn('mp watch', e); } }, 1000);
+    // back from another app or a locked screen (phones freeze the page): give the line a few seconds to show it's alive, then redial
+    const wake = () => {
+      if (document.hidden) return;
+      const now = performance.now();
+      LINK.rx = Math.max(LINK.rx, now - (MP_NET.dead - MP_NET.wake) * 1000);
+      LINK.nextPeer = Math.min(LINK.nextPeer, now + 300); LINK.nextDial = Math.min(LINK.nextDial, now + 300);
+      mpSend({ t: 'ping' });
+      mpAwake();
+    };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('pageshow', wake);
+    window.addEventListener('online', wake);
+    mpAwake();
   }
 }
+// keep the screen on during a multiplayer game where the browser allows it: a sleeping phone drops the line
+function mpAwake() {
+  try {
+    if (!MP.role || !navigator.wakeLock || document.hidden || (LINK.lock && !LINK.lock.released)) return;
+    navigator.wakeLock.request('screen').then(l => { LINK.lock = l; }, () => {});
+  } catch (e) { /* not allowed here */ }
+}
+// a strip at the top of the screen about the line (nothing shown while all is well)
+function mpBanner(text, fade) {
+  let el = $('mp-net');
+  if (!text) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'mp-net'; document.body.appendChild(el); }
+  el.textContent = text;
+  clearTimeout(mpBanner.t);
+  if (fade) mpBanner.t = setTimeout(() => { if (el.isConnected) el.remove(); }, 9000);
+}
 function mpLost() {
+  if (!LINK.lostAt) LINK.lostAt = performance.now();
+  LINK.gone = false;
   if (MP.role === 'host') {
-    MP.conn = null;
-    const n = game.nations[MP.nid];
-    if (n && mpRival()) { n.human = false; toast('Your friend left: the computer runs their nation until they come back (the same link works).'); }
-    else toast('Your friend left. The same link lets them back in.');
-  } else showModal('<div class="md-title">The host has left</div><div class="md-body">The game is paused. When the host opens it again, reload this page to rejoin.</div>', [{ label: 'OK', act: () => {} }]);
+    if (MP.waiting) return;
+    mpBanner('Your friend\'s connection dropped. Waiting for them to reconnect…');
+  } else if (MP.joined) mpBanner(mpRival() ? 'Connection to your friend lost. Reconnecting… (your realm carries on)' : 'Connection to the host lost. Reconnecting… (the game waits)');
+  else mpStatus('Connection lost: trying again…');
 }
 function mpStart() {
   mpWrap();
@@ -14571,44 +15000,82 @@ function mpStart() {
   } else mpWaitingRoom();
   mpConnect();
 }
+const mpCodeShown = () => (mpReadCode(MP.room) ? MP.room : '');
 function mpJoinScreen() {
-  showModal(`<div class="md-title">Joining your friend's game…</div><div class="md-body"><div id="mp-status" class="g">${mpStatusText || 'Connecting…'}</div></div>`, [{ label: 'Play alone instead', act: () => { MP.role = null; location.search = ''; } }]);
+  const code = mpCodeShown();
+  showModal(`<div class="md-title">Joining your friend's game…</div><div class="md-body">${code ? `<div class="mp-code small">${code}</div>` : ''}<div id="mp-status" class="g">${mpStatusText || 'Connecting…'}</div>
+    <div class="d">This keeps trying by itself. The host's game must be open on their screen.</div></div>`, [{ label: 'Play alone instead', act: () => { MP.role = null; location.search = ''; } }]);
 }
 // ---------- the waiting room ----------
 let mpStatusText = '';
 function mpStatus(t) { mpStatusText = t; const el = $('mp-status'); if (el) el.textContent = t; }
 function mpWaitingRoom() {
   MP.waiting = true;
-  showModal(`<div class="md-title">Waiting for your friend</div><div class="md-body">Send them this link (any way you like). The game starts as soon as they open it.
+  const code = mpCodeShown();
+  showModal(`<div class="md-title">Waiting for your friend</div><div class="md-body">${code ? `Your game code:
+    <div class="mp-code" id="mp-code">${code}</div>
+    Your friend opens the game, taps <b>New map → 🎮 Multiplayer → Join a game</b> and types this code. The game starts for both of you as soon as they're in.
+    <div class="d" style="margin-top:8px">Or send them this link instead:</div>` : 'Send them this link (any way you like). The game starts as soon as they open it.'}
     <div class="mp-link"><input id="mp-link" readonly value="${mpLink()}"><button id="mp-copy">Copy</button></div>
     <div class="d">${mpRival() ? 'Rivals: they get a nation of their own on this map.' : 'Co-op: you share one empire.'} · ${MODES[game.gmode].name}</div>
-    <div id="mp-status" class="g">${mpStatusText || 'Waiting…'}</div></div>`,
-    [{ label: 'Play alone instead', act: () => { MP.waiting = false; MP.role = null; if (MP.peer) MP.peer.destroy(); if (MP.conn && MP.conn.close) MP.conn.close(); MP.conn = null; } }]);
-  $('mp-copy').onclick = () => { const el = $('mp-link'); el.select(); (navigator.clipboard ? navigator.clipboard.writeText(el.value) : Promise.reject()).then(() => mpStatus('Link copied. Waiting…'), () => { document.execCommand('copy'); mpStatus('Link copied. Waiting…'); }); };
+    <div id="mp-status" class="g">${mpStatusText || 'Opening the room…'}</div>
+    <div class="d">Keep this screen open while you wait.</div></div>`,
+    [{ label: 'Play alone instead', act: () => { MP.waiting = false; MP.role = null; if (MP.peer) MP.peer.destroy(); if (MP.conn && MP.conn.close) MP.conn.close(); MP.conn = null; mpBanner(''); } }]);
+  const copy = (text, said) => (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => mpStatus(said), () => { const el = $('mp-link'); if (el) { const was = el.value; el.value = text; el.select(); document.execCommand('copy'); el.value = was; } mpStatus(said); });
+  $('mp-copy').onclick = () => { $('mp-link').select(); copy($('mp-link').value, 'Link copied. Waiting for your friend…'); };
+  if ($('mp-code')) $('mp-code').onclick = () => copy(code, 'Code copied. Waiting for your friend…');
 }
-// ---------- starting a multiplayer game (from New map) ----------
+// ---------- starting a multiplayer game (from New map): host one, or join one with a code ----------
 function mpSetup() {
+  showModal(`<div class="md-title">🎮 Multiplayer</div><div class="md-body">Two players on one map.
+    <div class="mode-list">
+      <button class="mode-btn mp" id="mp-go-host"><b>Host a game</b><span>Choose the settings and get a code to give your friend.</span></button>
+      <button class="mode-btn mp" id="mp-go-join"><b>Join a game</b><span>Type the code your friend gave you.</span></button>
+    </div></div>`, [{ label: 'Cancel', act: () => {} }]);
+  $('mp-go-host').onclick = () => { closeModal(); mpHostSetup(); };
+  $('mp-go-join').onclick = () => { closeModal(); mpJoinSetup(); };
+}
+function mpHostSetup() {
   let style = 'rivals', mode = game.gmode || 'normal';
   const draw = () => {
-    showModal(`<div class="md-title">Multiplayer</div><div class="md-body">Two players on one new map. You host: copy the link and send it to your friend.
+    showModal(`<div class="md-title">Host a game</div><div class="md-body">You host a new map. When you start, you get a code for your friend; the game begins once they join.
       <div class="lbl" style="margin-top:8px">HOW YOU PLAY</div>
       <div class="mode-list">
         <button class="mode-btn${style === 'rivals' ? ' sel' : ''}" data-style="rivals"><b>Rivals</b><span>Each of you runs your own realm, among the computer nations. Trade, ally or fight each other.</span></button>
         <button class="mode-btn${style === 'coop' ? ' sel' : ''}" data-style="coop"><b>Co-op</b><span>You both command one shared empire.</span></button>
       </div>
       <div class="lbl" style="margin-top:8px">THE OTHER NATIONS</div>
-      <div class="mode-list">${Object.entries(MODES).map(([k, M]) => `<button class="mode-btn small${mode === k ? ' sel' : ''}" data-m="${k}"><b>${M.name}</b></button>`).join('')}</div></div>`,
-      [{ label: 'Start and get the link', cls: 'go', act: () => mpHost(style, mode) }, { label: 'Cancel', act: () => {} }]);
+      <div class="mode-list">${Object.entries(MODES).map(([k, M]) => `<button class="mode-btn small${mode === k ? ' sel' : ''}" data-m="${k}"><b>${M.name}</b></button>`).join('')}</div>
+      <div class="d" style="margin-top:8px">Starting a new map replaces your saved single-player game.</div></div>`,
+      [{ label: 'Start game', cls: 'go', act: () => mpHost(style, mode) }, { label: 'Back', act: () => mpSetup() }]);
     for (const el of document.querySelectorAll('#md-text [data-style]')) el.onclick = () => { style = el.dataset.style; draw(); };
     for (const el of document.querySelectorAll('#md-text [data-m]')) el.onclick = () => { mode = el.dataset.m; draw(); };
   };
   draw();
 }
+function mpJoinSetup(typed, msg) {
+  showModal(`<div class="md-title">Join a game</div><div class="md-body">Type the 6-character code your friend's game is showing.
+    <input id="mp-code-in" class="mp-code-in" maxlength="9" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" inputmode="text" placeholder="CODE" value="${(typed || '').replace(/[^A-Za-z0-9 -]/g, '')}">
+    <div id="mp-join-msg" class="${msg ? 'r' : 'd'}">${msg || 'Codes use letters and the digits 2 to 9 (never 0, O, 1 or I).'}</div></div>`,
+    [{ label: 'Join', cls: 'go', act: () => mpJoin(($('mp-code-in') || {}).value) }, { label: 'Back', act: () => mpSetup() }]);
+  const el = $('mp-code-in');
+  el.oninput = () => { el.value = el.value.toUpperCase(); const m = $('mp-join-msg'); if (m && m.className === 'r') { m.className = 'd'; m.textContent = 'Codes use letters and the digits 2 to 9 (never 0, O, 1 or I).'; } };
+  el.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') { const v = el.value; closeModal(); mpJoin(v); } };
+  if (!TOUCH) setTimeout(() => el.focus(), 30);
+}
+// join with a code: the code says which room, which map and which rules
+function mpJoin(text) {
+  const c = mpReadCode(text);
+  if (!c) return mpJoinSetup(text, 'That isn\'t a game code: it has 6 letters and digits (never 0, O, 1 or I). Check it with your friend.');
+  saveGame();                                      // your own single-player game stays as it is
+  noSave = true;
+  location.search = `?join=${c.code}&seed=${c.seed}&style=${c.style}${c.mode !== 'normal' ? '&mode=' + c.mode : ''}${mpTestQ()}`;
+}
 function mpHost(style, mode) {
   noSave = true;
   try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* storage blocked */ }
-  const room = Math.random().toString(36).slice(2, 10), seed = (Math.random() * 1e6) | 0;
-  location.search = `?mp=host&style=${style}&room=${room}&seed=${seed}${mode !== 'normal' ? '&mode=' + mode : ''}${MP.tr === 'bc' ? '&tr=bc' : ''}`;
+  const room = mpMakeCode(style, mode), seed = mpCodeSeed(room);
+  location.search = `?mp=host&style=${style}&room=${room}&seed=${seed}${mode !== 'normal' ? '&mode=' + mode : ''}${mpTestQ()}`;
 }
 // ---------- the host: snapshots out, orders in ----------
 function mpSnapshot() {
@@ -14635,8 +15102,9 @@ function mpLive() {
   return out;
 }
 function mpHostTick(dt) {
-  if (MP.role !== 'host' || !MP.conn || MP.waiting || mpRival()) return;   // rivals: rivTick
+  if (MP.role !== 'host' || !mpOpen() || MP.waiting || mpRival()) return;   // rivals: rivTick
   if ((MP.lastSnap += dt) < SNAP_EVERY) return;
+  if (mpBusy()) { MP.lastSnap = SNAP_EVERY - 0.5; return; }   // a slow line: the last update is still going out
   MP.lastSnap = 0;
   mpSend({ t: 'snap', sv: mpSnapshot() });
 }
@@ -14805,8 +15273,9 @@ function rivApplyWorld(m) {
 }
 // ---- every couple of seconds, both ways ----
 function rivTick(dt) {
-  if (!rivals() || !MP.conn || MP.waiting || (mpGuest() && !RIV.ready)) return;
+  if (!rivals() || !mpOpen() || MP.waiting || (mpGuest() && !RIV.ready)) return;
   if ((RIV.at += dt) < SNAP_EVERY) return;
+  if (mpBusy()) { RIV.at = SNAP_EVERY - 0.5; return; }   // a slow line: the last update is still going out
   RIV.at = 0;
   const was = WORLD;
   try { rivSyncWars(); mpSend(MP.role === 'host' ? rivWorldMsg() : rivRealmMsg()); } finally { useWorld(was); }
@@ -14893,7 +15362,16 @@ function rivOnAnswer(m) {
 
 function mpOnMsg(m) {
   if (MP.role === 'host') {
-    if (m.t === 'join') {
+    if (m.t === 'rejoin' && MP.live && !MP.waiting) {   // the friend's line dropped and is back: carry on where we were
+      LINK.gone = false;
+      if (mpRival()) { const n = game.nations[MP.nid]; if (n) n.human = true; RIV.at = SNAP_EVERY; }
+      mpSend({ t: 'back', sv: mpRival() ? null : mpSnapshot() });
+      MP.lastSnap = 0;
+      toast('Your friend is back.');
+      return;
+    }
+    if (m.t === 'join' || m.t === 'rejoin') {
+      MP.live = true; LINK.gone = false;
       if (mpRival() && MP.nid < 0) { let k = -1; try { k = +(localStorage.getItem('gt-mp-' + MP.room) ?? -1); } catch (e) { /* storage blocked */ } MP.nid = game.nations[k] && game.nations[k].alive ? k : mpPickNation(); try { localStorage.setItem('gt-mp-' + MP.room, MP.nid); } catch (e) { /* storage blocked */ } }
       if (mpRival()) { const n = game.nations[MP.nid]; n.human = true; n.hostile = n.hostile || false; RIV.prev = {}; RIV.pend = {}; RIV.lastUnits = null; }
       MP.waiting = false; closeModal();
@@ -14912,7 +15390,19 @@ function mpOnMsg(m) {
     return;
   }
   // the friend
-  if (m.t === 'full') return mpStatus('That game already has two players.');
+  if (m.t === 'full') { LINK.nextDial = performance.now() + 10000; return mpStatus('That game already has two players.'); }
+  if (m.t === 'back') {                            // the line dropped and is back: the host's game went on meanwhile
+    if (!mpRival() && m.sv) { MP.lastKey = null; mpApply(m.sv, false); }
+    toast('Reconnected.');
+    return;
+  }
+  if (m.t === 'hello' && MP.joined) {              // the host reloaded their game while we stayed in: take up their world again
+    MP.style = m.style; MP.nid = m.nid;
+    if (mpRival()) { RIV.ready = true; const n = game.nations[MP.nid]; if (n) n.human = true; }
+    else { MP.lastKey = null; mpApply(m.sv, false); }
+    toast('Reconnected: the host is back.');
+    return;
+  }
   if (m.t === 'hello') {
     MP.joined = true; MP.style = m.style; MP.nid = m.nid;
     if (mpRival()) rivStart(m.sv); else mpApply(m.sv, true);
@@ -15014,7 +15504,7 @@ function toGuestView(sv, nid) {
 }
 // ---------- the friend's orders ----------
 // which of your actions are orders (sent to the host): only ones you make with a click or a key, never the world's own
-const MP_ORDERS = ['importAndBuild', 'transferTroops', 'setFallBack', 'setInsignia', 'tryBuildShipped', 'tryBuild', 'startPush', 'launchAttack', 'launchExpedition', 'buyVehicle', 'orderUpgrade', 'buyShuttle', 'upgradeShuttle', 'orderStation',
+const MP_ORDERS = ['importAndBuild', 'importAndBuy', 'requestPorter', 'transferTroops', 'setFallBack', 'setInsignia', 'tryBuildShipped', 'tryBuild', 'startPush', 'launchAttack', 'launchExpedition', 'buyVehicle', 'orderUpgrade', 'buyShuttle', 'upgradeShuttle', 'orderStation',
   'buildBridge', 'connectToRoad', 'buildWall', 'provoke', 'craft', 'dipAction', 'askAll', 'marketTrade', 'rushSite', 'hireTroops', 'upgradeComputer', 'buyWallUpgrade',
   'setPct', 'setTroopPct', 'removeBuilding', 'buildDysonRocket', 'launchDyson', 'startMega', 'startColony', 'fireMissile', 'fireIPBM', 'sendBomber', 'setGameMode', 'toggleDebug'];
 const MP_HOST_ONLY = ['setGameMode', 'toggleDebug'];   // the rules of the game: the host's call
@@ -15142,5 +15632,5 @@ window.__game = { TOUCH, mouse, game, cam, CFG, SEED, tick: tickAll, tickOne: ti
   render, followBody, stopFollow, sunPos, wallGarrisons, buildDysonRocket, launchDyson, sendBomber, fireIPBM, setBombing, dysonPower, buildBridge, bridgePlan, POLAR, claim, isLand, launchRocket, makeStation, buyShuttle, toggleEngine, orbitOf, DISK, keys, showBuildingCard, refreshCard, openDiplomacy, aiConsider, doTrade, aiPeace, aiAlly, allianceOf, getOp, addOp, atWar, setWar, settlementLand, guardedAttack, autoDefend, buyVehicle, orderUpgrade, fleetSummary, tierOpen, addCar, seaCrossing, settleExpedition, takeWheel, completeTech, setPct, setTroopPct, roadsList: () => roads, buildRoads, netGraph, findRoute, connectPlan, connectToRoad, wallPlan, pickWallEnd, strikePlan, strikeReach, techIn, goldBoost, haulProf, NET, defenseMult, nextVehicle, driveStep: (e, dt) => driveStep(e, dt), removeBuilding, TECH, unitStats, garrisons, totalUnits, launchAttack, frontWith, setTool, confirmGhost, setCmd, clickAt, commandClick,
   routesTo, dispatchSupplies, linkStats, techCost, pickTech, playerTechScore, resourceProfile, research: () => game.research, hasDep, oilKnown, W, frontier, tileCenter,
   stopSaving: () => { noSave = true; }, scanAiBorders, dbgAI: () => ({ borders: [...aiBorders.keys()], gaps: [...aiGap.entries()].map(([k, v]) => k + ':' + Math.round(v.d)), dipTimer, borderTimer, offerTimer }), aiOffers, aiRelations, driftOpinions, SVG, RAS, SPR, debugOff, terraOf, planetTerra, poweredTerraformers, terraNeed, stepPlanetTerraform, compFx, compOf, bestComputer, upgradeComputer, researchPeople, SHUTTLE_MK, upgradeShuttle, shRange, canReachWorld, craft, CRAFTS, aiCompute, aiState, showAIPanel, stepAIs, aiDoRoads, aiDoGambit, aiDoWar, aiDoBuild, aiDoTrade, roadsList2: () => roads, invPull, invOf, lootSettlement, lootNation, sourceSettlement, stepInventories, skyWorldPos, foreignSkyClick, setGameMode, MODE, modePicker, aiUnitCap, aiTreaty, signTreaty, treaty, aiSurrender, doSurrender, warLosing, nationWorth, termsValue, askAll, openDiplomacyAll, aiNeeds, surrenderDialog, fearOf, showMarket, marketTrade, rushSite, rushCost, hireTroops, mercCost, treasury, orderStation, padBusy, myStations, wallState, fortState, damageWall, damageFort, wallMax, fortMax, showWallCard, wallNear, fortNear, buyWallUpgrade, upgradeCost, wallGroupOf, wallsAfterWar, stepRepairs, ironWallCross, viaLink, landWay, keepOnLand, shipGoods, crossesWater, tradePath, shoreOf, landGroup, overland, wet, tradeEnd, tilePath, intraArrive, stationNearSettlement, carProf };
-Object.assign(window.__game, { TUT, tutStart, tutAct, TUT_STEPS, SND, toggleMute, stepSound, sndTapBuilder, crewPos, sndZoom, startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, mpSnapshot, toGuestView, mpApply, RIV, rivWorldMsg, rivRealmMsg, buildWall, sowFields, stepSowing });
+Object.assign(window.__game, { TUT, tutStart, tutAct, TUT_STEPS, SND, toggleMute, stepSound, sndTapBuilder, crewPos, sndZoom, startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, requestPorter, askPorter, porterPick, porterHop, carRefit, importAndBuy, buyImportPlan, shortLine, domainCount, sendConsignment, rocketPorts, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, LINK, MP_NET, mpMakeCode, mpReadCode, mpCodeSeed, mpWatch, mpDrop, mpSetup, mpJoin, mpSnapshot, toGuestView, mpApply, RIV, rivWorldMsg, rivRealmMsg, buildWall, sowFields, stepSowing });
 init();

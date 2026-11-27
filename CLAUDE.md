@@ -32,10 +32,15 @@ Last updated: 2026-11-26.
 ## 0. Start here: what to do with a new request
 
 The owner wants every AI to **ask clarifying questions before writing code**, so the result is the game they
-actually want, not a guess. Follow these steps in order, every time.
+actually want, not a guess. Follow these steps in order, **for every new message from the owner** (owner's standing
+instruction, 2026-11-26: "each time I give a prompt"). The owner may check that you did, so say plainly in your reply
+that you re-read the notes.
 
 ### Step 1: Read and understand (no code yet)
-1. Read this whole file, then `README.md` (the player-facing description of every feature).
+1. **Re-read all the notes, every time, even if you read them earlier in the same session:** this whole file, the
+   off-screen `#ai-notes` block at the top of `index.html`, `README.md` (the player-facing description of every
+   feature) and `tests/README.md`. (In round 17 an AI read only this file and part of the README, and the owner
+   asked whether it had read all of them: it hadn't.)
 2. Read the owner's request carefully. Their requests are often long and numbered. Keep their numbering in your reply.
 3. For each item, find the code it touches (section 3 tells you where to look) and read it. Check how it works
    **now** before deciding what to change. Things you assume are missing may already exist.
@@ -43,6 +48,10 @@ actually want, not a guess. Follow these steps in order, every time.
    silently pick one: point it out and ask.
 
 ### Step 2: Ask clarifying questions (still no code)
+The owner wants **as many clarifying questions as possible, designed to get the best result**, and **no code changes
+until they have answered all of them** (2026-11-26). Even when a request says "fix" or looks obvious, ask. The only
+exception is a message that only gives answers or permission (for example "I give you permission to implement the
+edits"): then build or publish what was agreed.
 Reply with:
 1. **A short restatement** of each numbered item in plain words ("Here's what I understand you want: ...").
 2. **Numbered questions**, as many as are genuinely useful. The owner likes thorough questions and answers them by
@@ -100,8 +109,11 @@ The owner plays mostly on an **iPhone** (Safari), sometimes on desktop. They car
 and the game being fun. They are not a programmer.
 
 Standing preferences:
-1. **Ask clarifying questions first** (section 0, Step 2).
+1. **Re-read all the notes, then ask as many clarifying questions as possible, then wait for every answer before
+   changing code** (section 0). This applies to every new message (owner, 2026-11-26).
 2. **Build in stages and test each stage.**
+2b. **Keep these notes exact enough that any other AI could pick up exactly where the last one left off** (owner,
+   2026-11-26): update them during the work, as section 9 says.
 3. **One commit and push per request** ("round"), unless splitting it genuinely improves quality. A round is one
    message from the owner with one or more numbered items.
 4. **Every change must make the game better.** Review the graphics you touch, check the phone layout, fix bugs.
@@ -145,7 +157,7 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 | `.nojekyll` | Makes GitHub Pages serve files as they are. Keep it. |
 
 **Cache tag:** `index.html` loads `style.css?v=N` and `game.js?v=N`. **Increase N by one on every push**, in both
-places, or phones keep running the old code. Look in `index.html` for the current N (it was 27 on 2026-11-26).
+places, or phones keep running the old code. Look in `index.html` for the current N (it was 28 on 2026-11-26).
 
 ---
 
@@ -199,7 +211,15 @@ lines). The order of sections in the file:
 - **Routing:** `findRoute(ax, ay, bx, by, prof)` → `findRoute0`: shortest time over the road graph, joining a road at
   its nearest point. `prof.avoid` (from the model's `stick`) makes better vehicles keep to roads. `keepOnLand` keeps
   off-road stretches off water. Profiles: `carProf(v)`, `haulProf(C)`.
-- **Haulers:** `carNextJob(v)` picks the next job (nearest building sites first, then yards, pickups from
+- **Calling a hauler ("Request porter"):** `askPorter(S)` (the question), `requestPorter(S)` (the order), `porterPick`
+  / `porterChoose` (who comes), `porterHop` (which link, weights in `PORTER_WAY`), `porterGo` (it sets off, from
+  `carNextJob` once it is free), `porterArrive` (acts `calledIn`, `boardCall`, `liftoff`), `porterLands`. The call is
+  `v.call = { to, c, w }` (saved). Across a link it travels as a consignment `{ porter: ... }` on `L.req`; between
+  worlds as a `game.troopFlights` entry with `porter`.
+- **Importing for a purchase:** `askBuyImport`, `importAndBuy`, `buyImportPlan`, `sendImports` (shared with
+  `importAndBuild`), `buyArrived` (called from `impArrive`), `game.pendingBuys` (not saved).
+- **Haulers:** `carRefit(v, C)` (the upgrade, whenever an empty hauler stops in a settlement: called from `carArrive`
+  and `carNextJob`), `carNextJob(v)` picks the next job (nearest building sites first, then yards, pickups from
   collectors, exports, rockets...), `carGo(v, x, y, act)`, `carArrive(v)` handles each `act` (`loadSite`, `deliver`,
   `loadYard`, `board`, `deliverImp`, `tradeOut`, `toLink`, ...), `dropCarJob`, `atHub` (upgrades happen here),
   `addCar`, `buyVehicle`, `orderUpgrade`, `fleetSummary`, `helpersFor`, `takeUpTo`.
@@ -249,6 +269,24 @@ lines). The order of sections in the file:
   describes, update its text too.**
 - **Multiplayer** (end of file): `MP` (role, style, connection), PeerJS (or `tr=bc`, a test channel inside one
   browser), `MP_ORDERS` (player orders, wrapped by `mpWrap`), `MP_HOST_ONLY`.
+  - **Starting and joining:** `mpSetup` (Host a game / Join a game) → `mpHostSetup` → `mpHost`, or `mpJoinSetup` →
+    `mpJoin`. Both end by reloading the page with the URL parameters below. **Game codes** (`mpMakeCode`,
+    `mpReadCode`, `mpCodeSeed`, alphabet `MP_ABC`): 6 characters; the first five are random and name the room (the
+    map seed is a hash of them), the sixth holds the style and the mode (`MP_MODES`). The code **is** the room name
+    (`MP.room`), so nothing has to be exchanged before the two connect. Old-style links (`?join=...`) still work, and
+    the waiting room still offers one.
+  - **The line:** `LINK` (state) and `MP_NET` (timings, in seconds). `mpPeer` signs in to the matchmaking service,
+    `mpDial` (guest) calls the host's room, `mpWire` hooks a connection up, `mpOnData` receives, `mpDrop` lets go of
+    a dead one, `mpLost` / `mpUp` / `mpBanner` tell the player. **`mpWatch` runs once a second and drives every
+    retry**: heartbeat (`ping` every 2 s), a line is dead after 12 s of silence (5 s after the page wakes up) or when
+    ICE says failed, the guest redials by itself, either side signs in again if the matchmaking service drops it.
+    The host accepts the newest connection from the same friend (`MP.cid`, kept in localStorage `gt-mp-cid`) and
+    answers `full` only to a stranger while the friend's line is alive. Messages: `join` (first time, or after the
+    guest reloaded) → `hello`; `rejoin` (the line dropped, pages still open) → `back` (co-op: with a snapshot); a
+    `hello` to a guest that is already in (the host reloaded) is taken as a reconnection, never as a fresh start.
+    `mpBusy` holds big updates back while the last one is still going out. `mpAwake` asks for a screen wake lock.
+    Co-op: the guest's `tickAll` waits while `LINK.up` is false. Rivals: after `MP_NET.grace` (45 s) without the
+    friend, the host's computer runs their nation.
   - **Co-op:** the host's browser runs the world; the guest's shows it (`mpSnapshot`, `mpApply`, `toGuestView`) and
     sends its orders to the host.
   - **Rivals:** the `RIV` module. Each browser runs its own full realm. Each side sees the other human as a nation
@@ -261,7 +299,9 @@ lines). The order of sections in the file:
 
 ### URL parameters
 `?seed=N` (map seed) · `?mode=peaceful|easy|normal|hard|murder` · host: `?mp=host&style=rivals|coop&room=X` ·
-guest: `?join=X&style=...` · `&tr=bc` (tests: connect two tabs of one browser instead of over the internet).
+guest: `?join=X&style=...` (X is the game code when the game was started from the Host screen) · `&tr=bc` (tests:
+connect two tabs of one browser instead of over the internet) · `&ps=host:port` (tests: use a PeerJS matchmaking
+server of your own, see `tests/r17mp.mjs`).
 
 ---
 
@@ -334,6 +374,31 @@ AI** (the owner gave only the rule), it is marked *(AI's number)*: you may sugge
 - **Planes fly straight lines at any angle**, not a tile-by-tile zig-zag.
 - **Top bar:** with more than one territory, each resource shows the selected territory's own stock in small type
   under the total (when zoomed in: the territory under the middle of the screen).
+
+- **Request porter** (owner's rule, 2026-11-26): a settlement's card has "Request porter"; after Confirm, one of the
+  player's haulers journeys to that settlement from the **nearest area with an abundance** of haulers; if there is no
+  abundance, from the area where haulers are **least needed**. If necessary it takes a boat, train, plane or rocket,
+  preferring the cheaper one (owner: boats over planes, trains over roads). This is the player's own order, so it does
+  not break "no other automatic transfer of haulers". *(AI's choices: "abundance" = a hauler standing idle with nothing
+  on its back; "least needed" = the territory with the least goods waiting per hauler (`carNeed`), and that hauler
+  sets down its load first; never a territory's last hauler; a hauler already based at that settlement doesn't count;
+  link weights rail 1, sea 1.2, air 3; the button is named after the current model, "Request handcart" etc.)*
+  **Exception to "haulers ride trains only when they must"**: a called hauler takes the train inside a territory
+  whenever it is at least 20% quicker than the road (AI's reading of "trains > long roads, trains > short roads";
+  *AI's number*: 20%). The owner was told about this exception and approved publishing it (2026-11-26) without
+  answering the question directly: confirm with them if it ever comes up.
+- **Upgrades happen whenever an empty hauler stops in a settlement** (owner's rule, 2026-11-26): "if their inventory
+  is empty and they go into a settlement, they stop for a few seconds and get upgraded before moving on", also in the
+  middle of carrying things back and forth. *(AI's number: 2 s per model, as before.)*
+- **Hiring troops and buying haulers can be imported for** (owner, 2026-11-26), like buildings: asked first; the
+  purchase happens when the goods arrive. *(AI's choices: the troops' price is the one shown when the player asked;
+  the goods are kept aside for the purchase, so a full store can't swallow them.)*
+- **Messages must fit the situation** (owner, 2026-11-26): with one territory, nothing may say goods "will be shipped
+  in". Check new messages against: one territory or several, a way across or none, another world or not.
+- **"Connect to road" must be offered on mining rigs** (and every other building off the road). *(AI's choices: it
+  looks 30 tiles for a road or settlement, then up to 90 (`CFG.roads.connectFar`); when no road can be laid the button
+  is shown greyed with the reason. The owner's report could not be reproduced on a rig near a road, where the button
+  did appear; the far-away case is the one that was fixed.)*
 
 ### Troops
 - Moving troops between your territories (from a fort or base card): Transfer → how many → choose a territory (listed
@@ -410,12 +475,19 @@ AI** (the owner gave only the rule), it is marked *(AI's number)*: you may sugge
 ### Multiplayer
 - **Rivals:** the second player has a full realm of their own, with everything the host has except creative mode.
 - **Co-op:** both players command one shared empire.
+- **Host a game / Join a game** (owner, 2026-11-26): after Multiplayer, two options. Host: choose all the settings,
+  press Start game, a code is generated, and the game does not start until the other player joins. Join: type the
+  code and you are taken into that game. The owner asked for **most of the effort to go into making multiplayer
+  stable** (it "often would not connect or work properly"). *(AI's choices: 6-character codes; the link is still
+  offered as a second way in; all the timings in `MP_NET`.)*
 
 ### Earlier rounds (done; listed so you know they exist)
 Tech tree edits; gun ranges; Casimir drive and Alcubierre drive; megaprojects; all the art redrawn (round 9); walls
 (picking ends, straight walls); the transport progression; imports (from your nearest territory on the same planet
 first, other worlds only if none); troop transfers; an iPhone freeze fix (the command panel closes when you pick
-Expedition, Attack or Fire); diplomacy by envoy; counter-offers.
+Expedition, Attack or Fire); diplomacy by envoy; counter-offers; round 17 (2026-11-26): multiplayer Host/Join with a 6-character code and
+self-healing connections, Request porter, upgrades of empty haulers at any settlement stop, importing to hire troops
+and buy haulers, Connect to road reaching 90 tiles, messages that fit one or several territories.
 
 ---
 
@@ -450,6 +522,13 @@ cd <repo folder>/tests && node r13.mjs                # run any test
   - Diplomacy, war, walls: `r5dip`, `r5wall`, `r5a`, `r6a`.
   - In-game AI and computers: `r6b`, `r6c` (r6c builds 27 buildings with 3 porters: slow on purpose since real loads).
   - Space: `r5pad`, `shut4`, `late4`, `ipbm4`.
+  - Multiplayer over a real connection: `r17mp` (`node r17mp.mjs coop` and `rivals`): Host a game → the code → Join a
+    game on a phone-sized screen with the code typed in small letters with a space → both in; then the line is cut,
+    goes silent, the host reloads, the guest reloads: each time both come back by themselves. It needs a matchmaking
+    server on this machine: `npm i peer`, then `node tests/peerserver.cjs` (the test passes `?ps=127.0.0.1:9000`).
+  - Round 17 fixes: `r17fix` (one territory: no "shipped in" wording; upgrades of parked haulers and of one walking in
+    empty to load; Connect to road far away and greyed; Request porter across a sea route; importing to buy a hauler
+    and to hire troops). It runs about 5 minutes: the imports are carried by a few slow haulers.
   - Multiplayer: `r7mp` (run as `node r7mp.mjs coop`), `r12riv` (Rivals: the second player's farms, research,
     expansion, wars, losing land, trades, reload). `r7mp2` needs a real internet connection and fails offline.
   - Sound: `r15snd` (starts muted, the mute button, the zoom fade, a moving porter's loop, a nations' battle on and off
@@ -482,6 +561,16 @@ End commit messages with whatever attribution lines your own environment require
 
 - **Early building is slow** now that porters carry only 10 and nothing carries more than it holds. The owner chose
   this; upgrading haulers pays off a lot. Watch for complaints and offer options, don't change it unasked.
+- **Multiplayer over the real internet is still untested by an AI**: the new connection code was tested between two
+  separate browser windows over real WebRTC with a matchmaking server on the same machine (`r17mp`), not between two
+  phones through the public PeerJS service. Two devices that both sit behind strict networks can only connect through
+  PeerJS's free relay (TURN) servers; if those are down, such a pair cannot connect at all, and only a relay server of
+  the owner's own would fix that.
+- A phone that is locked or switched to another app freezes the page: the game cannot run or answer until the player
+  comes back (then it reconnects by itself). The screen wake lock (`mpAwake`) only prevents the screen sleeping.
+- Request porter: a hauler waiting on a quay for a boat that never comes (no boat on the route) waits for ever, like
+  goods do. Imports ordered for a purchase (`game.pendingBuys`) are not saved: after a reload the goods still arrive,
+  but go into stock and the player buys by hand. Calling a hauler from another world was not tested in a browser.
 - **Rivals:** computer nations raid only the host; their offers go only to the host; fights between computer nations
   and the second player are worked out on the host's side using a copy of the second player's troops.
 - Troops sent to another world by rocket: if their launch pad is across water, the march to it may still show a boat
