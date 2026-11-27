@@ -45,6 +45,11 @@ If the connection drops, the game says so in a strip at the top and **reconnects
 - **Bridges** (tap one): a basic bridge takes road haulers or trains, not both at once: they take turns (whoever has waited 20 s goes next), and both give way to troops, who pause every 20 s to let the others across. **Upgrade** it (its stone again, plus 2 iron a tile) and everything crosses at once, both ways. **Connect to road** lays a road over it from your nearest settlement (paid in stone); a brand-new settlement whose nearest neighbour is a bridge gets a road over it for free. **Deconstruct** gives back half its stone, once the traffic on it has crossed.
 - **Airless worlds** (until they're terraformed): your porters and horses wear little space helmets, carts get metal wheels and trucks become space buggies. Same speed and loads.
 
+## Winning, and getting back to your map
+- **Every rival on the planet beaten:** a congratulations message tells you so, and what it says depends on how you got there, from hopeful to ominous. The game goes on: there are more technologies, and other worlds, to reach.
+- **Return to map:** if your world has been off the screen (or just a dot) for 30 seconds, a **⟲ Return to map** button appears at the top right. Tap it to go back to where you were. A game saved while looking at empty space reopens over your land.
+- **Creative mode** shows a red **"Creative mode ON · tap to switch off"** button at the bottom while it's on.
+
 ## The art
 Every building, upgrade, vehicle, troop badge and worker was redrawn in round 9. Three artists each took a group, and an independent reviewer checked every new sprite against the old one at map size (22 and 40 px) on grass, sand, moon dust and water, sending back the ones that weren't clearly better. Upgrade ladders step up visibly: farm, irrigated farm, mechanized farm; the central computer's four levels (each upgrade has its own look); settlement houses from hut to city block; helmets from a leather cap to a drone; haulers from a porter to a self-driving hauler; boats from a rowboat to a container ship.
 

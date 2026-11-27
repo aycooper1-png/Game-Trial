@@ -2448,7 +2448,10 @@ function joinAlliance(al, id) {
   al.members.push(id);
 }
 // leave (or, for its founder, disband) an alliance; members think less of whoever walks out
+// add to what the game remembers about how you play (game.style: wars you declared, betrayals, missiles, nukes...)
+function styleAdd(k, n) { const S = game.style || (game.style = { out: {}, hungry: 0, lost: 0 }); S[k] = (S[k] || 0) + n; }
 function leaveAlliance(id, betray = false) {
+  if (id === 'P' && betray) styleAdd('betray', 1);
   const al = allianceOf(id);
   if (!al) return;
   for (const m of al.members) if (m !== id) addOp(m, id, betray ? -60 : -20);
@@ -6576,6 +6579,74 @@ function drawIdleMarks(z) {
     ctx.fillStyle = '#fff'; ctx.font = `900 ${Math.round(r * 1.5)}px 'Segoe UI', Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('!', sx, sy + 0.5);
   }
 }
+// ---------- every rival on this planet beaten: congratulations, and a word about what comes next ----------
+// Once, on your home world, when no rival nation is left (the other player counts as a rival in Rivals). How it is
+// worded depends on how aggressive you were (wars you declared, betrayals, missiles and nukes you fired: game.style),
+// and it points you at what's left to do: the technologies you haven't got, and the worlds beyond.
+const WIN_LINES = [
+  // 0: peaceful
+  p => `Every rival on this planet is gone, and you did it with more handshakes than most would have. The whole world is yours to build. ${p} Look up: the Moon is waiting, and the sky goes a long way further than that.`,
+  // 1: measured
+  p => `Every rival on this planet has fallen. You fought when you had to and built when you could. ${p} There is a whole sky above you, and nobody left down here to stop you reaching it.`,
+  // 2: aggressive
+  p => `Every rival on this planet is gone, most of them by your hand. The world is quiet now. Quiet enough to hear things. ${p} It would be wise to be ready, should anyone else come looking.`,
+  // 3: very aggressive: ominous
+  p => `It's done. Every nation on this planet is ash, or yours. Nothing left here can stop you. But a world this loud with fire can be seen from very far away, and not every rival lives on a planet. ${p} Keep climbing. Whatever is out there will not come on foot.`,
+];
+function aggression() {                            // how hard you played (AI's weights): betrayals and nukes count most
+  const S = game.style || {};
+  return (S.wars || 0) * 1 + (S.betray || 0) * 3 + (S.missiles || 0) * 0.5 + (S.nukes || 0) * 3;
+}
+function winProgress() {
+  const done = game.research.done, all = CFG.techs, left = all.filter(t => !done.has(t.id));
+  if (left.length > all.length / 3) return `You have only ${done.size} of the ${all.length} technologies so far, and the best of them are still ahead.`;
+  if (left.length) return `${left.length} technolog${left.length > 1 ? 'ies are' : 'y is'} still waiting for you, ${left[0].name} among them.`;
+  return 'You have every technology there is: now spread across the other worlds.';
+}
+function checkVictory() {
+  const S = game.style || (game.style = { out: {}, hungry: 0, lost: 0 });
+  if (S.won != null || WORLD !== 0 || game.time < 60 || !game.nations.length || game.over) return;
+  if (game.nations.some(n => n.alive && n.tiles > 0)) return;
+  S.won = game.time;
+  const a = aggression(), k = a < 3 ? 0 : a < 8 ? 1 : a < 20 ? 2 : 3;
+  showModal(`<div class="md-title">🏆 Congratulations!</div><div class="md-body"><b>You have eliminated every rival on the planet.</b><br><br>${WIN_LINES[k](winProgress())}</div>`, [{ label: 'Carry on', cls: 'go', act: () => {} }]);
+  notify('🏆 Every rival on the planet is gone', 'The world is yours. The game goes on: there is more to discover.');
+}
+// ---------- lost in space: a button to get back to your map ----------
+// When the world you're on has been off the screen (or so small it's just a dot) for 30 seconds, a small "Return
+// to map" button appears under the top bar, at the right. It takes you back to where you last were on that map.
+const LOSTVIEW = { after: 30, minPx: 60 };
+const LV = { off: 0, last: null };
+function viewingWorld() {
+  if (cam.follow) return false;                     // locked onto a planet or moon in the sky
+  if (![cam.x, cam.y, cam.zoom].every(Number.isFinite)) return false;
+  const [sx, sy] = toScreen(DISK.cx, DISK.cy), r = DISK.R * cam.zoom;
+  if (!Number.isFinite(sx) || !Number.isFinite(sy) || r < LOSTVIEW.minPx) return false;
+  const nx = clamp(sx, 0, cw), ny = clamp(sy, 0, ch);           // the nearest point of the screen to the world's centre
+  return Math.hypot(nx - sx, ny - sy) < r * 0.98;
+}
+function stepLostView(dt) {
+  const el = $('lost-view');
+  if (!el) return;
+  if (viewingWorld()) { LV.off = 0; LV.last = { x: cam.x, y: cam.y, zoom: cam.zoom, w: WORLD }; }
+  else LV.off += dt;
+  const show = LV.off > LOSTVIEW.after && !game.colonyPick && !game.driving;
+  if (show !== el.classList.contains('show')) { el.classList.toggle('show', show); document.body.classList.toggle('lostview', show); }
+}
+function returnToMap() {
+  const L = LV.last, w = L ? L.w : WORLD;
+  if (w !== WORLD) viewWorld(w);
+  stopFollow(); cam.anim = null; game.driving = null;
+  if (L && [L.x, L.y, L.zoom].every(Number.isFinite)) { cam.x = L.x; cam.y = L.y; cam.zoom = Math.max(L.zoom, 3); }
+  else { const C = activeCountry(); cam.x = C ? C.lx : spawn.x + 0.5; cam.y = C ? C.ly : spawn.y + 0.5; cam.zoom = CFG.startZoom; }
+  LV.off = 0;
+  $('lost-view').classList.remove('show'); document.body.classList.remove('lostview');
+}
+// a saved camera that is broken, or looking at empty space: back over your land when the game loads
+function saneCamera() {
+  if (![cam.x, cam.y, cam.zoom].every(Number.isFinite) || cam.zoom <= 0) { cam.x = spawn.x + 0.5; cam.y = spawn.y + 0.5; cam.zoom = CFG.startZoom; }
+  if (!viewingWorld() && cam.zoom >= 1) { const C = activeCountry(); cam.x = C ? C.lx : spawn.x + 0.5; cam.y = C ? C.ly : spawn.y + 0.5; }
+}
 // ---------- calling a hauler to a settlement ("Request porter" on a settlement's card) ----------
 // One of your haulers comes over to stay and work around this settlement. It comes from the nearest place that has
 // haulers standing idle; if none is idle anywhere, from the territory whose haulers have the least waiting for them
@@ -7372,7 +7443,7 @@ function tick(dt, global = true) {
   stepInventories(dt);
   stepChipFabs(dt);
   stepSowing(dt);
-  stepRaze(dt); stepIdleFleet(dt); stepBridges(dt); if (global) stepStyle(dt);
+  stepRaze(dt); stepIdleFleet(dt); stepBridges(dt); if (global) { stepStyle(dt); checkVictory(); }
   stepRoadWorks();
   stepAIs(dt);
   stepCars(dt);
@@ -7894,6 +7965,7 @@ function loseSettlement(i, frac = 1) {
 function explode(x, y, m) {
   const Wp0 = CFG.weapons[m.w], Wp = m.nuke ? { ...Wp0, radius: CFG.nuke.radius, damage: CFG.nuke.damage } : Wp0;
   const R = Wp.radius, cx = Math.floor(x), cy = Math.floor(y), before = everyone();
+  if (m.ai < 0 && (m.w === 'missile' || m.nuke)) styleAdd(m.nuke ? 'nukes' : 'missiles', 1);   // yours
   if (m.nuke) nukeFallout(x, y, R);
   const foe = m.ai >= 0 ? game.nations[m.ai] : null;
   const hit = new Map();                           // nation or country -> tiles hit
@@ -12623,6 +12695,8 @@ function initUI() {
   $('fallback').addEventListener('click', () => { const on = !game.fallback; if (setFallBack(on)) game.fallback = on; updateCmdMenu(); });
   $('autodef').addEventListener('click', () => { game.autoDefend = !game.autoDefend; toast(game.autoDefend ? 'Your forts will send troops to meet invaders' : 'Your forts will only defend their own walls'); updateCmdMenu(); });
   $('recruit').addEventListener('click', () => { game.recruit = !game.recruit; toast(game.recruit ? 'Your bases are training troops' : 'Your bases have stopped training troops'); updateCmdMenu(); });
+  $('people-rate').addEventListener('click', e => { if (game.debug && e.target.closest('.dbg-off')) toggleDebug(); });
+  $('lost-view').addEventListener('click', returnToMap);
   $('cmdmenu').addEventListener('click', e => {
     const b = e.target.closest('button');
     if (!b) return;
@@ -14303,6 +14377,7 @@ function breakTreaty(n) {
   const t = treaty('nonagg', n.id);
   if (!t) return;
   game.treaties = game.treaties.filter(q => q !== t);
+  styleAdd('betray', 1);
   addOp('P', n.id, -40);
   for (const m of game.nations) if (m !== n && m.alive) addOp('P', m.id, -12);
   toast(`You broke your non-aggression treaty with ${n.short}. Every nation thinks less of you.`);
@@ -14662,7 +14737,7 @@ function dipAction(n, act, tx, ty) {
   if (act === 'expand') { closeDiplomacy(); startPush(tx, ty); return toast(`Your border will stop at ${n.short}'s.`); }
   if (act === 'war') {
     return showModal(`<div class="md-title">Declare war on ${n.full}?</div><div class="md-body">${allied('P', n.id) ? '<b class="r">They are your ally: this betrays the alliance, and every member will remember it.</b><br>' : ''}Their allies may join in. Your cannons and their missile silos open fire.</div>`,
-      [{ label: 'Declare war', cls: 'danger', act: () => { if (allied('P', n.id)) leaveAlliance('P', true); provoke(n); n.warSince = game.time; renderDiplomacy(); } }, { label: 'Cancel', act: () => {} }]);
+      [{ label: 'Declare war', cls: 'danger', act: () => { styleAdd('wars', 1); if (allied('P', n.id)) leaveAlliance('P', true); provoke(n); n.warSince = game.time; renderDiplomacy(); } }, { label: 'Cancel', act: () => {} }]);
   }
   if (rivals() && n.human) {                        // the other human decides for themselves
     if (act === 'peace') { rivOffer('peace'); return say2({ accept: true, why: 'Offer sent: they decide.' }); }
@@ -15015,6 +15090,9 @@ const TUT_STEPS = {
     { title: 'Haulers', pic: ['porter', 'handcart', 'horse', 'truck'],
       text: `Porters carry everything: from your settlement to building sites, and from cabins and camps back home. Each one carries only so much, so big jobs take several trips. ${say('Click', 'Tap')} a settlement to <b>buy more</b> or <b>upgrade</b> them (one model at a time: handcarts, horses, carriages... trucks). Better haulers stick to the roads.`,
       map: () => { const v = game.cars.find(v => countryAt(tileAt(v.x, v.y)) === activeCountry()) || game.cars[0]; return v ? [v.x, v.y] : tutHome(); }, cam: () => tutLook(tutHome(), 20) },
+    { title: 'More porters', pic: ['settle1', 'porter', 'porter'],
+      text: `Need more porters? ${say('Click', 'Tap')} your <b>settlement</b> (the town in the middle of your land). Its card has <b>Buy porter</b>, and <b>Upgrade</b> for better haulers. That's also where you find the <b>Market</b>, and <b>Request porter</b> to call one over from another settlement.`,
+      map: () => { const C = activeCountry(), S = C && nearestSettlement(C, C.lx, C.ly); return S ? tileCenter(S.i) : tutHome(); }, cam: () => tutLook(tutHome(), 22) },
     { title: 'Research', pic: ['research', 'gear'],
       text: `Your people invent things all by themselves as they grow. The <b>Build</b> button shows what they're working on. Open it to see what's next. New tech unlocks buildings, better haulers, soldiers and much more.`,
       el: '#rb-label' },
@@ -15244,7 +15322,7 @@ function updateHud() {
   const du = unitsIn(C), tu = totalUnits();
   $('val-units').textContent = tu >= 1 || isUnlocked('base') ? `⚔ ${fmtNum(du)} ${unitStats().type.name}${live.length > 1 && tu - du >= 1 ? ` · ${fmtNum(tu)} in all` : ''}` : '';
   $('people-fill').style.width = (C.cap ? clamp(C.people / C.cap, 0, 1) * 100 : 0) + '%';
-  $('people-rate').innerHTML = game.debug ? '<span style="color:#ff9a8a">Creative mode: refills at once</span>' : (cinc.people >= 1 ? `<span class="incoming">+${fmtNum(cinc.people)} arriving</span> ` : '') +
+  if (game.debug) { if (!$('people-rate').querySelector('.dbg-off')) $('people-rate').innerHTML = '<button class="dbg-off">Creative mode ON · tap to switch off</button>'; } else $('people-rate').innerHTML = (cinc.people >= 1 ? `<span class="incoming">+${fmtNum(cinc.people)} arriving</span> ` : '') +
     (C.hungry && C.growth < 0 ? `<span style="color:var(--bad)">Starving: ${C.growth.toFixed(1)}/s</span>`
       : C.hungry ? `<span style="color:var(--bad)">Not enough food to grow</span>`
       : C.growth > 0 ? `+${C.growth.toFixed(1)} / sec` : C.growth < 0 ? `<span style="color:var(--bad)">Overcrowded: ${C.growth.toFixed(1)} / sec</span>` : (C.people >= C.cap - 0.5 ? 'Full' : ''));
@@ -16385,6 +16463,7 @@ function start() {
   window.__game.genMs = Math.round(performance.now() - t0);
   const ld = $('loading');
   if (ld) ld.remove();
+  try { saneCamera(); } catch (e) { console.error(e); }   // a saved camera looking at empty space: back over your land
   if (MP.role) { /* the waiting room or the join screen says hello */ }
   else if (RESUME && !noSave) toast(`Welcome back: game loaded (seed ${SEED}, ${fmtTime(game.time)} played). It autosaves every 10 s.`);
   else tutStart();                                 // a new world: the tutorial offers itself (one tap to say no thanks)
@@ -16407,6 +16486,7 @@ function start() {
     guard(render);
     guard(stepSound);
     guard(tutFrame);
+    guard(stepLostView, dt);
     hudT += dt;
     if (hudT > 0.1) { guard(updateHud); hudT = 0; }
   }
@@ -16420,5 +16500,5 @@ window.__game = { TOUCH, mouse, game, cam, CFG, SEED, tick: tickAll, tickOne: ti
   render, followBody, stopFollow, sunPos, wallGarrisons, buildDysonRocket, launchDyson, sendBomber, fireIPBM, setBombing, dysonPower, buildBridge, bridgePlan, POLAR, claim, isLand, launchRocket, makeStation, buyShuttle, toggleEngine, orbitOf, DISK, keys, showBuildingCard, refreshCard, openDiplomacy, aiConsider, doTrade, aiPeace, aiAlly, allianceOf, getOp, addOp, atWar, setWar, settlementLand, guardedAttack, autoDefend, buyVehicle, orderUpgrade, fleetSummary, tierOpen, addCar, seaCrossing, settleExpedition, takeWheel, completeTech, setPct, setTroopPct, roadsList: () => roads, buildRoads, netGraph, findRoute, connectPlan, connectToRoad, wallPlan, pickWallEnd, strikePlan, strikeReach, techIn, goldBoost, haulProf, NET, defenseMult, nextVehicle, driveStep: (e, dt) => driveStep(e, dt), removeBuilding, TECH, unitStats, garrisons, totalUnits, launchAttack, frontWith, setTool, confirmGhost, setCmd, clickAt, commandClick,
   routesTo, dispatchSupplies, linkStats, techCost, pickTech, playerTechScore, resourceProfile, research: () => game.research, hasDep, oilKnown, W, frontier, tileCenter,
   stopSaving: () => { noSave = true; }, scanAiBorders, dbgAI: () => ({ borders: [...aiBorders.keys()], gaps: [...aiGap.entries()].map(([k, v]) => k + ':' + Math.round(v.d)), dipTimer, borderTimer, offerTimer }), aiOffers, aiRelations, driftOpinions, SVG, RAS, SPR, debugOff, terraOf, planetTerra, poweredTerraformers, terraNeed, stepPlanetTerraform, compFx, compOf, bestComputer, upgradeComputer, researchPeople, SHUTTLE_MK, upgradeShuttle, shRange, canReachWorld, craft, CRAFTS, aiCompute, aiState, showAIPanel, stepAIs, aiDoRoads, aiDoGambit, aiDoWar, aiDoBuild, aiDoTrade, roadsList2: () => roads, invPull, invOf, lootSettlement, lootNation, sourceSettlement, stepInventories, skyWorldPos, foreignSkyClick, setGameMode, MODE, modePicker, aiUnitCap, aiTreaty, signTreaty, treaty, aiSurrender, doSurrender, warLosing, nationWorth, termsValue, askAll, openDiplomacyAll, aiNeeds, surrenderDialog, fearOf, showMarket, marketTrade, rushSite, rushCost, hireTroops, mercCost, treasury, orderStation, padBusy, myStations, wallState, fortState, damageWall, damageFort, wallMax, fortMax, showWallCard, wallNear, fortNear, buyWallUpgrade, upgradeCost, wallGroupOf, wallsAfterWar, stepRepairs, ironWallCross, viaLink, landWay, keepOnLand, shipGoods, crossesWater, tradePath, shoreOf, landGroup, overland, wet, tradeEnd, tilePath, intraArrive, stationNearSettlement, carProf };
-Object.assign(window.__game, { TUT, tutStart, tutAct, TUT_STEPS, SND, toggleMute, stepSound, sndTapBuilder, crewPos, sndZoom, startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, razeOrder, razeRefund, paidFor, askRaze, askAbort, aiRefuse, playStyle, landChance, hubGone, requestPorter, askPorter, porterPick, porterHop, carRefit, importAndBuy, buyImportPlan, shortLine, domainCount, sendConsignment, rocketPorts, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, LINK, MP_NET, mpMakeCode, mpReadCode, mpCodeSeed, mpWatch, mpDrop, mpSetup, mpJoin, mpSnapshot, toGuestView, mpApply, RIV, rivWorldMsg, rivRealmMsg, buildWall, sowFields, stepSowing });
+Object.assign(window.__game, { TUT, tutStart, tutAct, TUT_STEPS, SND, toggleMute, stepSound, sndTapBuilder, crewPos, sndZoom, startMega, megaOf, megaFrac, drawWarpDrive, warpFree, setFallBack, gunRange, rangeEdge, carGo, landOf, sameLand, markNet, roadWorks, setInsignia, checkVictory, aggression, viewingWorld, returnToMap, saneCamera, LV, razeOrder, razeRefund, paidFor, askRaze, askAbort, aiRefuse, playStyle, landChance, hubGone, requestPorter, askPorter, porterPick, porterHop, carRefit, importAndBuy, buyImportPlan, shortLine, domainCount, sendConsignment, rocketPorts, showInsignia, domHex, worldSave, loadGame, fleetTarget, FLEET, wallLine, owner, aiOf, countryOf, building, MP, LINK, MP_NET, mpMakeCode, mpReadCode, mpCodeSeed, mpWatch, mpDrop, mpSetup, mpJoin, mpSnapshot, toGuestView, mpApply, RIV, rivWorldMsg, rivRealmMsg, buildWall, sowFields, stepSowing });
 init();

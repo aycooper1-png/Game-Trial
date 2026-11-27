@@ -550,3 +550,10 @@ body.sheet-open #notes .note:not(:has(.nbtns)) { display: none; }
 .mk-amt.down, .mk-gold.down { animation: mkDown 1.2s; }
 @keyframes mkUp { 0% { color: #7bd389; text-shadow: 0 0 8px #7bd389; } 100% { } }
 @keyframes mkDown { 0% { color: #f0a64a; text-shadow: 0 0 8px #f0a64a; } 100% { } }
+
+/* lost in space: back to your map */
+#lost-view { position: fixed; right: 10px; top: calc(var(--top-h, 58px) + 8px); z-index: 12; display: none; padding: 7px 12px; border-radius: 10px; border: 1px solid #f2c14e; background: rgba(20, 26, 38, 0.95); color: #f2c14e; font: 800 13px 'Segoe UI', Inter, Arial, sans-serif; cursor: pointer; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); }
+#lost-view.show { display: block; }
+body.lostview #notes { top: calc(var(--top-h, 58px) + 52px); }
+/* creative mode is on: the way out, at the bottom of the screen too */
+.dbg-off { background: rgba(201, 69, 58, 0.18); border: 1px solid #ff7a6b; color: #ffb3a8; border-radius: 8px; padding: 3px 8px; font: 700 11.5px 'Segoe UI', Inter, Arial, sans-serif; cursor: pointer; pointer-events: auto; }

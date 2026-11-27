@@ -169,7 +169,7 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 | `.nojekyll` | Makes GitHub Pages serve files as they are. Keep it. |
 
 **Cache tag:** `index.html` loads `style.css?v=N` and `game.js?v=N`. **Increase N by one on every push**, in both
-places, or phones keep running the old code. Look in `index.html` for the current N (it was 29 on 2026-11-27).
+places, or phones keep running the old code. Look in `index.html` for the current N (it was 30 on 2026-11-27).
 
 ---
 
@@ -497,7 +497,7 @@ AI** (the owner gave only the rule), it is marked *(AI's number)*: you may sugge
   own sprites). **Next** and **Back** on every step.
 - **Skip tutorial** is on every step and **asks first** ("Skip the tutorial?" Keep going / Yes, skip).
 - **Pausing:** single player pauses while the tutorial is open; **multiplayer keeps running**.
-- **Content:** a **core** tour of the early game (16 steps), then an optional **Advanced** part (10 steps) offered at
+- **Content:** a **core** tour of the early game (17 steps since round 19), then an optional **Advanced** part (10 steps) offered at
   the end of the core. Written **simply and humorously** (owner). **Creative mode and sound/mute are not in it**
   (owner excluded them).
 - **The 📖 book button** sits next to the speaker and "Do not touch" in the Command panel and always **starts again
@@ -583,6 +583,30 @@ The owner answered every question ("push through"; numbers marked *AI's* were le
   120", amount chips 10 · 50 · 100, two big buttons "Buy 50 for 10 🪙" / "Sell 50 for 6 🪙" with a short reason under a
   greyed one, a fading confirmation, Close. Same prices as before (`MARKET`, `priceOf`, `tradeWhy`, `marketDraw`).
 
+### Round 19 (2026-11-27): a friend's playtest
+The owner relayed a friend's four points plus a "frozen" screenshot, and asked for fixes without questions.
+- **"Pressed Do not touch and couldn't unclick it":** could not be reproduced (switching off works on a phone-sized
+  screen: tap it again → "Switch creative mode off?"). As a safeguard, while creative mode is on the bottom bar shows
+  a red **"Creative mode ON · tap to switch off"** button (`.dbg-off` in `#people-rate`) that opens the same question.
+- **"Getting porters from the settlement isn't clear":** a tutorial step **"More porters"** (core step 12, the core
+  tour is now **17 steps**) rings the settlement and names Buy porter, Upgrade, Market and Request porter.
+- **"Don't know how to win, I conquered the whole world":** when no rival nation is left on the home world, once
+  (`game.style.won`, saved), a **"🏆 Congratulations!"** box says you have eliminated every rival on the planet, then
+  one of **four lines** from inspirational to ominous by aggression (*AI's metrics and weights*, `aggression()`: wars
+  you declared ×1, betrayals (alliance or non-aggression treaty broken) ×3, missiles ×0.5, nukes ×3; bands <3, <8,
+  <20, more; `WIN_LINES`), with a pointer to the technologies still to discover (`winProgress`). The ominous ones hint
+  at rivals from beyond the planet (owner: "hint, hint, wink, wink from outer space"). In Rivals the other player
+  counts as a rival. `checkVictory` runs from the home world's tick.
+- **"I zoomed out and lost my world"** (owner's rule): when the world you're on has been **off screen, or on screen
+  but tiny (under 60 px across, AI's number), for 30 s**, a small **"⟲ Return to map"** button appears at the top right
+  under the top bar (`#lost-view`); it takes you back to where you last were on that map (`LV.last`; zoom at least 3).
+  Following a planet or moon in the sky counts as away. (`viewingWorld`, `stepLostView` from `frame()`,
+  `returnToMap`.)
+- **The "frozen" screenshot** (stars only, after a reload): very likely **not a freeze**: the camera had been panned
+  into empty space, and the saved camera put it back there on every reload. The game now checks the saved camera on
+  load (`saneCamera`): broken values are reset, and a view of empty space is moved back over your land. Not proven:
+  the friend's save wasn't available.
+
 ### Earlier rounds (done; listed so you know they exist)
 Tech tree edits; gun ranges; Casimir drive and Alcubierre drive; megaprojects; all the art redrawn (round 9); walls
 (picking ends, straight walls); the transport progression; imports (from your nearest territory on the same planet
@@ -633,6 +657,9 @@ cd <repo folder>/tests && node r13.mjs                # run any test
     `r18map` (the placement rule and greyed Confirm, a road tapped, expanded to three lanes, deleted, kept deleted,
     rebuilt; a bridge's turn-taking, troops first, upgrade, card, deconstruction; automatic-model gold prices),
     `r18market` (the market on phone and desktop sizes).
+  - Round 19: `r19` (creative mode off from the bottom bar, the tutorial's porter step, the four congratulations
+    wordings and only-once, Return to map after 30 s away and when the world is a dot, a saved camera in empty space
+    put back on reload; phone size).
   - Round 17 fixes: `r17fix` (one territory: no "shipped in" wording; upgrades of parked haulers and of one walking in
     empty to load; Connect to road far away and greyed; Request porter across a sea route; importing to buy a hauler
     and to hire troops). It runs about 5 minutes: the imports are carried by a few slow haulers.
@@ -687,6 +714,9 @@ End commit messages with whatever attribution lines your own environment require
 - When a deconstructed hub's vessels move to another route they start at its first end, wherever that is.
 - In co-op, the C.A.I.S. dialogue count is kept on each player's own screen (the host's game decides only the kill
   switch). Not saved: imports for purchases (as before), a bridge that was coming down (it is saved as gone).
+- Round 19: the friend's freeze could not be reproduced without their save; the fix assumes it was the camera in empty
+  space (see section 4, Round 19). Nations living only on other worlds don't stop the congratulations (it is about the
+  home planet).
 - **Rivals:** computer nations raid only the host; their offers go only to the host; fights between computer nations
   and the second player are worked out on the host's side using a copy of the second player's troops.
 - Troops sent to another world by rocket: if their launch pad is across water, the march to it may still show a boat
