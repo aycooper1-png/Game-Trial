@@ -72,6 +72,11 @@ Reply with:
 3. For any question that is hard to understand, **explain it with an example** and the options (a), (b), (c).
 4. Then **stop and wait** for the answers.
 
+**Follow-up questions are very important to the owner** (2026-11-26): after their answers, ask further questions
+whenever an answer is still unclear to you, or when something they said seems illogical or could hurt the game (a
+contradiction with another answer or an earlier decision, a rule that could jam or break something, a big balance
+change). Say plainly what worries you and offer options. Don't build the affected parts until it's settled.
+
 If the owner says "explain X before acting", explain it and wait; do not build anything for that request until they
 answer. If an answer is unclear or seems to have a typo, ask again about that point only (example from the past:
 "you cannot get either a refusal, or a counter offer, or an acceptance" really meant "you can get any one of the
@@ -114,6 +119,7 @@ and the game being fun. They are not a programmer.
 Standing preferences:
 1. **Re-read all the notes, then ask as many clarifying questions as possible, then wait for every answer before
    changing code** (section 0). This applies to every new message (owner, 2026-11-26).
+1b. **Ask follow-up questions** when an answer is unclear, illogical, or could hurt the game (section 0, Step 2).
 2. **Build in stages and test each stage.**
 2b. **Keep these notes exact enough that any other AI could pick up exactly where the last one left off** (owner,
    2026-11-26): update them during the work, as section 9 says.
@@ -483,6 +489,57 @@ AI** (the owner gave only the rule), it is marked *(AI's number)*: you may sugge
   code and you are taken into that game. The owner asked for **most of the effort to go into making multiplayer
   stable** (it "often would not connect or work properly"). *(AI's choices: 6-character codes; the link is still
   offered as a second way in; all the timings in `MP_NET`.)*
+
+### Round 18 (IN PROGRESS, started 2026-11-26: questions asked, answers recorded, follow-ups pending, NO code yet)
+The owner's request: (1) deconstruct any building for half its cost, after an "Are you sure?"; abort a building under
+construction; (2) resource buildings can't be placed where they can't harvest; (3) explain the Market (done; owner:
+"not intuitive at all", make it simpler and easier to understand, keep the design very simple); (4) explain the free
+electric trucks (done); (5) roads onto bridges. The owner's answers so far (numbers = the AI's questions):
+- **Deconstruct (finished buildings):** every building except the central computer once it is a C.A.I.S. given 100%
+  of the energy share (`aiState(b).energy === 1`). A territory's last settlement too, after an "Are you sure?" that
+  explains the consequences. Refund: half of **everything paid for all the upgrade steps**; an upgraded building is
+  removed completely. The refund is left at the site for haulers to carry to the nearest settlement. Takes **3 to 5 s**,
+  longer for more advanced buildings, with a small dust cloud. The confirmation shows the resources you get back.
+  Allowed in war and in creative mode. Computer nations and the in-game AI never deconstruct buildings.
+- **Settlements:** before a settlement is deconstructed, haulers carry all its goods to the nearest settlements. Its
+  roads stay; the in-game AI may modify them freely.
+- **New feature asked in the answers: tap a stretch of road → "Expand road" or "Delete".** Expand = the existing
+  second lane (see Traffic above), on demand; keep the automatic widening as it is.
+- **Fortress/base deconstructed:** its troops walk to the nearest fortress or base of the territory; with none, they
+  stay in the settlement nearest enemies or potential enemies.
+- **Port/airport/launch pad deconstructed:** their vehicles go on existing, docking only at the remaining hubs of
+  their kind; with none, they sit idle. A plane in the air when the **last airport** goes flies around and crash-lands:
+  **13% survive** and sit on the ground; when an airport is built again a porter brings the plane to it. A rocket in
+  transit when the **last landing pad** goes tries to land on open ground: **2% (lowest mark) to 10% (highest mark)**
+  survive, raised up to **30%** with a C.A.I.S., by the **quantity** of energy it has (not the share).
+- **In-game AI and roads:** with Road restructuring on and an energy share of **75% or more**, it may delete roads
+  when it judges a more efficient layout exists.
+- **Abort (building under construction):** asks "Are you sure?" (without listing resources). Materials already
+  delivered are refunded **at half**, left at the site and picked up by haulers; the deconstruction finishes (with
+  the dust cloud, a few seconds) once a hauler has picked them up. Materials still on the way are dropped at the
+  settlement nearest to where their hauler is. Gold spent rushing is lost. Aborting an upgrade leaves the old building.
+- **Placement of resource buildings** (cabin, camp, refinery, derrick, rig, farms): blocked when no deposit of their
+  kind is in reach, **and** when every such deposit in reach is already claimed by another collector, **including one
+  still under construction**. Farms: blocked when there is no green land or desert in reach. Deposits outside your
+  border don't count. Keep the current look (red ghost, greyed Confirm). Collectors already placed that harvest
+  nothing are **marked**. The in-game AI follows the same rule.
+- **Desert wheat** (new rule from the answers): fields spread onto desert much more slowly, and desert fields are
+  harvested at **half** speed.
+- **Bridges:** railways already cross bridges (the owner's earlier report was a mistake). Roads must run onto bridges
+  (not seen so far). A basic bridge lets **one kind of vehicle across at a time**, switching between road haulers and
+  trains. Tapping a bridge offers **Deconstruct** or **Upgrade**; the upgrade lets both cross at once, both ways.
+  Roads onto a bridge are paid in stone. A road goes to a bridge **only** when a **new** settlement is placed and a
+  bridge is among the closest things it should join; existing settlements are connected by hand. Show the track on a
+  bridge when a railway is built over it.
+- **Free models** (electric trucks, self-driving haulers, diesel freighters, container ships, wide-body freighters):
+  should cost **a small amount of gold** (the AI chooses the amounts).
+- **Airless worlds:** people and animals hauling wear little astronaut helmets; trucks become space buggies (electric
+  and self-driving ones too); same stats as at home; back to normal once the world is fully terraformed. The AI draws
+  the art.
+- Second player: everything, in both modes ("almost no functional difference" between single player and co-op). In
+  Rivals you can never control anything of the other player's.
+Follow-up questions were sent on 2026-11-26; record their answers here, then move these lines into the sections
+above once round 18 is built.
 
 ### Earlier rounds (done; listed so you know they exist)
 Tech tree edits; gun ranges; Casimir drive and Alcubierre drive; megaprojects; all the art redrawn (round 9); walls
