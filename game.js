@@ -1631,11 +1631,13 @@ const BLD_COLOR = { settlement: '#de6d4c', station: '#8f979f', port: '#a67c52',
   burner: '#8a5a44', rig: '#e0a93a', solar: '#1d3e78', cabin: '#a0683e', camp: '#c9a66b', silo: '#6c7480', mortar: '#8f7a52', airdef: '#4f7f8c', turret: '#6f7a4a',
   farm: '#d9b24a', farm2: '#e0bc4e', farm3: '#e8c652', derrick: '#2b2f36', oilplant: '#4a4f57', airport: '#59616b', base: '#6f7a4a', fort: '#9aa1a8', reactor: '#cfd6dc', pad: '#b3b9be', drill: '#dfe8ef', lpad: '#8f979f', terraformer: '#5aa05a', receiver: '#e8d27a', refinery: '#b9c0ca', chipfab: '#2f8f5a', datacenter: '#3a4250', computer: '#9fd0ff' };
 // which building stands on tile i (an index kept beside the list; rebuilt when anything is removed)
-let bldVer = 0, bldMapVer = -1;
-const bldMap = new Map();
+let bldVer = 0;
+const bldMaps = new WeakMap();                     // each world's building list → its index (so swapping worlds keeps them)
 function buildingAt(i) {
   if (!building[i]) return null;
-  if (bldMapVer !== bldVer) { bldMap.clear(); bldMapVer = bldVer; }
+  let M = bldMaps.get(game.buildings);
+  if (!M || M.ver !== bldVer) { M = { ver: bldVer, map: new Map() }; bldMaps.set(game.buildings, M); }
+  const bldMap = M.map;
   let b = bldMap.get(i);
   if (!b || b.i !== i) { b = game.buildings.find(q => q.i === i) || null; if (b) bldMap.set(i, b); }
   return b;
@@ -1651,14 +1653,18 @@ function siteBlds() {
 // the buildings of each type, in list order (an index beside the list, rebuilt whenever the list changes: a building
 // added, removed, upgraded in place, or another world's list swapped in). Callers still make all their own checks:
 // this only spares them from looking at every building in a big realm.
-let typeVer = 0, byTypeArr = null, byTypeKey = '';
-const byTypeMap = new Map(), NO_BLDS = Object.freeze([]);
+let typeVer = 0, byTypeArr = null, byTypeLen = -1, byTypeBV = -1, byTypeTV = -1, byTypeMap = new Map();
+const byTypeIdx = new WeakMap(), NO_BLDS = Object.freeze([]);   // each world's building list → its index (kept across world swaps)
 function byType(t) {
-  const B = game.buildings, key = B.length + ':' + bldVer + ':' + typeVer;
-  if (byTypeArr !== B || byTypeKey !== key) {
-    byTypeMap.clear();
-    for (const b of B) { let L = byTypeMap.get(b.type); if (!L) byTypeMap.set(b.type, L = []); L.push(b); }
-    byTypeArr = B; byTypeKey = key;
+  const B = game.buildings;
+  if (byTypeArr !== B || byTypeLen !== B.length || byTypeBV !== bldVer || byTypeTV !== typeVer) {   // (plain numbers: this is asked very often)
+    let X = byTypeIdx.get(B);
+    if (!X || X.len !== B.length || X.bv !== bldVer || X.tv !== typeVer) {
+      X = { len: B.length, bv: bldVer, tv: typeVer, map: new Map() };
+      for (const b of B) { let L = X.map.get(b.type); if (!L) X.map.set(b.type, L = []); L.push(b); }
+      byTypeIdx.set(B, X);
+    }
+    byTypeMap = X.map; byTypeArr = B; byTypeLen = B.length; byTypeBV = bldVer; byTypeTV = typeVer;
   }
   return byTypeMap.get(t) || NO_BLDS;
 }
@@ -2139,6 +2145,7 @@ function setInsignia(C, hex, sign) {
 let flagKey = '';
 
 function paintTerr(i) {
+  landVer++;                                       // (every change of who holds a tile is repainted: see landVer)
   const o = i * 4, f = fillLayer.img.data, b = borderLayer.img.data;
   const x = i % W, y = (i / W) | 0;
   markDirty(fillLayer, x, y); markDirty(borderLayer, x, y);
@@ -3206,6 +3213,7 @@ function recomputeNetwork() {
     countryOf[i] = c.id;
     addTileStats(c, i);
   }
+  landVer++;
   game.netDirty = false;
   if (game.started) for (const c of game.countries) {
     if (!c.alive || c.tiles) continue;               // every tile of it was taken
@@ -3246,35 +3254,43 @@ function stepRoadWorks() {
 const AS_G = new Float64Array(N), AS_STAMP = new Int32Array(N), AS_FROM = new Int32Array(N);
 let asRun = 0;
 const D8 = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
+// (the queue lives in typed arrays kept between searches, and each tile's cost is asked for once per search: the
+// same search, step for step, with far less work)
+let HEAP_I = new Int32Array(4096), HEAP_F = new Float64Array(4096);
+const AS_CS = new Int32Array(N), AS_CV = new Float64Array(N);
+const D8X = [1, -1, 0, 0, 1, 1, -1, -1], D8Y = [0, 0, 1, -1, 1, -1, 1, -1], D8D = [1, 1, 1, 1, 1.414, 1.414, 1.414, 1.414];
 function tilePath(a, b, cost, maxExp = 30000) {
-  asRun++;
+  const run = ++asRun;
   const bx = b % W, by = (b / W) | 0;
-  const heapI = [], heapF = [];
+  let hn = 0, hI = HEAP_I, hF = HEAP_F;
+  const costOf = n => { if (AS_CS[n] === run) return AS_CV[n]; const c = cost(n); AS_CS[n] = run; AS_CV[n] = c; return c; };
   const push = (i, f) => {
-    let k = heapI.length; heapI.push(i); heapF.push(f);
-    while (k > 0) { const p = (k - 1) >> 1; if (heapF[p] <= f) break; heapI[k] = heapI[p]; heapF[k] = heapF[p]; k = p; }
-    heapI[k] = i; heapF[k] = f;
+    if (hn === hI.length) { const I2 = new Int32Array(hn * 2), F2 = new Float64Array(hn * 2); I2.set(hI); F2.set(hF); HEAP_I = hI = I2; HEAP_F = hF = F2; }
+    let k = hn++;
+    while (k > 0) { const p = (k - 1) >> 1; if (hF[p] <= f) break; hI[k] = hI[p]; hF[k] = hF[p]; k = p; }
+    hI[k] = i; hF[k] = f;
   };
   const pop = () => {
-    const top = heapI[0], li = heapI.pop(), lf = heapF.pop();
-    if (heapI.length) {
+    const top = hI[0], li = hI[hn - 1], lf = hF[hn - 1];
+    hn--;
+    if (hn) {
       let k = 0;
       for (;;) {
         let c = 2 * k + 1;
-        if (c >= heapI.length) break;
-        if (c + 1 < heapI.length && heapF[c + 1] < heapF[c]) c++;
-        if (heapF[c] >= lf) break;
-        heapI[k] = heapI[c]; heapF[k] = heapF[c]; k = c;
+        if (c >= hn) break;
+        if (c + 1 < hn && hF[c + 1] < hF[c]) c++;
+        if (hF[c] >= lf) break;
+        hI[k] = hI[c]; hF[k] = hF[c]; k = c;
       }
-      heapI[k] = li; heapF[k] = lf;
+      hI[k] = li; hF[k] = lf;
     }
     return top;
   };
-  AS_STAMP[a] = asRun; AS_G[a] = 0; AS_FROM[a] = -1;
+  AS_STAMP[a] = run; AS_G[a] = 0; AS_FROM[a] = -1;
   push(a, Math.hypot(a % W - bx, ((a / W) | 0) - by));
   let exp = 0;
-  while (heapI.length && exp < maxExp) {
-    const f0 = heapF[0], i = pop();
+  while (hn && exp < maxExp) {
+    const f0 = hF[0], i = pop();
     if (i === b) break;
     const x = i % W, y = (i / W) | 0, g = AS_G[i];
     // a stale copy (the tile was queued again since, with a better way to it): going over it again would redo work
@@ -3282,15 +3298,15 @@ function tilePath(a, b, cost, maxExp = 30000) {
     // used up the whole allowance on repeats, and places that can be reached were taken as unreachable.)
     if (f0 > g + Math.hypot(x - bx, y - by) + 1e-9 * (1 + f0)) continue;
     exp++;
-    for (const [dx, dy, d] of D8) {
-      const nx = x + dx, ny = y + dy;
-      if (!inb(nx, ny)) continue;
-      const n = idx(nx, ny), c = n === b ? 1 : cost(n);
+    for (let q = 0; q < 8; q++) {
+      const dx = D8X[q], dy = D8Y[q], nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const n = ny * W + nx, c = n === b ? 1 : costOf(n);
       if (c === Infinity) continue;
-      if (dx && dy && (cost(idx(x + dx, y)) === Infinity || cost(idx(x, y + dy)) === Infinity)) continue;   // no squeezing past corners
-      const ng = g + d * c;
-      if (AS_STAMP[n] === asRun && AS_G[n] <= ng) continue;
-      AS_STAMP[n] = asRun; AS_G[n] = ng; AS_FROM[n] = i;
+      if (dx && dy && (costOf(y * W + nx) === Infinity || costOf(ny * W + x) === Infinity)) continue;   // no squeezing past corners
+      const ng = g + D8D[q] * c;
+      if (AS_STAMP[n] === run && AS_G[n] <= ng) continue;
+      AS_STAMP[n] = run; AS_G[n] = ng; AS_FROM[n] = i;
       push(n, ng + Math.hypot(nx - bx, ny - by));
     }
   }
@@ -3803,10 +3819,23 @@ function roadLook(R) {                             // dirt track, stone road (Ma
   return { edge: 'rgba(70,50,30,0.5)', fill: 'rgba(176,140,96,0.85)', w: 0.24, dash: null };
 }
 function traceLine(L) {
-  const step = Math.max(1, Math.round(4 / Math.max(1, cam.zoom)));
+  const z = cam.zoom, step = Math.max(1, Math.round(4 / Math.max(1, z))), P = L.pts, n = P.length;
   ctx.beginPath();
-  for (let k = 0; k < L.pts.length; k += step) { const [sx, sy] = toScreen(L.pts[k][0], L.pts[k][1]); k ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }
-  const [ex, ey] = toScreen(...L.pts[L.pts.length - 1]); ctx.lineTo(ex, ey);
+  let k0 = 0, k1 = n;                              // the points drawn: every step-th, then the last
+  if (n > 40 && VIEW.x0 > -1e8) {                  // a long line: only the stretch near the screen (see setDashOff)
+    const m = 3 + 40 / z, x0 = VIEW.x0 - m, x1 = VIEW.x1 + m, y0 = VIEW.y0 - m, y1 = VIEW.y1 + m, near = p => p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1;
+    let first = -1, last = -1, len = 0, off = 0;
+    for (let k = 0; k < n; k += step) {
+      if (near(P[k])) { if (first < 0) { first = k; off = len; } last = k; }
+      const q = P[Math.min(n - 1, k + step)]; len += Math.hypot(q[0] - P[k][0], q[1] - P[k][1]);
+    }
+    if (first < 0) return;
+    if (first >= step) { first -= step; const q = P[first + step]; off -= Math.hypot(q[0] - P[first][0], q[1] - P[first][1]); }
+    k0 = first; k1 = Math.min(n, last + 2 * step);
+    setDashOff(off * z);
+  }
+  for (let k = k0; k < k1 && k < n; k += step) { const [sx, sy] = toScreen(P[k][0], P[k][1]); k === k0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy); }
+  if (k1 >= n) { const [ex, ey] = toScreen(...P[n - 1]); ctx.lineTo(ex, ey); }
 }
 // a road under construction: bare earth, striped barriers at both ends and a works sign every few tiles along it
 function drawRoadWorks(r, z) {
@@ -3841,8 +3870,8 @@ function drawRoads(z) {
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   const groups = new Map();
   const look = side => side > 0 ? roadLook(game.research.done) : roadLook(game.nations[-side - 1].R);
-  for (const r of roads) { if (roadWorks(r)) continue; const k = r.side > 0 ? 'me' : 'n' + r.side; if (!groups.has(k)) groups.set(k, { L: look(r.side), lines: [] }); groups.get(k).lines.push(r); }
-  if (game.connects.length) { if (!groups.has('me')) groups.set('me', { L: look(1), lines: [] }); groups.get('me').lines.push(...game.connects); }
+  for (const r of roads) { if (roadWorks(r) || !lineSeen(r, z)) continue; const k = r.side > 0 ? 'me' : 'n' + r.side; if (!groups.has(k)) groups.set(k, { L: look(r.side), lines: [] }); groups.get(k).lines.push(r); }
+  if (game.connects.length) { if (!groups.has('me')) groups.set('me', { L: look(1), lines: [] }); for (const r of game.connects) if (lineSeen(r, z)) groups.get('me').lines.push(r); }
   for (const { L, lines } of groups.values()) {
     const w0 = Math.max(1.4, z * L.w), w = w0;
     for (const pass of [0, 1]) {
@@ -3852,18 +3881,18 @@ function drawRoads(z) {
     if (L.dash && z >= 4) for (const r of lines) { traceLine(r); ctx.setLineDash([z * 0.35, z * 0.45]); ctx.lineWidth = Math.max(1, z * 0.04); ctx.strokeStyle = L.dash; ctx.stroke(); ctx.setLineDash([]); }
     if (L.cobble && z >= 6) for (const r of lines) { traceLine(r); ctx.setLineDash([z * 0.08, z * 0.14]); ctx.lineWidth = w * 0.55; ctx.strokeStyle = 'rgba(120,116,106,0.5)'; ctx.stroke(); ctx.setLineDash([]); }
   }
-  for (const r of roads) if (roadWorks(r)) drawRoadWorks(r, z);
+  for (const r of roads) if (roadWorks(r) && lineSeen(r, z)) drawRoadWorks(r, z);
   drawRoadSel(z);
   // walls: thick stone, with battlements up close (concrete once you have Electricity)
   if (game.walls.length) {
     const concrete = game.research.done.has('electricity');
-    for (const wl of game.walls) drawWallLine(wl, z);
+    for (const wl of game.walls) if (lineSeen(wl, z)) drawWallLine(wl, z);
   }
   ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
   // the nations' roads have a little traffic of their own, to look lived in (yours carry real haulers)
   if (z < 2.5) return;
   for (const r of roads) {
-    if (r.side > 0 || r.len < 4) continue;
+    if (r.side > 0 || r.len < 4 || !lineSeen(r, z)) continue;
     const u = (game.time * 3 / r.len + hash2(r.a % 9973, r.b % 9973, 81)) % 2, d = (u >= 1 ? 2 - u : u) * r.len;
     let k = 0;
     while (k < r.cum.length - 1 && r.cum[k] < d) k++;
@@ -3879,6 +3908,10 @@ function drawRoads(z) {
 // ---------- settlements: the land holds the capacity, a settlement unlocks what's in its reach ----------
 const servStamp = new Int32Array(N), servD = new Uint16Array(N), servBy = new Int32Array(N);
 let servN = 0;
+// landVer goes up whenever any tile changes hands or its ground changes (paintTerr / repaintTile, which every such change
+// calls, and the relabelling when territories merge). With it and the settlement list unchanged, a recount of the land
+// would come out exactly as last time, so recomputeLand reuses it (shells and building work recount often).
+let landVer = 0, landKey = null;
 const sideOf = i => (owner[i] ? countryOf[i] + 1 : -aiOf[i]);        // whose land a tile is: +country, -nation, 0 nobody
 // how fast you can go over a tile, off the network: mountains and ice are slow going (roads and walls are full speed)
 const terrSpeed = i => NET[i] || bridgeAt[i] ? 1 : biome[i] === MOUNTAIN ? CFG.terrainSpeed.mountain : biome[i] === POLAR ? CFG.terrainSpeed.polar : 1;
@@ -3894,28 +3927,60 @@ function offTime(ax, ay, bx, by, off) {
 }
 const landCapAt = i => (CFG.landCap[BIOME_KEY[biome[i]]] || 0) * (biome[i] === GRASS ? 1 : worldCap());   // off home: only domes and green land hold many
 const isServed = i => servStamp[i] === servN;
+// the offsets of the tiles within R, in the order the loops below always went over them (worked out once for each R)
+const reachOffs = new Map();
+function reachOf(R) {
+  let o = reachOffs.get(R);
+  if (o) return o;
+  const L = [];
+  for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const d2 = dx * dx + dy * dy; if (d2 <= R * R) L.push(dx, dy, d2); }
+  o = Float64Array.from(L);
+  reachOffs.set(R, o);
+  return o;
+}
 function eachInReach(i, fn, R = CFG.settlement.reach) {             // every tile within R (a settlement's reach, by default) of tile i
-  const cx = i % W, cy = (i / W) | 0;
-  for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
-    const d2 = dx * dx + dy * dy;
-    if (d2 <= R * R && inb(cx + dx, cy + dy)) fn(idx(cx + dx, cy + dy), d2);
+  const cx = i % W, cy = (i / W) | 0, o = reachOf(R);
+  for (let k = 0; k < o.length; k += 3) {
+    const x = cx + o[k], y = cy + o[k + 1];
+    if (x >= 0 && y >= 0 && x < W && y < H) fn(y * W + x, o[k + 2]);
   }
 }
 // Each owned land tile goes to the nearest settlement of the same country (or nation) within reach;
 // a settlement's `base` is the capacity of the land it ends up with.
 function recomputeLand() {
+  const S = byType('settlement').filter(b => b.type === 'settlement'), o = reachOf(CFG.settlement.reach), no = o.length;
+  const K = landKey, same = K && K.owner === owner && K.ver === landVer && K.blds === game.buildings && K.n === S.length && K.bv === bldVer && K.tv === typeVer;
+  if (same) S.forEach(b => { b.base = b._lb; b.tiles = b._lt; b._n = -1; });
+  else {
   servN++;
-  const S = byType('settlement').filter(b => b.type === 'settlement');
   S.forEach((b, k) => {
     const side = sideOf(b.i);
     b.base = 0; b.tiles = 0; b._n = -1;
-    if (side) eachInReach(b.i, (t, d2) => {
-      if (sideOf(t) !== side || !isLand(t)) return;
+    if (!side) return;
+    const cx = b.i % W, cy = (b.i / W) | 0;        // (eachInReach, written out: this runs for every settlement on every recount)
+    for (let q = 0; q < no; q += 3) {
+      const x = cx + o[q], y = cy + o[q + 1];
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      const t = y * W + x, d2 = o[q + 2];
+      if (sideOf(t) !== side || !isLand(t)) continue;
       if (servStamp[t] !== servN || d2 < servD[t]) { servStamp[t] = servN; servD[t] = d2; servBy[t] = k; }
-    });
+    }
   });
   S.forEach((b, k) => {
-    if (sideOf(b.i)) eachInReach(b.i, t => { if (servStamp[t] === servN && servBy[t] === k) { b.base += landCapAt(t); b.tiles++; } });
+    if (sideOf(b.i)) {
+      const cx = b.i % W, cy = (b.i / W) | 0;
+      for (let q = 0; q < no; q += 3) {
+        const x = cx + o[q], y = cy + o[q + 1];
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const t = y * W + x;
+        if (servStamp[t] === servN && servBy[t] === k) { b.base += landCapAt(t); b.tiles++; }
+      }
+    }
+    b._lb = b.base; b._lt = b.tiles;
+  });
+  landKey = { owner, ver: landVer, blds: game.buildings, n: S.length, bv: bldVer, tv: typeVer };
+  }
+  S.forEach(b => {
     if (WORLD && owner[b.i] && !terraOf().done) b.base += WORLDS[WORLD].dome;   // off home, every settlement is a dome: room inside it
     b.full = b.base;                                 // what it would hold undamaged
     if (b.dmg) b.base *= Math.max(0, 1 - b.dmg / hpOf(b));
@@ -4003,6 +4068,21 @@ function harvestGain(i, type) {
   return { fresh, shared };
 }
 
+// every deposit tile of the world in hand, in one flat list (made again whenever a deposit gains or loses tiles):
+// counting your deposit tiles went through every deposit's own list each time, which on a big map is a lot of lists
+const depFlats = new WeakMap();
+function depositTiles() {
+  let F = depFlats.get(deposits), ok = !!F && F.tl.length === deposits.length;
+  for (let k = 0; ok && k < deposits.length; k++) { const d = deposits[k]; if (F.tl[k] !== d.tiles || F.lens[k] !== d.tiles.length || F.kinds[k] !== d.type) ok = false; }
+  if (ok) return F;
+  let n = 0;
+  for (const d of deposits) n += d.tiles.length;
+  F = { tl: deposits.map(d => d.tiles), lens: deposits.map(d => d.tiles.length), kinds: deposits.map(d => d.type), flat: new Int32Array(n), type: new Array(n) };
+  let j = 0;
+  for (const d of deposits) for (const t of d.tiles) { F.flat[j] = t; F.type[j++] = d.type; }
+  depFlats.set(deposits, F);
+  return F;
+}
 function recomputeBuildings() {
   recomputeLand();
   for (const c of game.countries) { c.capBase = 0; c.ownedDep = depBox(); c.pw = newPower(); c.geo.port = 0; }
@@ -4032,7 +4112,8 @@ function recomputeBuildings() {
   recomputeHarvest();
   for (const c of game.countries) c.cap = c.capBase + c.pw.capPow * c.sat;
   for (const c of game.countries) if (c.alive && c.tiles) retitle(c, !game.started);
-  for (const d of deposits) for (const t of d.tiles) if (owner[t] && depositOf[t] >= 0) game.countries[countryOf[t]].ownedDep[d.type]++;
+  const DT = depositTiles();
+  for (let j = 0; j < DT.flat.length; j++) { const t = DT.flat[j]; if (owner[t] && depositOf[t] >= 0) game.countries[countryOf[t]].ownedDep[DT.type[j]]++; }
   recomputeNations();
   game.bldDirty = false; stampWorld = WORLD;
   roadsDirty = true;                               // settlements or land changed: the roads are checked again (at most once a second)
@@ -5450,9 +5531,11 @@ function nearestSettlement(C, x, y) {
   let best = null, bd = Infinity;
   const t0 = inb(Math.floor(x), Math.floor(y)) ? idx(Math.floor(x), Math.floor(y)) : -1, g0 = t0 >= 0 && !wet(t0) ? landGroup(t0) : null;
   for (const b of byType('settlement')) {
+    const raw = Math.hypot(b.i % W + 0.5 - x, ((b.i / W) | 0) + 0.5 - y);
+    if (raw >= bd) continue;                       // can't beat the best so far (the checks below only ever add to the distance)
     if (b.type !== 'settlement' || underway(b) || countryAt(b.i) !== C) continue;
     // one across the water counts as much further: goods overland don't swim
-    const d = Math.hypot(b.i % W + 0.5 - x, ((b.i / W) | 0) + 0.5 - y) + (g0 != null && landGroup(b.i) !== g0 ? 400 : 0);
+    const d = raw + (g0 != null && landGroup(b.i) !== g0 ? 400 : 0);
     if (d < bd) { bd = d; best = b; }
   }
   return best;
@@ -5535,7 +5618,8 @@ function carNextJob(v, C) {
   const near = v.local != null && game.time < (v.localUntil || 0) ? tileCenter(v.local) : [v.x, v.y];
   if (v.local != null && game.time >= (v.localUntil || 0)) v.local = null;
   const cap0 = carProf(v).cargo, helpers = helpersFor(C);
-  const sites = siteBlds().filter(b => b.site && b.site.ready && b.site.crew == null && (b.site.cars || 0) < helpers && boxSum(siteHaul(b.site)) - (b.site.claim || 0) >= 0.5).sort((p, q) => Math.hypot(p.i % W + 0.5 - near[0], ((p.i / W) | 0) + 0.5 - near[1]) - Math.hypot(q.i % W + 0.5 - near[0], ((q.i / W) | 0) + 0.5 - near[1]));
+  const sites = siteBlds().filter(b => b.site && b.site.ready && b.site.crew == null && (b.site.cars || 0) < helpers && boxSum(siteHaul(b.site)) - (b.site.claim || 0) >= 0.5)
+    .map(b => [Math.hypot(b.i % W + 0.5 - near[0], ((b.i / W) | 0) + 0.5 - near[1]), b]).sort((p, q) => p[0] - q[0]).map(p => p[1]);   // nearest first (each distance worked out once)
   for (const b of sites) {
     if (!b.site || !b.site.ready || countryAt(b.i) !== C || boxSum(b.site.need) >= 0.01) continue;
     const main = Object.entries(b.site.cost || {}).sort((p, q) => q[1] - p[1])[0];
@@ -5594,23 +5678,23 @@ function carNextJob(v, C) {
   const cap = carProf(v).cargo;
   let best = null, bs = 0;
   for (const b of game.buildings) {
-    if (!b.buf || countryAt(b.i) !== C || !here(b.i) || !landSettlement(b.i)) continue;
+    if (!b.buf || countryAt(b.i) !== C) continue;
     const left = boxSum(b.buf) - (b.claim || 0);
     if (left < Math.min(4, cap * 0.25)) continue;
     const d = Math.hypot(b.i % W + 0.5 - v.x, ((b.i / W) | 0) + 0.5 - v.y);
     const sc = Math.min(left, cap) / (d + 12) * (b.full ? 2 : 1);
-    if (sc > bs) { bs = sc; best = b; }
+    if (sc > bs && here(b.i) && landSettlement(b.i)) { bs = sc; best = b; }   // (the costlier checks only for one that would be the best yet)
   }
   // or exports set aside for a station, port or airport: a load out to its yard
   let ex = null;
   for (const L of game.links) for (const e of ['a', 'b']) {
     const hub = e === 'a' ? L.a : L.b;
-    if (countryAt(hub) !== C || !L.owe || !here(hub) || !landSettlement(hub)) continue;
+    if (countryAt(hub) !== C || !L.owe) continue;
     const left = boxSum(L.owe[e]) - ((L.oweClaim || {})[e] || 0);
-    if (left < Math.min(8, cap * 0.4) || quayLoad(L, e) >= QUAY_MAX) continue;
+    if (left < Math.min(8, cap * 0.4)) continue;
     const d = Math.hypot(hub % W + 0.5 - v.x, ((hub / W) | 0) + 0.5 - v.y);
     const sc = Math.min(left, cap) / (d + 12) * 1.3;
-    if (sc > bs) { bs = sc; ex = { L, e, hub }; best = null; }
+    if (sc > bs && here(hub) && quayLoad(L, e) < QUAY_MAX && landSettlement(hub)) { bs = sc; ex = { L, e, hub }; best = null; }
   }
   if (ex) {
     const S = landSettlement(ex.hub);
@@ -5958,7 +6042,7 @@ function stepTraffic(dt) {
     notify('🛣 A busy road got a second lane', `The road out of ${C.short} was jammed with haulers: it's two lanes now (${cost} stone).`);
   }
 }
-const CAR_THINK_MS = 8;                          // ms per step for haulers choosing a job, at most (one always gets to)
+let CAR_THINK_MS = 8;                            // ms per step for haulers choosing a job, at most (one always gets to)
 function stepCars(dt) {
   stepTraffic(dt);
   if (game.hubJobs.some(H => H.done)) game.hubJobs = game.hubJobs.filter(H => !H.done);
@@ -7620,13 +7704,14 @@ function tick(dt, global = true) {
     const A = countryAt(L.a), B = countryAt(L.b);
     if (!L.out) L.out = { a: emptyBox(), b: emptyBox() };   // out.a: waiting at end a for b; out.b the other way
     if (!L.owe) L.owe = { a: emptyBox(), b: emptyBox() };   // owe: set aside at home, not yet trucked out to the hub
-    for (const e of ['a', 'b']) { const C2 = e === 'a' ? A : B; if (C2 && !C2.nCars) for (const r of CARGO_RES) if (L.owe[e][r]) { L.out[e][r] += L.owe[e][r]; L.owe[e][r] = 0; } }
+    if (A && !A.nCars) for (const r of CARGO_RES) if (L.owe.a[r]) { L.out.a[r] += L.owe.a[r]; L.owe.a[r] = 0; }
+    if (B && !B.nCars) for (const r of CARGO_RES) if (L.owe.b[r]) { L.out.b[r] += L.owe.b[r]; L.owe.b[r] = 0; }
     if (!L.req) L.req = { a: [], b: [] };
     if (!L.ships) L.ships = [];
     if (A && B && A !== B) {
       const fa = outputShare(A, B), fb = outputShare(B, A);
       for (const r of CARGO_RES) {
-        if (r === 'wheat') continue;               // food stays home: each domain feeds itself (sites can still ask for it)
+        if (r === 'wheat' || (!A.prod[r] && !B.prod[r])) continue;   // food stays home: each domain feeds itself (sites can still ask for it); nothing made at either end: nothing to share
         const ga = Math.min(Math.max(0, A.res[r]), A.prod[r] * fa * dt), gb = Math.min(Math.max(0, B.res[r]), B.prod[r] * fb * dt);
         // set aside for export: a truck takes it out to the hub's yard (with no cars, it's simply there)
         if (ga > 0) { A.res[r] -= ga; (A.nCars ? L.owe.a : L.out.a)[r] += ga; }
@@ -7635,8 +7720,8 @@ function tick(dt, global = true) {
         A.rates[r] += rb - ra; B.rates[r] += ra - rb;
       }
     } else if (A && A === B) {                     // a line inside one domain: what was waiting to cross goes back to stock
-      for (const r of CARGO_RES) { A.res[r] += L.out.a[r] + L.out.b[r]; L.out.a[r] = L.out.b[r] = 0; }
-      for (const e of ['a', 'b']) { for (const q of L.req[e]) if (!q.intra) deliver(q, A); L.req[e] = L.req[e].filter(q => q.intra); }
+      for (const r of CARGO_RES) if (L.out.a[r] || L.out.b[r]) { A.res[r] += L.out.a[r] + L.out.b[r]; L.out.a[r] = L.out.b[r] = 0; }   // (only what's there: most of these are empty every step)
+      for (const e of ['a', 'b']) if (L.req[e].length && L.req[e].some(q => !q.intra)) { for (const q of L.req[e]) if (!q.intra) deliver(q, A); L.req[e] = L.req[e].filter(q => q.intra); }
     }
     // each boat, plane or train on the route shuttles between its ends, loading and unloading at each
     const end = L.path.length - 1;
@@ -7820,6 +7905,7 @@ function greenRuns() {
   return out;
 }
 function loadGame(sv) {
+  landVer++;                                       // (a land count from before the load is never reused)
   // refuse a save that doesn't fit this version of the game (map size, building types), before touching anything
   const tiles = (sv.runs || []).reduce((a, v, k) => (k % 2 ? a + v : a), 0);
   if (tiles !== N || !Array.isArray(sv.countries) || (!sv.countries.length && !WORLD) || !Array.isArray(sv.links) ||   // (another world you have only looked at has no territory yet: that's fine)
@@ -8111,11 +8197,12 @@ function explode(x, y, m) {
   if (m.nuke) nukeFallout(x, y, R);
   const foe = m.ai >= 0 ? game.nations[m.ai] : null;
   const hit = new Map();                           // nation or country -> tiles hit
-  let wrecked = 0, damaged = 0, ruined = 0;
+  let wrecked = 0, damaged = 0, ruined = 0, touched = !!m.nuke;   // touched: a building or wall was in the blast
   for (let dy = -Math.ceil(R); dy <= Math.ceil(R); dy++) for (let dx = -Math.ceil(R); dx <= Math.ceil(R); dx++) {
     if (dx * dx + dy * dy > R * R + 0.5 || !inb(cx + dx, cy + dy)) continue;
     const i = idx(cx + dx, cy + dy);
     if (building[i]) {
+      touched = true;
       const b = buildingAt(i), hp = hpOf(b), left = hp - (b.dmg || 0);
       if (b.units) b.units *= 0.6;                 // a garrison under fire loses troops
       if (b.type === 'settlement') {               // never wiped off the map: at zero it's a ruin until it mends
@@ -8137,7 +8224,7 @@ function explode(x, y, m) {
   for (const w of game.walls) {                    // walls caught in the blast
     let k = 0;
     for (const t of w.tiles) if (Math.hypot(t % W + 0.5 - x, ((t / W) | 0) + 0.5 - y) <= R + 0.5) k++;
-    if (k) damageWall(w, Wp.damage * Math.min(4, 0.6 + k * 0.4) * (m.nuke ? 3 : 1));
+    if (k) { damageWall(w, Wp.damage * Math.min(4, 0.6 + k * 0.4) * (m.nuke ? 3 : 1)); touched = true; }
   }
   if (!foe) for (const who of hit.keys()) if (who.col) provoke(who);   // you shelled a nation: that's war
   let lost = 0;                                    // expeditions caught in the blast are gone
@@ -8147,7 +8234,7 @@ function explode(x, y, m) {
     if (game.driving === e) game.driving = null;
     toast(foe ? `Your expedition was destroyed by ${foe.full}!` : 'Your expedition was caught in the blast.');
   }
-  recomputeBuildings();                            // lost settlements: nations lose the people who lived there
+  if (touched) recomputeBuildings();               // lost settlements: nations lose the people who lived there (a shell on open ground changes nothing to count)
   const killed = Math.round(before - everyone()) + lost;
   game.blasts.push({ x, y, t: 0, R, life: m.nuke ? 3.2 : m.w === 'missile' ? 1.7 : 1.1, big: m.w === 'missile', nuke: !!m.nuke, seed: (x * 31 + y * 17) | 0 });
   game.scorch.push({ x, y, R, t: 0 });
@@ -8250,6 +8337,7 @@ function paintTerrain() {
 }
 const px1 = typeof ImageData !== 'undefined' ? new ImageData(1, 1) : null;
 function repaintTile(i) {
+  landVer++;                                       // (the ground changed: see landVer)
   if (!terrainCtx || !px1) return;
   const c = tileColor(i);
   px1.data[0] = c[0]; px1.data[1] = c[1]; px1.data[2] = c[2]; px1.data[3] = 255;
@@ -8263,7 +8351,33 @@ function revealOil(type = 'oil') {
 // camera + rendering
 // ======================================================================
 const canvas = $('game');
-const ctx = canvas.getContext('2d');
+let ctx = canvas.getContext('2d');                 // (let: a still picture of the route lines is drawn by the same code into its own canvas, see cachedLayer)
+// Long lines are drawn only where they come near the screen (a dashed line costs as much as its whole length, on or
+// off screen). The part left out at the start is given as the dash offset, so the dashes sit exactly where they would
+// on the whole line; the next path drawn starts from offset 0 again, as everything else expects.
+function patchBeginPath(g) { const bp = g.beginPath; g.beginPath = function () { if (this.dashOff) { this.lineDashOffset = 0; this.dashOff = false; } return bp.call(this); }; }
+patchBeginPath(ctx);
+function setDashOff(px) { if (px) { ctx.lineDashOffset = px; ctx.dashOff = true; } }
+// the part of the segment (x0, y0) → (x1, y1) inside the box, as fractions [t0, t1] of it; null if it misses
+function clipSeg(x0, y0, x1, y1, bx0, by0, bx1, by1) {
+  let t0 = 0, t1 = 1;
+  const dx = x1 - x0, dy = y1 - y0;
+  for (const [p, q] of [[-dx, x0 - bx0], [dx, bx1 - x0], [-dy, y0 - by0], [dy, by1 - y0]]) {
+    if (p === 0) { if (q < 0) return null; continue; }
+    const r = q / p;
+    if (p < 0) { if (r > t1) return null; if (r > t0) t0 = r; } else { if (r < t0) return null; if (r < t1) t1 = r; }
+  }
+  return [t0, t1];
+}
+const cumCache = new WeakMap();                    // a tile path's length up to each tile, worked out once
+function tileCum(path) {
+  let c = cumCache.get(path);
+  if (c && c.length === path.length) return c;
+  c = new Float64Array(path.length);
+  for (let k = 1; k < path.length; k++) { const a = path[k - 1], b = path[k]; c[k] = c[k - 1] + Math.hypot(b % W - a % W, ((b / W) | 0) - ((a / W) | 0)); }
+  cumCache.set(path, c);
+  return c;
+}
 let cw = 0, ch = 0, dpr = 1;
 // follow: null, or 'moon' to lock the camera onto the moon (its reference frame);
 // offX/offY = where you're looking, in the moon's own coordinates; rot = camera rotation (radians)
@@ -8296,10 +8410,39 @@ function drawWorldImage(img) {
 const tileCenter = i => [i % W + 0.5, ((i / W) | 0) + 0.5];
 const fitZoom = () => Math.min(cw / W, (ch - 200) / H) * 0.96;
 
+// ---------- what the camera can see (world tiles): drawing skips lines that lie wholly outside it ----------
+const VIEW = { x0: -1e9, y0: -1e9, x1: 1e9, y1: 1e9 };   // set at the start of each render, open again after it
+function setView(on) {
+  if (!on) { VIEW.x0 = VIEW.y0 = -1e9; VIEW.x1 = VIEW.y1 = 1e9; return; }
+  const cs = [toWorld(0, 0), toWorld(cw, 0), toWorld(0, ch), toWorld(cw, ch)];
+  VIEW.x0 = Math.min(cs[0][0], cs[1][0], cs[2][0], cs[3][0]); VIEW.x1 = Math.max(cs[0][0], cs[1][0], cs[2][0], cs[3][0]);
+  VIEW.y0 = Math.min(cs[0][1], cs[1][1], cs[2][1], cs[3][1]); VIEW.y1 = Math.max(cs[0][1], cs[1][1], cs[2][1], cs[3][1]);
+}
+const inView = (b, m) => b.x1 >= VIEW.x0 - m && b.x0 <= VIEW.x1 + m && b.y1 >= VIEW.y0 - m && b.y0 <= VIEW.y1 + m;
+const boxCache = new WeakMap();                    // the box around a line, worked out once (again if its length changes)
+function tilesBox(path) {                          // a path of tiles
+  let b = boxCache.get(path);
+  if (b && b.n === path.length) return b;
+  b = { n: path.length, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+  for (const t of path) { const x = t % W + 0.5, y = ((t / W) | 0) + 0.5; if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x; if (y < b.y0) b.y0 = y; if (y > b.y1) b.y1 = y; }
+  boxCache.set(path, b);
+  return b;
+}
+function ptsBox(pts) {                             // a line of [x, y] points (roads, walls)
+  let b = boxCache.get(pts);
+  if (b && b.n === pts.length) return b;
+  b = { n: pts.length, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+  for (const [x, y] of pts) { if (x < b.x0) b.x0 = x; if (x > b.x1) b.x1 = x; if (y < b.y0) b.y0 = y; if (y > b.y1) b.y1 = y; }
+  boxCache.set(pts, b);
+  return b;
+}
+const lineSeen = (L, z) => !L.pts || !L.pts.length || inView(ptsBox(L.pts), 3 + 30 / z);
 function pill(x, y, text, { bg = 'rgba(20,26,37,0.9)', fg = '#eef2f8', border = null, dot = null, size = 12, bold = 700 } = {}) {
+  if (y + size < -4 || y - size > ch + 4) return String(text).length * size * 0.6 + (dot ? 30 : 20);   // well above or below the screen: nothing to draw (a rough width)
   ctx.font = `${bold} ${size}px 'Segoe UI', Inter, Arial, sans-serif`;
   const tw = ctx.measureText(text).width;
   const w = tw + (dot ? 30 : 20), h = size + 10;
+  if (y + h / 2 < -4 || y - h / 2 > ch + 4 || x + w / 2 < -4 || x - w / 2 > cw + 4) return w;   // wholly off screen: nothing to draw
   if (w < cw - 12) x = clamp(x, w / 2 + 6, cw - w / 2 - 6);   // a label near the edge slides in, so none is cut off (narrow phones)
   const left = x - w / 2, top = y - h / 2;
   ctx.beginPath();
@@ -9483,13 +9626,25 @@ function drawSprite(name, wx, wy, sizePx, alpha = 1) {
 
 function tracePath(path) {
   ctx.beginPath();
-  path.forEach((t, k) => {
-    const [sx, sy] = toScreen(...tileCenter(t));
-    if (k === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
-  });
+  const z = cam.zoom, thin = z < 1, n = path.length;   // zoomed far out, many tiles share a pixel: points closer than that are skipped
+  let lx = 0, ly = 0, k0 = 0, k1 = n - 1;
+  if (!thin && n > 40 && VIEW.x0 > -1e8) {         // up close: only the stretch near the screen (see setDashOff)
+    const m = 3 + 40 / z;
+    k0 = -1;
+    for (let k = 0; k < n; k++) { const x = path[k] % W + 0.5, y = ((path[k] / W) | 0) + 0.5; if (x >= VIEW.x0 - m && x <= VIEW.x1 + m && y >= VIEW.y0 - m && y <= VIEW.y1 + m) { if (k0 < 0) k0 = k; k1 = k; } }
+    if (k0 < 0) return;
+    k0 = Math.max(0, k0 - 1); k1 = Math.min(n - 1, k1 + 1);
+    if (k0) setDashOff(tileCum(path)[k0] * z);
+  }
+  for (let k = k0; k <= k1; k++) {
+    const t = path[k], [sx, sy] = toScreen(t % W + 0.5, ((t / W) | 0) + 0.5);
+    if (k === k0) { ctx.moveTo(sx, sy); lx = sx; ly = sy; }
+    else if (!thin || k === n - 1 || Math.abs(sx - lx) + Math.abs(sy - ly) >= 1) { ctx.lineTo(sx, sy); lx = sx; ly = sy; }
+  }
 }
 
 function strokeRoute(path, kind, z, ghost = false) {
+  if (!inView(tilesBox(path), 2 + 20 / z)) return;   // wholly off screen
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   if (ghost) {
     tracePath(path);
@@ -9513,7 +9668,12 @@ function strokeRoute(path, kind, z, ghost = false) {
     ctx.lineWidth = Math.max(2.5, z * (paved ? 0.5 : 0.4)); ctx.strokeStyle = paved ? 'rgba(120,118,112,0.85)' : 'rgba(140,104,64,0.8)'; ctx.stroke();
     if (z >= PIXEL_BORDER_BELOW && paved) { tracePath(path); ctx.setLineDash([z * 0.3, z * 0.4]); ctx.lineWidth = Math.max(1, z * 0.06); ctx.strokeStyle = 'rgba(240,236,220,0.7)'; ctx.stroke(); ctx.setLineDash([]); }
   } else if (kind === 'air') {
-    tracePath([path[0], path[path.length - 1]]);
+    const [ax, ay] = tileCenter(path[0]), [bx, by] = tileCenter(path[path.length - 1]), m = 2 + 20 / z;
+    const cut = VIEW.x0 > -1e8 ? clipSeg(ax, ay, bx, by, VIEW.x0 - m, VIEW.y0 - m, VIEW.x1 + m, VIEW.y1 + m) : [0, 1];
+    if (!cut) { ctx.lineJoin = 'miter'; ctx.lineCap = 'butt'; return; }
+    const [p0, p1] = [toScreen(ax + (bx - ax) * cut[0], ay + (by - ay) * cut[0]), toScreen(ax + (bx - ax) * cut[1], ay + (by - ay) * cut[1])];
+    ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]);
+    setDashOff(cut[0] * Math.hypot(bx - ax, by - ay) * z);
     ctx.setLineDash([2, 10]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(207,232,255,0.45)'; ctx.stroke(); ctx.setLineDash([]);
   } else {
     tracePath(path);
@@ -10600,8 +10760,7 @@ function useWorld(w) {
     deposits, seaLevel, mtnLevel, maxElev, spawn, capitalTile, frontier, roads, roadsDirty, roadsAt, graphNet, lastSettlements, graphCache, graphStamp, planCache,
     netTimer, landTimer, aiTimer, aiFireTimer, supplyTimer, transferTimer, defendTimer, terraTimer, invTimer, repTimer, aiTimer2, terrainCanvas, terrainCtx, fillLayer, borderLayer } = d);
   for (const k of GAME_KEYS) game[k] = d.g[k];
-  WORLD = w;
-  bldVer++; graphVer++;
+  WORLD = w;                                       // (the building indexes and the link graph are kept per world: nothing to throw away)
 }
 // do something on another world, then come back
 function onWorld(w, fn) {
@@ -11859,8 +12018,10 @@ function drawCrew(b, z) {
   const prog = busy ? clamp(1 - (b.site.crew - game.time) / b.site.crewDur, 0, 1) : 0.15;
   ctx.strokeStyle = '#8a5a34'; ctx.lineWidth = Math.max(1, u * 0.06);
   const h = u * (0.3 + 0.7 * prog);
-  for (const ox of [-0.45, 0.45]) { ctx.beginPath(); ctx.moveTo(sx + ox * u, sy + 0.45 * u); ctx.lineTo(sx + ox * u, sy + 0.45 * u - h); ctx.stroke(); }
-  for (let k = 0; k <= 2; k++) { const yy = sy + 0.45 * u - h * k / 2; ctx.beginPath(); ctx.moveTo(sx - 0.5 * u, yy); ctx.lineTo(sx + 0.5 * u, yy); ctx.stroke(); }
+  ctx.beginPath();                                 // (one stroke for the whole frame: the colour is solid, so it looks the same)
+  for (const ox of [-0.45, 0.45]) { ctx.moveTo(sx + ox * u, sy + 0.45 * u); ctx.lineTo(sx + ox * u, sy + 0.45 * u - h); }
+  for (let k = 0; k <= 2; k++) { const yy = sy + 0.45 * u - h * k / 2; ctx.moveTo(sx - 0.5 * u, yy); ctx.lineTo(sx + 0.5 * u, yy); }
+  ctx.stroke();
   if (!RAS.builder) return;
   for (let k = 0; k < (busy ? 3 : 1); k++) {      // waiting for materials: one builder pacing; building: three hammering
     const { bx, by, bob, size, ang } = crewPos(b, k, z);
@@ -11884,19 +12045,19 @@ function drawPuffs(z) {
 // a construction site: the building, faint, with a turning gear over it
 // the turning gear over a construction site, drawn once at GEAR_STEPS angles (turning a picture on every frame, for
 // every site, is slow on some phones)
-const GEAR_STEPS = 48, gearFrames = [];
-function gearFrame(ang) {
+const GEAR_STEPS = 48, gearFrames = [[], []];
+function gearFrame(ang, small = false) {         // small: a 36-pixel copy, for gears drawn small (shrinking the big one each time is slow)
   if (!SPR.gear.complete || !SPR.gear.naturalWidth) return null;
-  const k = ((Math.round(ang / (Math.PI * 2) * GEAR_STEPS) % GEAR_STEPS) + GEAR_STEPS) % GEAR_STEPS;
-  if (!gearFrames[k]) {
-    const px = 72, c = document.createElement('canvas'); c.width = c.height = px;
+  const k = ((Math.round(ang / (Math.PI * 2) * GEAR_STEPS) % GEAR_STEPS) + GEAR_STEPS) % GEAR_STEPS, set = gearFrames[small ? 1 : 0];
+  if (!set[k]) {
+    const px = small ? 36 : 72, c = document.createElement('canvas'); c.width = c.height = px;
     const g = c.getContext('2d'); g.translate(px / 2, px / 2); g.rotate(k / GEAR_STEPS * Math.PI * 2); g.drawImage(SPR.gear, -px / 2, -px / 2, px, px);
-    gearFrames[k] = c;
+    set[k] = c;
   }
-  return gearFrames[k];
+  return set[k];
 }
 function drawSites(z) {
-  const gf = gearFrame(game.time * 1.6);
+  const gs = clamp(z * 1.2, 14, 34), gf = gearFrame(game.time * 1.6, gs * dpr <= 40);
   for (const b of siteBlds()) {
     if (!b.site) continue;
     const [sx, sy] = toScreen(...tileCenter(b.i));
@@ -11971,10 +12132,47 @@ function foreignSkyClick(wx, wy) {
   }
   return false;
 }
+// Still pictures of things that only change when the camera moves (the route lines): while the camera keeps still, the
+// lines are drawn once into a canvas of their own and that picture is put on screen each frame (on a big realm, hundreds
+// of dashed routes are a lot to draw 60 times a second). While the camera moves they are drawn straight, as before.
+const linkLayer = { c: null, g: null, key: '', last: '' };
+function cachedLayer(L, key, draw) {
+  if (L.c && L.key === key) { ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(L.c, 0, 0); ctx.restore(); return; }
+  if (L.last !== key) { L.last = key; draw(); return; }       // still moving: drawn straight
+  if (!L.c) { L.c = document.createElement('canvas'); L.g = L.c.getContext('2d'); patchBeginPath(L.g); }
+  if (L.c.width !== canvas.width || L.c.height !== canvas.height) { L.c.width = canvas.width; L.c.height = canvas.height; }
+  const main = ctx;
+  ctx = L.g; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, L.c.width, L.c.height); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  try { draw(); } finally { ctx = main; }
+  L.key = key;
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(L.c, 0, 0); ctx.restore();
+}
+// a hub's map icon (dark disc and its picture), drawn once per kind and screen sharpness
+const mapIcons = new Map(), iconSeen = new Set();
+function mapIcon(type) {
+  const k = type + ':' + dpr;
+  let c = mapIcons.get(k);
+  if (c) return c;
+  if (!SPR[type] || !SPR[type].complete || !SPR[type].naturalWidth) return null;
+  const px = Math.ceil(16 * dpr);
+  c = document.createElement('canvas'); c.width = c.height = px;
+  const g = c.getContext('2d'); g.scale(px / 16, px / 16);
+  g.beginPath(); g.arc(8, 8, 8, 0, Math.PI * 2); g.fillStyle = 'rgba(20,26,37,0.85)'; g.fill();
+  g.drawImage(SPR[type], 0, 0, 16, 16);
+  mapIcons.set(k, c);
+  return c;
+}
 function render() {
+  setView(true);
+  try { render0(); } finally { setView(false); }
+}
+function render0() {
   const z = cam.zoom;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawSpace(z);
+  // the stars and the glow round the rim: not when the whole screen is well inside the map (the map covers them)
+  const inDisk = (sx, sy) => { const [wx, wy] = toWorld(sx, sy); return Math.hypot(wx - DISK.cx, wy - DISK.cy) < DISK.R * 0.96; };
+  if (!(inDisk(0, 0) && inDisk(cw, 0) && inDisk(0, ch) && inDisk(cw, ch))) drawSpace(z);
+  else { ctx.fillStyle = '#04050b'; ctx.fillRect(0, 0, cw, ch); }   // (a plain backdrop, in case anything shows through)
   canvas.style.cursor = '';
   if (!WORLD) {                                    // the sun, moons and planets are drawn around home
     drawSun(z);
@@ -12035,9 +12233,13 @@ function render() {
   drawBridgeSel(z);
   drawRoads(z);
   // roads, rail lines and air routes (sea routes aren't drawn: the ships sailing them are enough)
-  for (const L of game.links) if (L.kind === 'road') strokeRoute(L.path, 'road', z);
-  for (const L of game.links) if (L.kind === 'rail') strokeRoute(L.path, 'rail', z);
-  for (const L of game.links) if (L.kind === 'air') strokeRoute(L.path, 'air', z);
+  let sig = 0;
+  for (const L of game.links) sig += L.path.length * (L.kind === 'air' ? 3 : L.kind === 'rail' ? 2 : 1);
+  cachedLayer(linkLayer, [cam.x, cam.y, z, cam.rot, cw, ch, dpr, WORLD, game.links.length, sig, game.research.done.has('masonry')].join(','), () => {
+    for (const L of game.links) if (L.kind === 'road') strokeRoute(L.path, 'road', z);
+    for (const L of game.links) if (L.kind === 'rail') strokeRoute(L.path, 'rail', z);
+    for (const L of game.links) if (L.kind === 'air') strokeRoute(L.path, 'air', z);
+  });
 
   if (z >= CFG.detailZoom) {
     // detail view: every deposit tile and building as a sprite
@@ -12058,7 +12260,9 @@ function render() {
     // middle view: buildings as solid squares
     for (const b of game.buildings) {
       if (b.type === 'settlement') continue;
-      const [sx, sy] = toScreen(b.i % W, (b.i / W) | 0);
+      const x = b.i % W, y = (b.i / W) | 0;
+      if (x < x0 - 1 || x > x1 + 1 || y < y0 - 1 || y > y1 + 1) continue;
+      const [sx, sy] = toScreen(x, y);
       ctx.fillStyle = BLD_COLOR[b.type];
       if (underway(b)) ctx.globalAlpha = 0.45;
       ctx.fillRect(sx + z * 0.12, sy + z * 0.12, z * 0.76, z * 0.76);
@@ -12067,12 +12271,18 @@ function render() {
     drawSettlementPixels(z);
   } else {
     // map view: settlements as clusters of pixels, station/port icons. Deposits show as their own coloured ground.
+    iconSeen.clear();
     for (const b of game.buildings) {
       if (!linkKind(b.type) && b.type !== 'base' && b.type !== 'fort') continue;
       if (z < 0.6 && !owner[b.i]) continue;
       const [sx, sy] = toScreen(...tileCenter(b.i));
-      ctx.beginPath(); ctx.arc(sx, sy, 8, 0, Math.PI * 2); ctx.fillStyle = 'rgba(20,26,37,0.85)'; ctx.fill();
-      if (SPR[b.type].complete) ctx.drawImage(SPR[b.type], sx - 8, sy - 8, 16, 16);
+      if (sx < -10 || sy < -10 || sx > cw + 10 || sy > ch + 10) continue;
+      const ic = mapIcon(b.type);
+      if (!ic) continue;
+      const pk = b.type + ':' + Math.round(sx * 2) + ':' + Math.round(sy * 2);   // the same icon on the same spot again (far out, many share a pixel)
+      if (iconSeen.has(pk)) continue;
+      iconSeen.add(pk);
+      ctx.drawImage(ic, sx - 8, sy - 8, 16, 16);
     }
     drawSettlementPixels(z);
   }
@@ -12220,17 +12430,22 @@ const PIXEL = { house: '#d9694a', house2: '#6f97c4', house3: '#d3dbe4' };
 function drawSettlementPixels(z) {
   if (z < 0.15) return;                            // from orbit the whole disk is only a few pixels
   const px = Math.max(z * 0.82, 1.7), edge = px >= 4 ? 1 : 0.5;
+  // zoomed far out, a settlement's houses pile up on a few pixels: only the top one on each half-pixel spot is drawn
+  // (it covers the ones under it), so a big realm isn't thousands of tiny squares a frame
+  const far = z < 0.7, top = far ? new Map() : null;
+  const dot = (wx, wy, size, color) => {
+    const [sx, sy] = toScreen(wx + 0.5, wy + 0.5);
+    if (far) { top.set(((Math.round(sx * 2) + 4096) * 16384 + Math.round(sy * 2) + 4096) * 2 + (size > px ? 1 : 0), [sx, sy, size, color]); return; }
+    ctx.fillStyle = 'rgba(20,26,37,0.85)'; ctx.fillRect(sx - size / 2 - edge, sy - size / 2 - edge, size + edge * 2, size + edge * 2);
+    ctx.fillStyle = color; ctx.fillRect(sx - size / 2, sy - size / 2, size, size);
+  };
   for (const b of game.buildings) {
     if (b.type !== 'settlement') continue;
     const [cx, cy] = toScreen(...tileCenter(b.i));
     if (cx < -60 || cy < -60 || cx > cw + 60 || cy > ch + 60) continue;
-    const dot = (wx, wy, size, color) => {
-      const [sx, sy] = toScreen(wx + 0.5, wy + 0.5);
-      ctx.fillStyle = 'rgba(20,26,37,0.85)'; ctx.fillRect(sx - size / 2 - edge, sy - size / 2 - edge, size + edge * 2, size + edge * 2);
-      ctx.fillStyle = color; ctx.fillRect(sx - size / 2, sy - size / 2, size, size);
-    };
     for (const h of sprawlOf(b)) dot(h.x, h.y, px, PIXEL[h.type]);
     dot(b.i % W, (b.i / W) | 0, px * 1.5, isRuin(b) ? '#6b6258' : '#f2d98a');
+    if (far) { for (const [sx, sy, size, color] of top.values()) { ctx.fillStyle = 'rgba(20,26,37,0.85)'; ctx.fillRect(sx - size / 2 - edge, sy - size / 2 - edge, size + edge * 2, size + edge * 2); ctx.fillStyle = color; ctx.fillRect(sx - size / 2, sy - size / 2, size, size); } top.clear(); }
   }
 }
 function reachRing(i, color, z, dash = [7, 6], R = CFG.settlement.reach) {
@@ -12356,6 +12571,7 @@ function drawCountryLabels(z) {
     const span = Math.sqrt(c.tiles) * z;           // rough on-screen size of the country
     if (span < 18) continue;
     const [sx, sy0] = toScreen(c.lx, c.ly);
+    if (sx < -cw || sx > 2 * cw || sy0 < -200 || sy0 > ch + 200) continue;   // far off screen
     const size = clamp(span * 0.16, 11, 26);
     const sy = sy0 + (z < CFG.detailZoom ? 14 + size * 0.6 : z * 3.2);   // sit below the settlement at the centre
     const text = (span > 140 ? c.full : c.short).toUpperCase();
@@ -12372,6 +12588,7 @@ function drawCountryLabels(z) {
     const span = Math.sqrt(O ? O.tiles : n.tiles) * z;
     if (span < 18) continue;
     const [sx, sy0] = O ? toScreen(O.i % W + 0.5, ((O.i / W) | 0) + 0.5) : toScreen(n.lx, n.ly);
+    if (sx < -cw || sx > 2 * cw || sy0 < -200 || sy0 > ch + 200) continue;   // far off screen
     const size = clamp(span * 0.14, 10, 22);
     const sy = sy0 + (z < CFG.cityZoom ? 14 + size * 0.6 : 0);
     const text = (span > 160 ? n.full : n.short).toUpperCase();

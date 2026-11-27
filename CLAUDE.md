@@ -170,7 +170,7 @@ These are easy to misread. Read requests with this table in mind, and ask when u
 | `.nojekyll` | Makes GitHub Pages serve files as they are. Keep it. |
 
 **Cache tag:** `index.html` loads `style.css?v=N` and `game.js?v=N`. **Increase N by one on every push**, in both
-places, or phones keep running the old code. Look in `index.html` for the current N (it was 34 on 2026-11-27). Since round 21 the game also checks on start whether
+places, or phones keep running the old code. Look in `index.html` for the current N (it was 35 on 2026-11-27). Since round 21 the game also checks on start whether
 `index.html` online names a newer N than the script it is running, and if so saves and reloads once (`checkFresh`), so
 phones that kept an old copy catch up. (Side effect for tests: a page whose `index.html` changes mid-run reloads itself.)
 
@@ -324,6 +324,31 @@ lines). The order of sections in the file:
   if it starts with `g` (e.g. Python `gzip.decompress(base64.urlsafe_b64decode(p[1:] + '=' * (-len(p[1:]) % 4)))`),
   and you have the save JSON; load it in a test with `localStorage.setItem('game-trial-save-v2', json)` after
   `stopSaving()` and `noSave = true`, then reload.
+- **Speed (round 24; every change gives the same game, see section 4 Round 24):**
+  - *Drawing.* `render()` sets the view box `VIEW` (`setView`) and calls `render0()` (the old body). Lines wholly off
+    screen are skipped (`inView`, `tilesBox`, `ptsBox`, `lineSeen`, boxes cached in `boxCache`); long lines are traced
+    only near the screen (`tracePath`, `traceLine`, air routes cut with `clipSeg`), and the part left out is given as the
+    dash offset (`setDashOff`, cumulative lengths `tileCum`), so dashes don't move. **`ctx.beginPath` is patched**
+    (`patchBeginPath`) to put the dash offset back to 0 after such a line; **the game itself never sets
+    `lineDashOffset`** (if you need it, set it after `beginPath`). **`ctx` is a `let`**: `cachedLayer(L, key, draw)`
+    draws the route lines (`linkLayer`: road links, rail, air) into a canvas of their own while the camera stands still
+    and puts that picture on screen each frame; the key holds camera, screen, world, the links and Masonry. **Anything
+    drawn in a cached layer must depend only on what is in its key** (nothing animated). `pill` draws nothing wholly
+    off screen (it used to slide far-off labels onto the edge). Map-view hub icons are made once (`mapIcon`,
+    `iconSeen` skips the same icon on the same spot). Far out (zoom < 0.7) only the top house dot per half pixel is
+    drawn (`drawSettlementPixels`). `gearFrame(ang, small)` has a 36-pixel set. Stars are skipped when the map fills
+    the screen. Scaffolding is one stroke (`drawCrew`).
+  - *Steps.* `tilePath`: typed heap (`HEAP_I`, `HEAP_F`), each tile's cost asked once per search (`AS_CS`, `AS_CV`),
+    `D8X/D8Y/D8D`: the same search, step for step. `reachOf(R)`: the reach offsets, in the old loop order.
+    `recomputeLand` reuses the last count when nothing changed (`landKey`; **`landVer` goes up in `paintTerr`,
+    `repaintTile`, the merge relabelling in `recomputeNetwork` and `loadGame`: if you ever change `owner`, `aiOf`,
+    `countryOf` or `biome` without calling one of those, bump `landVer` yourself**). `depositTiles()`: all deposit tiles
+    in one flat list (rebuilt when a deposit gains or loses tiles). `nearestSettlement` skips settlements that can't be
+    nearer; `carNextJob` does its costly checks (`here`, `landSettlement`, `quayLoad`) only for a pickup or export
+    that would be the best yet, and sorts sites by distances worked out once. `explode` recounts only when a building
+    or wall was in the blast. `byType` and `buildingAt` keep one index per world's building list (`byTypeIdx`,
+    `bldMaps`), so `useWorld` no longer bumps `bldVer` / `graphVer`. The per-route step work skips resources neither
+    end makes and empty quays. `CAR_THINK_MS` is a `let` so tests can lift it.
 - **Multiplayer** (end of file): `MP` (role, style, connection), PeerJS (or `tr=bc`, a test channel inside one
   browser), `MP_ORDERS` (player orders, wrapped by `mpWrap`), `MP_HOST_ONLY`.
   - **Starting and joining:** `mpSetup` (Host a game / Join a game) → `mpHostSetup` → `mpHost`, or `mpJoinSetup` →
@@ -776,6 +801,26 @@ It is kept as `tests/fixtures/friend-freeze.txt` (`r23`).
 - Side effect: where two ways are exactly as good, the search may now pick the other one of the two (same length), so a
   new road or wall can come out slightly differently shaped than it would have before.
 
+### Round 24 (2026-11-27): running more efficiently
+The owner: "refine the game and find ways to make it run more efficiently while not sacrificing any of the game
+mechanics … especially as it scales to larger territories and multiple planets", with a lot of autonomy and **no
+questions** ("if I notice something when you report back to me … I will let you know"). Their example: on the Moon,
+a simpler way to track Earth's goods instead of individual porters.
+- **Rule kept: the same game.** Every change to the simulation was checked with `tests/perf_eq.mjs` (old and new code,
+  same random numbers, no frame loop): the state after 200–300 steps is identical on three test games (a 1,610-building
+  creative realm, a 3-world one with colonies on the Moon and Aries, and the friend's 1,788-porter game). So the
+  owner's example (simplify other worlds) was **not** done: every world still runs in full, because a summary would
+  change what happens. Instead the costs that grew with size were cut (code map, section 3, "Speed").
+- Measured (this machine; `perf_bench.mjs`): the friend's game with haulers thinking freely, 784 → 88 ms per step
+  (a hauler choosing a job looked up the nearest settlement for every collector; now only for the best one so far);
+  other realms' steps 5–25% faster; switching worlds no longer throws the building indexes away. Drawing with the
+  camera still, 3-world game: zoom 25, ~95 → 13 ms a frame; zoom 6, ~110 → 22; zoom 3, ~105 → 34; zoom 0.3, ~50 → 28.
+  While panning, about the same as before (route lines are drawn straight then).
+- **Visible differences (AI's choices):** labels and troop badges of things wholly off screen are no longer pinned to
+  the screen's edge (they used to stack up there: a bug); the turning gear on sites is drawn from a smaller picture;
+  dashes on a long road or rail line can sit a fraction of a pixel differently; zoomed far out, overlapping house dots
+  are drawn once. Nothing else should look different (checked picture by picture at 7 zooms).
+
 ### Earlier rounds (done; listed so you know they exist)
 Tech tree edits; gun ranges; Casimir drive and Alcubierre drive; megaprojects; all the art redrawn (round 9); walls
 (picking ends, straight walls); the transport progression; imports (from your nearest territory on the same planet
@@ -846,6 +891,12 @@ cd <repo folder>/tests && node r13.mjs                # run any test
   - Round 23: `r23` (the friend's frozen game from `tests/fixtures/friend-freeze.txt`: it loads with its 1,788 porters;
     five routes round the coast that were "unreachable" are found in under 1 s each; a minute of play has no step over
     1.5 s and at most a few over 0.3 s, with porters moving). Suite runners must copy `tests/fixtures/` too.
+  - Round 24: `r24` (on the friend's game: the faster path search gives the same paths as the old one written out in
+    the test; the nearest settlement equals a look at all of them; a reused land count always equals a full one through
+    a minute of shelling and building; a changed tile forces a full count; each world's building index matches a full
+    scan across world swaps; the still picture of the route lines follows a new route; off-screen labels aren't drawn).
+    Tools for speed work: `perf_eq.mjs` (old vs new, prints IDENTICAL or the differences) and `perf_bench.mjs`
+    (ms per step and per frame); both take a `{k, v}` save file or a Send-my-game payload such as the fixture.
   - Round 17 fixes: `r17fix` (one territory: no "shipped in" wording; upgrades of parked haulers and of one walking in
     empty to load; Connect to road far away and greyed; Request porter across a sea route; importing to buy a hauler
     and to hire troops). It runs about 5 minutes: the imports are carried by a few slow haulers.
@@ -906,6 +957,11 @@ End commit messages with whatever attribution lines your own environment require
 - Round 23: the friend's game still runs below real time on a desktop (about 0.55 game seconds per second here, most
   of it drawing 1,788 porters in this machine's software graphics); on his phone it will be slower but should no
   longer stop. Not tried on his phone yet.
+- Round 24: speed was measured in desktop Chrome with software graphics, not on an iPhone (whose canvas works
+  differently: the gains in drawing calls should carry over, the exact numbers won't). Other worlds still run in full
+  every step (to keep the game identical); a world of ~460 buildings costs ~2–3 ms a step here. Panning still draws
+  every route line each frame; hundreds of air routes (every pair of airports gets one, so 44 airports make ~900) are
+  the main cost then.
 - Round 19/20/21: the friend's freeze was never seen on a real iPhone. Round 21's iOS 15 finding matches the screenshot
   exactly, but the friend's iOS version is not known. If it happens again: ask which iOS (Settings → General → About)
   and for a screenshot of the "Something keeps going wrong" notice if one appears.
@@ -938,6 +994,8 @@ End commit messages with whatever attribution lines your own environment require
 - Tuning numbers in `CFG` or in a named const beside the system.
 - After every edit, run `node --check game.js` before the tests.
 - Don't reformat or reorganise code you aren't changing (the file is large and other notes refer to names in it).
+- Speed work must leave the game the same: check with `tests/perf_eq.mjs` against the published code (section 5).
+  Drawing code may run on another canvas (`cachedLayer`): use the global `ctx`, never a saved copy of it.
 
 ## 9. Keeping these notes up to date
 

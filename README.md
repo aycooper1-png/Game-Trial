@@ -59,6 +59,14 @@ produce; offers from nations stay on screen until you answer; a building's card 
 picking a colony's landing site has a **Cancel** button; and in co-op the second player's expeditions, colony ships,
 defence settings, warhead choice and C.A.I.S. settings now reach the host's game.
 
+## Round 24: big games run lighter
+The game now does much less work for the same result, especially in big realms and with colonies on other worlds:
+haulers choose their jobs far faster, the land is only recounted when it has actually changed, switching between
+worlds no longer throws away what the game had worked out, and the map skips drawing things that are off screen.
+While you aren't moving the camera, the road, rail and air route lines are kept as a ready picture instead of being
+drawn again every frame. Everything plays exactly as before. One small visible change: labels for things off screen
+no longer pile up along the edges of the screen.
+
 ## Round 23: the "frozen" game
 A friend's game froze a few minutes after he bought a lot of porters. With his game in hand the cause was found: the
 way porters work out a path round a coast could go round in circles and give up on places it could actually reach, so
