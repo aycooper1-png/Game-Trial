@@ -36,6 +36,9 @@ actually want, not a guess. Follow these steps in order, **for every new message
 instruction, 2026-11-26: "each time I give a prompt"). The owner may check that you did, so say plainly in your reply
 that you re-read the notes.
 
+**Exception (owner, 2026-11-26):** brief questions that need no change to the game (for example "what is the link to
+the game?") need neither the re-read of the notes nor clarifying questions: just answer.
+
 ### Step 1: Read and understand (no code yet)
 1. **Re-read all the notes, every time, even if you read them earlier in the same session:** this whole file, the
    off-screen `#ai-notes` block at the top of `index.html`, `README.md` (the player-facing description of every
